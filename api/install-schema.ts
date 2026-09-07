@@ -6,7 +6,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // Expect database connection parameters
   const { dbConnectionString } = req.body || {};
 
   if (!dbConnectionString) {
@@ -52,6 +51,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
       ALTER TABLE public.comments ENABLE ROW LEVEL SECURITY;
       ALTER TABLE public.options ENABLE ROW LEVEL SECURITY;
+
+      CREATE POLICY "Allow public read access on options" ON public.options FOR SELECT USING (true);
+      CREATE POLICY "Allow authenticated full access on options" ON public.options FOR ALL TO authenticated USING (true) WITH CHECK (true);
     `;
 
     await client.query(migrationSql);
