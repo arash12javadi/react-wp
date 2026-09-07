@@ -1,0 +1,29 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Local Environment Variables (API keys, secrets)
+.env
+.env.local
+.env.*.local
+
+# Production Build Output
+dist
+dist-ssr
+build
+
+# Editor and System Files
+.DS_Store
+*.local
+.vscode/*
+!.vscode/extensions.json
+.idea
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Vite / Cache
+.vite
