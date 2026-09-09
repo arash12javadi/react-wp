@@ -21,6 +21,7 @@ export default function PostsManager({ onCreate, onEdit }: PostsManagerProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [updatingId, setUpdatingId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const loadPosts = useCallback(async () => {
     setLoading(true);
@@ -75,6 +76,26 @@ export default function PostsManager({ onCreate, onEdit }: PostsManagerProps) {
       setError(getErrorMessage(updateError));
     } finally {
       setUpdatingId(null);
+    }
+  };
+
+  const deletePost = async (post: Post) => {
+    if (!window.confirm(`Delete "${post.title}"? This cannot be undone.`)) return;
+    setDeletingId(post.id);
+    setError('');
+    try {
+      const supabase = getSupabaseClient();
+      const { error: deleteError } = await supabase.from('posts').delete().eq('id', post.id);
+      if (deleteError) throw deleteError;
+      if (posts.length === 1 && page > 1) {
+        setPage((current) => current - 1);
+      } else {
+        await loadPosts();
+      }
+    } catch (deleteError: unknown) {
+      setError(getErrorMessage(deleteError));
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -157,6 +178,14 @@ export default function PostsManager({ onCreate, onEdit }: PostsManagerProps) {
                       <td className={styles.actions}>
                         <button type="button" className={styles.editButton} onClick={() => onEdit(post)}>
                           Edit
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.deleteButton}
+                          onClick={() => void deletePost(post)}
+                          disabled={deletingId === post.id}
+                        >
+                          {deletingId === post.id ? 'Deleting…' : 'Delete'}
                         </button>
                       </td>
                     </tr>

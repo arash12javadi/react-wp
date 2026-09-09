@@ -29,6 +29,16 @@ alter table public.posts enable row level security;
 alter table public.comments enable row level security;
 alter table public.options enable row level security;
 
+drop policy if exists "Authenticated users can manage posts" on public.posts;
+create policy "Authenticated users can manage posts"
+  on public.posts for all to authenticated
+  using (true) with check (true);
+
+drop policy if exists "Authenticated users can manage comments" on public.comments;
+create policy "Authenticated users can manage comments"
+  on public.comments for all to authenticated
+  using (true) with check (true);
+
 drop policy if exists "Allow public read access on options" on public.options;
 create policy "Allow public read access on options"
   on public.options for select using (true);

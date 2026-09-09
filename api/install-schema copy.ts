@@ -58,6 +58,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     DO $$
     BEGIN
       IF NOT EXISTS (
+        SELECT 1 FROM pg_policies WHERE tablename = 'posts' AND policyname = 'Authenticated users can manage posts'
+      ) THEN
+        CREATE POLICY "Authenticated users can manage posts" ON public.posts FOR ALL TO authenticated USING (true) WITH CHECK (true);
+      END IF;
+
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_policies WHERE tablename = 'comments' AND policyname = 'Authenticated users can manage comments'
+      ) THEN
+        CREATE POLICY "Authenticated users can manage comments" ON public.comments FOR ALL TO authenticated USING (true) WITH CHECK (true);
+      END IF;
+
+      IF NOT EXISTS (
         SELECT 1 FROM pg_policies WHERE tablename = 'options' AND policyname = 'Allow public read access on options'
       ) THEN
         CREATE POLICY "Allow public read access on options" ON public.options FOR SELECT USING (true);

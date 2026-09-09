@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import styles from './AdminLayout.module.css';
 
-export type AdminSection = 'dashboard' | 'posts' | 'settings';
+export type AdminSection = 'dashboard' | 'posts' | 'comments' | 'settings' | 'profile';
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -15,7 +15,9 @@ interface AdminLayoutProps {
 const navigation: Array<{ id: AdminSection; label: string; icon: string }> = [
   { id: 'dashboard', label: 'Dashboard', icon: '▦' },
   { id: 'posts', label: 'Posts', icon: '▤' },
+  { id: 'comments', label: 'Comments', icon: '◌' },
   { id: 'settings', label: 'Settings', icon: '⚙' },
+  { id: 'profile', label: 'Profile', icon: '◉' },
 ];
 
 export default function AdminLayout({

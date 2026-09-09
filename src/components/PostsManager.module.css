@@ -212,6 +212,30 @@ td strong {
 
 .actions {
   text-align: right;
+  white-space: nowrap;
+}
+
+.deleteButton {
+  margin-left: 12px;
+  padding: 0;
+  border: 0;
+  color: #b91c1c;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.deleteButton:hover:not(:disabled),
+.deleteButton:focus-visible {
+  color: #991b1b;
+  text-decoration: underline;
+}
+
+.deleteButton:disabled {
+  cursor: wait;
+  opacity: 0.55;
 }
 
 .emptyState {
