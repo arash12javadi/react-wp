@@ -127,7 +127,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
         password: adminPassword,
         options: {
           data: {
-            role: 'superadmin',
+            role: 'administrator',
             display_name: 'Administrator',
           },
         },

@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getSupabaseClient } from '../lib/db';
 import type { Post, PostStatus } from '../lib/types';
+import { canManageAllPosts, canPublishPosts, type UserRole } from '../lib/roles';
 import styles from './PostsManager.module.css';
 
 interface PostsManagerProps {
   onCreate: () => void;
   onEdit: (post: Post) => void;
+  role: UserRole;
 }
 
 const PAGE_SIZE = 10;
@@ -13,7 +15,7 @@ const PAGE_SIZE = 10;
 const getErrorMessage = (error: unknown) =>
   error instanceof Error ? error.message : 'Unable to load posts. Please try again.';
 
-export default function PostsManager({ onCreate, onEdit }: PostsManagerProps) {
+export default function PostsManager({ onCreate, onEdit, role }: PostsManagerProps) {
   const [posts, setPosts] = useState<Post[]>([]);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
@@ -39,6 +41,10 @@ export default function PostsManager({ onCreate, onEdit }: PostsManagerProps) {
       if (search.trim()) {
         query = query.ilike('title', `%${search.trim()}%`);
       }
+      if (!canManageAllPosts(role)) {
+        const { data: userData } = await supabase.auth.getUser();
+        if (userData.user) query = query.eq('author_id', userData.user.id);
+      }
 
       const { data, count, error: queryError } = await query;
       if (queryError) throw queryError;
@@ -49,7 +55,7 @@ export default function PostsManager({ onCreate, onEdit }: PostsManagerProps) {
     } finally {
       setLoading(false);
     }
-  }, [page, search]);
+  }, [page, search, role]);
 
   useEffect(() => {
     void loadPosts();
@@ -167,6 +173,7 @@ export default function PostsManager({ onCreate, onEdit }: PostsManagerProps) {
                           type="button"
                           className={`${styles.status} ${post.status === 'published' ? styles.published : styles.draft}`}
                           onClick={() => void toggleStatus(post)}
+                          hidden={!canPublishPosts(role)}
                           disabled={updatingId === post.id}
                           aria-label={`Change ${post.title} status, currently ${post.status}`}
                         >

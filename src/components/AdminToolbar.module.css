@@ -1,0 +1,71 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+  padding: 0 16px;
+  box-sizing: border-box;
+  background: #1d2327;
+  color: #f0f0f1;
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.left,
+.right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.logo {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #2271b1;
+  color: #fff;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.siteLink,
+.toolbar button {
+  color: #f0f0f1;
+  text-decoration: none;
+}
+
+.toolbar button {
+  padding: 6px 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.siteLink:hover,
+.toolbar button:hover,
+.siteLink:focus-visible,
+.toolbar button:focus-visible {
+  color: #72aee6;
+}
+
+.user {
+  color: #c3c4c7;
+}
+
+@media (max-width: 620px) {
+  .toolbar {
+    padding: 0 10px;
+  }
+
+  .siteLink,
+  .user {
+    display: none;
+  }
+
+  .left,
+  .right {
+    gap: 11px;
+  }
+}

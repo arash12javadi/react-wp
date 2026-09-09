@@ -10,12 +10,14 @@ interface SettingsForm {
   siteTitle: string;
   siteDescription: string;
   adminEmail: string;
+  menuLinks: string;
 }
 
 const defaults: SettingsForm = {
   siteTitle: 'My React-WP Site',
   siteDescription: '',
   adminEmail: '',
+  menuLinks: '[{"label":"Home","url":"/"},{"label":"Sample Page","url":"/sample-page"},{"label":"Admin Dashboard","url":"/admin"}]',
 };
 
 export default function SiteSettings({ onSiteTitleChange }: SiteSettingsProps) {
@@ -43,6 +45,7 @@ export default function SiteSettings({ onSiteTitleChange }: SiteSettingsProps) {
         siteTitle: values.site_title || defaults.siteTitle,
         siteDescription: values.site_description || defaults.siteDescription,
         adminEmail: values.admin_email || defaults.adminEmail,
+        menuLinks: values.menu_links || defaults.menuLinks,
       });
     } catch (loadError: unknown) {
       setError(loadError instanceof Error ? loadError.message : 'Unable to load site settings.');
@@ -63,12 +66,22 @@ export default function SiteSettings({ onSiteTitleChange }: SiteSettingsProps) {
     try {
       const title = form.siteTitle.trim();
       if (!title) throw new Error('Site title is required.');
-      const [titleSaved, descriptionSaved, emailSaved] = await Promise.all([
+      let menuLinks: unknown;
+      try {
+        menuLinks = JSON.parse(form.menuLinks);
+        if (!Array.isArray(menuLinks) || !menuLinks.every((link) => link && typeof link.label === 'string' && typeof link.url === 'string')) {
+          throw new Error('Menu links must be a JSON array with label and url fields.');
+        }
+      } catch (parseError: unknown) {
+        throw new Error(parseError instanceof Error ? parseError.message : 'Menu links contain invalid JSON.');
+      }
+      const [titleSaved, descriptionSaved, emailSaved, menuSaved] = await Promise.all([
         updateOption('site_title', title),
         updateOption('site_description', form.siteDescription.trim()),
         updateOption('admin_email', form.adminEmail.trim()),
+        updateOption('menu_links', menuLinks),
       ]);
-      if (!titleSaved || !descriptionSaved || !emailSaved) throw new Error('Settings could not be saved.');
+      if (!titleSaved || !descriptionSaved || !emailSaved || !menuSaved) throw new Error('Settings could not be saved.');
       setForm((current) => ({ ...current, siteTitle: title }));
       onSiteTitleChange?.(title);
       setFeedback('Settings saved successfully.');
@@ -124,6 +137,16 @@ export default function SiteSettings({ onSiteTitleChange }: SiteSettingsProps) {
             onChange={(event) => setForm((current) => ({ ...current, adminEmail: event.target.value }))}
             required
           />
+        </label>
+        <label>
+          Public menu links (JSON)
+          <textarea
+            value={form.menuLinks}
+            onChange={(event) => setForm((current) => ({ ...current, menuLinks: event.target.value }))}
+            rows={6}
+            spellCheck={false}
+          />
+          <span className={styles.help}>Use an array of objects with <code>label</code> and <code>url</code>, for example: [{"{"}"label":"Home","url":"/"{"}"}].</span>
         </label>
         <div className={styles.actions}>
           <button type="submit" className={styles.saveButton} disabled={saving}>

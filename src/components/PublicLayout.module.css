@@ -1,0 +1,143 @@
+.site {
+  min-height: 100vh;
+  background: #f9fafb;
+  color: #374151;
+  text-align: left;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.adminBar {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 40px;
+  background: #1f2937;
+  color: #f9fafb;
+  font-size: .78rem;
+}
+
+.adminBar span:last-child {
+  display: flex;
+  gap: 16px;
+}
+
+.adminBar a,
+.adminBar button {
+  color: #fff;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 32px 40px;
+  background: #fff;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.brand {
+  display: grid;
+  gap: 3px;
+  color: #111827;
+  text-decoration: none;
+}
+
+.brand strong {
+  font-size: 1.3rem;
+  letter-spacing: -0.02em;
+}
+
+.brand span {
+  color: #6b7280;
+  font-size: .82rem;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.nav a {
+  color: #374151;
+  font-size: .92rem;
+  text-decoration: none;
+}
+
+.nav a:hover,
+.nav a:focus-visible {
+  color: #2271b1;
+}
+
+.menuButton {
+  display: none;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  color: #111827;
+  padding: 8px 11px;
+  cursor: pointer;
+}
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 30px 40px;
+  color: #6b7280;
+  font-size: .82rem;
+}
+
+@media (max-width: 700px) {
+  .adminBar {
+    padding: 8px 20px;
+    font-size: .72rem;
+  }
+  .header {
+    position: relative;
+    padding: 22px 20px;
+  }
+
+  .menuButton {
+    display: block;
+  }
+
+  .nav {
+    display: none;
+    position: absolute;
+    z-index: 2;
+    top: 100%;
+    left: 20px;
+    right: 20px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: 8px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    box-shadow: 0 12px 30px rgba(17, 24, 39, .12);
+  }
+
+  .navOpen {
+    display: flex;
+  }
+
+  .nav a {
+    padding: 11px 12px;
+  }
+
+  .footer {
+    flex-direction: column;
+    padding: 24px 20px;
+  }
+}

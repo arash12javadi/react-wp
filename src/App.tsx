@@ -5,7 +5,9 @@ import AdminLayout, { type AdminSection } from './components/AdminLayout';
 import PostEditor from './components/PostEditor';
 import PostsManager from './components/PostsManager';
 import SiteSettings from './components/SiteSettings';
+import PublicHome from './components/PublicHome';
 import type { Post } from './lib/types';
+import { getUserRole, canAccessAdmin, canManageSettings } from './lib/roles';
 import styles from './Dashboard.module.css';
 
 const getSupabaseClient = (): SupabaseClient | null => {
@@ -100,6 +102,7 @@ function InstalledDashboard({ supabase }: { supabase: SupabaseClient }) {
   const [creatingPost, setCreatingPost] = useState(false);
   const [siteTitle, setSiteTitle] = useState('React-WP');
   const [authLoading, setAuthLoading] = useState(true);
+  const role = session ? getUserRole(session.user) : 'subscriber';
 
   useEffect(() => {
     let mounted = true;
@@ -137,6 +140,10 @@ function InstalledDashboard({ supabase }: { supabase: SupabaseClient }) {
     return <LoginScreen supabase={supabase} onLogin={setSession} />;
   }
 
+  if (!canAccessAdmin(role)) {
+    return <PublicHome />;
+  }
+
   const navigate = (section: AdminSection) => {
     setActiveSection(section);
     setEditingPost(null);
@@ -151,16 +158,16 @@ function InstalledDashboard({ supabase }: { supabase: SupabaseClient }) {
   let content;
   if (activeSection === 'posts') {
     content = creatingPost ? (
-      <PostEditor onSaved={() => setCreatingPost(false)} onCancel={() => setCreatingPost(false)} />
+      <PostEditor role={role} onSaved={() => setCreatingPost(false)} onCancel={() => setCreatingPost(false)} />
     ) : editingPost ? (
-      <PostEditor post={editingPost} onSaved={() => setEditingPost(null)} onCancel={() => setEditingPost(null)} />
+      <PostEditor role={role} post={editingPost} onSaved={() => setEditingPost(null)} onCancel={() => setEditingPost(null)} />
     ) : (
-      <PostsManager onCreate={() => setCreatingPost(true)} onEdit={(post) => {
+      <PostsManager role={role} onCreate={() => setCreatingPost(true)} onEdit={(post) => {
         setEditingPost(post);
         setCreatingPost(false);
       }} />
     );
-  } else if (activeSection === 'settings') {
+  } else if (activeSection === 'settings' && canManageSettings(role)) {
     content = <SiteSettings onSiteTitleChange={setSiteTitle} />;
   } else if (activeSection === 'comments') {
     content = <SimpleSection title="Comments" description="Comment moderation will appear here." />;
@@ -177,6 +184,8 @@ function InstalledDashboard({ supabase }: { supabase: SupabaseClient }) {
       onLogout={() => void logout()}
       userEmail={session.user.email}
       siteTitle={siteTitle}
+      role={role}
+      onViewSite={() => { window.location.href = '/'; }}
     >
       {content}
     </AdminLayout>
@@ -186,6 +195,7 @@ function InstalledDashboard({ supabase }: { supabase: SupabaseClient }) {
 export default function App() {
   const [isInstalled, setIsInstalled] = useState<boolean | null>(null);
   const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
+  const isAdminRoute = window.location.pathname.replace(/\/+$/, '') === '/admin';
 
   useEffect(() => {
     const client = getSupabaseClient();
@@ -220,5 +230,9 @@ export default function App() {
     }} />;
   }
 
-  return supabase ? <InstalledDashboard supabase={supabase} /> : <SetupWizard onComplete={() => setIsInstalled(true)} />;
+  if (isAdminRoute) {
+    return supabase ? <InstalledDashboard supabase={supabase} /> : <SetupWizard onComplete={() => setIsInstalled(true)} />;
+  }
+
+  return <PublicHome />;
 }

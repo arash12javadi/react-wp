@@ -31,6 +31,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
          set option_value = excluded.option_value`,
         ['site_title', siteTitle, 'admin_email', adminEmail, 'installed', 'true'],
       );
+      await client.query(
+        `update auth.users
+         set raw_user_meta_data = coalesce(raw_user_meta_data, '{}'::jsonb) || jsonb_build_object('role', 'administrator')
+         where lower(email) = lower($1)`,
+        [adminEmail],
+      );
       await client.end();
       return res.status(200).json({ success: true });
     }

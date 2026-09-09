@@ -29,10 +29,33 @@ alter table public.posts enable row level security;
 alter table public.comments enable row level security;
 alter table public.options enable row level security;
 
+drop policy if exists "Public can read published posts" on public.posts;
+create policy "Public can read published posts"
+  on public.posts for select to anon, authenticated
+  using (status = 'published');
+
 drop policy if exists "Authenticated users can manage posts" on public.posts;
-create policy "Authenticated users can manage posts"
+drop policy if exists "Administrators and editors manage posts" on public.posts;
+create policy "Administrators and editors manage posts"
   on public.posts for all to authenticated
-  using (true) with check (true);
+  using ((auth.jwt() -> 'user_metadata' ->> 'role') in ('administrator', 'editor', 'super_admin'))
+  with check ((auth.jwt() -> 'user_metadata' ->> 'role') in ('administrator', 'editor', 'super_admin'));
+
+drop policy if exists "Authors and contributors manage own posts" on public.posts;
+create policy "Authors and contributors manage own posts"
+  on public.posts for all to authenticated
+  using (
+    author_id = auth.uid()
+    and (auth.jwt() -> 'user_metadata' ->> 'role') in ('author', 'contributor')
+  )
+  with check (
+    author_id = auth.uid()
+    and (auth.jwt() -> 'user_metadata' ->> 'role') in ('author', 'contributor')
+    and (
+      (auth.jwt() -> 'user_metadata' ->> 'role') = 'author'
+      or status = 'draft'
+    )
+  );
 
 drop policy if exists "Authenticated users can manage comments" on public.comments;
 create policy "Authenticated users can manage comments"

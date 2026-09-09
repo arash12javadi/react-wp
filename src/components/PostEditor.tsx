@@ -1,12 +1,14 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { getSupabaseClient } from '../lib/db';
 import type { Post, PostInput } from '../lib/types';
+import { canManageAllPosts, canPublishPosts, type UserRole } from '../lib/roles';
 import styles from './PostEditor.module.css';
 
 interface PostEditorProps {
   post?: Post | null;
   onSaved: () => void;
   onCancel: () => void;
+  role: UserRole;
 }
 
 const emptyPost: PostInput = {
@@ -25,7 +27,7 @@ const slugify = (value: string) =>
     .replace(/[\s_-]+/g, '-')
     .replace(/^-+|-+$/g, '');
 
-export default function PostEditor({ post, onSaved, onCancel }: PostEditorProps) {
+export default function PostEditor({ post, onSaved, onCancel, role }: PostEditorProps) {
   const [form, setForm] = useState<PostInput>(emptyPost);
   const [slugTouched, setSlugTouched] = useState(Boolean(post));
   const [loading, setLoading] = useState(false);
@@ -74,9 +76,17 @@ export default function PostEditor({ post, onSaved, onCancel }: PostEditorProps)
         throw new Error('A title and slug are required.');
       }
       const supabase = getSupabaseClient();
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) throw new Error('You must be signed in to save posts.');
+      if (payload.status === 'published' && !canPublishPosts(role)) {
+        throw new Error('Your role cannot publish posts.');
+      }
+      if (!canManageAllPosts(role) && post?.author_id !== userData.user.id) {
+        throw new Error('You can only edit your own posts.');
+      }
       const result = post
         ? await supabase.from('posts').update(payload).eq('id', post.id)
-        : await supabase.from('posts').insert(payload);
+        : await supabase.from('posts').insert({ ...payload, author_id: userData.user.id });
       if (result.error) {
         if (result.error.code === '23505') {
           throw new Error('That slug is already in use. Choose a different one.');
@@ -152,7 +162,7 @@ export default function PostEditor({ post, onSaved, onCancel }: PostEditorProps)
           </label>
           <label>
             Status
-            <select value={form.status} onChange={(event) => updateField('status', event.target.value)}>
+            <select value={form.status} onChange={(event) => updateField('status', event.target.value)} disabled={!canPublishPosts(role)}>
               <option value="draft">Draft</option>
               <option value="published">Published</option>
             </select>
