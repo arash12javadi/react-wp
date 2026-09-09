@@ -27,12 +27,12 @@ export default function App() {
 
       try {
         const { data, error } = await supabase
-          .from('settings')
-          .select('*')
-          .eq('key', 'installed')
+          .from('options')
+          .select('option_value')
+          .eq('option_name', 'installed')
           .single();
 
-        if (data && data.value === 'true' && !error) {
+        if (data && data.option_value === 'true' && !error) {
           setIsInstalled(true);
         } else {
           setIsInstalled(false);

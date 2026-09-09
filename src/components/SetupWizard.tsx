@@ -1,21 +1,26 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import styles from './SetupWizard.module.css';
+
+const getProjectRef = (url: string): string => {
+  const hostname = new URL(url).hostname.toLowerCase();
+  return hostname.endsWith('.supabase.co') ? hostname.split('.')[0] : '';
+};
 
 interface SetupWizardProps {
   onComplete: () => void;
 }
 
 export default function SetupWizard({ onComplete }: SetupWizardProps) {
-  // Step state (1: Connection, 2: Site & Admin Details)
+  // Wizard state (1: Connection, 2: Site & Admin Details)
   const [step, setStep] = useState<1 | 2>(1);
 
-  // Connection fields
+  // Step 1: Connection fields
   const [supabaseUrl, setSupabaseUrl] = useState<string>('');
   const [supabaseKey, setSupabaseKey] = useState<string>('');
-  const [serviceRoleKey, setServiceRoleKey] = useState<string>('');
+  const [dbPassword, setDbPassword] = useState<string>('');
 
-  // Admin & Site fields
+  // Step 2: Admin & Site fields
   const [siteTitle, setSiteTitle] = useState<string>('My React-WP Site');
   const [adminEmail, setAdminEmail] = useState<string>('');
   const [adminPassword, setAdminPassword] = useState<string>('');
@@ -24,41 +29,31 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
 
-  // Helper to validate legacy JWTs or modern Supabase secret keys
-  const isValidServiceRoleKeyFormat = (token: string): boolean => {
-    if (!token) return false;
-
-    // Modern Supabase Secret Key format (sb_secret_... / sbp_...)
-    if (token.startsWith('sb_secret_') || token.startsWith('sbp_') || token.startsWith('sb_')) {
-      return token.length > 20;
-    }
-
-    // Legacy JWT format (eyJ...)
-    try {
-      const parts = token.split('.');
-      if (parts.length !== 3) return false;
-      const payload = JSON.parse(atob(parts[1]));
-      return payload.role === 'service_role' || payload.role === 'supabase_admin';
-    } catch {
-      return false;
-    }
-  };
-
-  // Step 1: Verify Connection credentials
-  const handleCheckConnection = async (e: React.SubmitEvent<HTMLFormElement>): Promise<void> => {
+  // Step 1: Verify Connection credentials via Supabase REST API and database test route
+  const handleCheckConnection = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
     const cleanUrl = supabaseUrl.trim().replace(/\/$/, '');
     const cleanAnonKey = supabaseKey.trim();
-    const cleanServiceKey = serviceRoleKey.trim();
 
     try {
-      new URL(cleanUrl);
+      const parsedUrl = new URL(cleanUrl);
+      if (!parsedUrl.protocol.startsWith('http')) {
+        throw new Error('Supabase Project URL must start with http:// or https://');
+      }
 
-      if (!isValidServiceRoleKeyFormat(cleanServiceKey)) {
-        throw new Error('The provided Service Role Key format is invalid.');
+      if (!parsedUrl.hostname.toLowerCase().endsWith('.supabase.co')) {
+        throw new Error('Supabase Project URL must be like https://<project-ref>.supabase.co');
+      }
+
+      if (!cleanAnonKey) {
+        throw new Error('Supabase Publishable / Anon Key is required.');
+      }
+
+      if (!dbPassword.trim()) {
+        throw new Error('Supabase Database Password is required.');
       }
 
       const settingsResponse = await fetch(`${cleanUrl}/auth/v1/settings`, {
@@ -69,17 +64,29 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
       });
 
       if (settingsResponse.status === 401 || settingsResponse.status === 403) {
-        throw new Error('Invalid Supabase Anon/Publishable API Key.');
+        throw new Error('Invalid Supabase Project URL or Publishable / Anon Key.');
       }
 
       if (!settingsResponse.ok) {
         throw new Error(`Could not reach Supabase Auth server. Status: ${settingsResponse.status}`);
       }
 
-      // ONLY save public/non-sensitive settings to localStorage
+      const schemaResponse = await fetch('/api/install-schema', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectRef: getProjectRef(cleanUrl),
+          dbPassword: dbPassword.trim(),
+        }),
+      });
+
+      if (!schemaResponse.ok) {
+        const data = await schemaResponse.json().catch(() => ({}));
+        throw new Error(data.error || 'Database setup failed.');
+      }
+
       localStorage.setItem('supabase_url', cleanUrl);
       localStorage.setItem('supabase_key', cleanAnonKey);
-
       setStep(2);
     } catch (err: unknown) {
       if (err instanceof Error) {
@@ -92,88 +99,8 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
     }
   };
 
-  // Execute SQL schema creation via backend API endpoint or direct fallback
-  const runDatabaseMigrations = async (cleanUrl: string, cleanServiceKey: string): Promise<void> => {
-    const projectRef = cleanUrl.replace('https://', '').split('.')[0];
-    const dbConnectionString = `postgres://postgres:${cleanServiceKey}@db.${projectRef}.supabase.co:5432/postgres`;
-
-    // 1. Primary Attempt: Call serverless endpoint (must match file name api/install-schema.ts)
-    try {
-      const response = await fetch('/api/install-schema', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dbConnectionString }),
-      });
-
-      if (response.ok) {
-        return;
-      }
-
-      if (response.status !== 404) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || `Server migration failed with status ${response.status}`);
-      }
-    } catch (err) {
-      console.warn('Serverless endpoint unavailable. Falling back to direct Supabase Management execution...', err);
-    }
-
-    // 2. Fallback: Execute DDL directly via Supabase Management API
-    const migrationSql = `
-      CREATE TABLE IF NOT EXISTS public.posts (
-        id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-        title TEXT NOT NULL,
-        slug TEXT UNIQUE NOT NULL,
-        content TEXT DEFAULT '',
-        excerpt TEXT DEFAULT '',
-        status VARCHAR(20) DEFAULT 'draft',
-        author_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS public.comments (
-        id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-        post_id BIGINT REFERENCES public.posts(id) ON DELETE CASCADE,
-        author_name TEXT NOT NULL,
-        author_email TEXT NOT NULL,
-        content TEXT NOT NULL,
-        status VARCHAR(20) DEFAULT 'pending',
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS public.options (
-        option_name TEXT PRIMARY KEY,
-        option_value TEXT NOT NULL
-      );
-
-      ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
-      ALTER TABLE public.comments ENABLE ROW LEVEL SECURITY;
-      ALTER TABLE public.options ENABLE ROW LEVEL SECURITY;
-
-      -- Permissive policies so initial options can be saved post-signup
-      CREATE POLICY "Allow public read access on options" ON public.options FOR SELECT USING (true);
-      CREATE POLICY "Allow authenticated full access on options" ON public.options FOR ALL TO authenticated USING (true) WITH CHECK (true);
-    `;
-
-    const mgmtResponse = await fetch(`https://api.supabase.com/v1/projects/${projectRef}/query`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${cleanServiceKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ query: migrationSql }),
-    });
-
-    if (!mgmtResponse.ok) {
-      const errorData = await mgmtResponse.json().catch(() => ({}));
-      throw new Error(
-        errorData.message || 'Automatic database setup failed. Please check your Secret Key and project permissions.'
-      );
-    }
-  };
-
-  // Step 2: Create Tables, Register Superadmin, and Finish Setup
-  const handleCompleteInstallation = async (e: React.SubmitEvent<HTMLFormElement>): Promise<void> => {
+  // Step 2: Execute migrations, register Superadmin, and update options
+  const handleCompleteInstallation = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     setLoading(true);
     setError('');
@@ -181,19 +108,20 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
     try {
       const url = localStorage.getItem('supabase_url') || supabaseUrl;
       const key = localStorage.getItem('supabase_key') || supabaseKey;
-      const sKey = serviceRoleKey.trim();
 
-      // 1. Run Migrations using state variable
-      if (sKey) {
-        await runDatabaseMigrations(url, sKey);
-      } else {
-        throw new Error('Service Role Key is missing. Please go back to Step 1 and re-enter it.');
+      const supabase = createClient(url, key);
+      const { error: schemaError } = await supabase
+        .from('options')
+        .select('option_name')
+        .limit(1);
+
+      if (schemaError) {
+        throw new Error(
+          'The Supabase schema is not installed. Run supabase/schema.sql in the Supabase SQL Editor, then try again.',
+        );
       }
 
-      // 2. Initialize Supabase client
-      const supabase = createClient(url, key);
-
-      // 3. Sign up Superadmin user
+      // Initialize Supabase client and register admin user.
       const { data: authData, error: signUpError } = await supabase.auth.signUp({
         email: adminEmail,
         password: adminPassword,
@@ -206,31 +134,30 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
       });
 
       if (signUpError) {
-        throw new Error(`Failed to create Superadmin user: ${signUpError.message}`);
+        throw new Error(`Superadmin creation failed: ${signUpError.message}`);
       }
 
-      // 4. Save site settings in database
-      if (authData.user) {
-        const { error: optionError } = await supabase.from('options').upsert([
-          { option_name: 'site_title', option_value: siteTitle },
-          { option_name: 'admin_email', option_value: adminEmail },
-        ]);
+      const settingsResponse = await fetch('/api/install-schema', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectRef: getProjectRef(url),
+          dbPassword: dbPassword.trim(),
+          siteTitle,
+          adminEmail,
+          saveSettings: true,
+        }),
+      });
 
-        if (optionError) {
-          console.warn('Could not set initial options:', optionError.message);
-        }
+      if (!settingsResponse.ok) {
+        const data = await settingsResponse.json().catch(() => ({}));
+        throw new Error(data.error || 'Could not save site settings.');
       }
 
-      // Wipe secret key state before completing installation
-      setServiceRoleKey('');
-
+      // Clear sensitive memory state and complete setup
       onComplete();
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError('Failed to complete installation.');
-      }
+      setError(err instanceof Error ? err.message : 'Installation failed.');
     } finally {
       setLoading(false);
     }
@@ -239,122 +166,97 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
   return (
     <div className={styles.container}>
       <div className={styles.card}>
-        <h2 className={styles.title}>⚙️ React-WP Setup Wizard</h2>
-        <p className={styles.subtitle}>
-          {step === 1 ? 'Step 1: Connect your Supabase database.' : 'Step 2: Create Superadmin account & site details.'}
-        </p>
+        <h2>⚙️ React-WP Setup Wizard</h2>
+        <p>{step === 1 ? 'Step 1: Database Credentials' : 'Step 2: Admin & Site Setup'}</p>
 
         {error && <div className={styles.errorBox}>{error}</div>}
 
         {step === 1 ? (
-          <form onSubmit={handleCheckConnection} id="supabase-config-form">
+          <form onSubmit={handleCheckConnection} id="connection-form">
             <div className={styles.formGroup}>
-              <label htmlFor="supabaseUrl" className={styles.label}>Supabase Project URL</label>
+              <label htmlFor="supabaseUrl">Supabase Project URL</label>
               <input
                 id="supabaseUrl"
-                name="supabaseUrl"
                 type="text"
                 autoComplete="url"
                 value={supabaseUrl}
                 onChange={(e) => setSupabaseUrl(e.target.value)}
                 placeholder="https://your-project-ref.supabase.co"
-                className={styles.input}
                 required
               />
             </div>
 
             <div className={styles.formGroup}>
-              <label htmlFor="supabaseKey" className={styles.label}>Supabase Publishable / Anon Key</label>
+              <label htmlFor="supabaseKey">Supabase Publishable / Anon Key</label>
               <input
                 id="supabaseKey"
-                name="supabaseKey"
                 type="password"
                 autoComplete="current-password"
                 value={supabaseKey}
                 onChange={(e) => setSupabaseKey(e.target.value)}
-                placeholder="sbp_... or eyJhbGciOiJIUzI1NiIsInR5cCI6..."
-                className={styles.input}
+                placeholder="sbp_... or eyJ..."
                 required
               />
             </div>
 
             <div className={styles.formGroup}>
-              <label htmlFor="serviceRoleKey" className={styles.label}>Supabase Service Role / Secret Key</label>
+              <label htmlFor="dbPassword">Supabase Database Password</label>
               <input
-                id="serviceRoleKey"
-                name="serviceRoleKey"
+                id="dbPassword"
                 type="password"
                 autoComplete="new-password"
-                value={serviceRoleKey}
-                onChange={(e) => setServiceRoleKey(e.target.value)}
-                placeholder="sb_secret_... or eyJhbGciOiJIUzI1NiIsInR5cCI6..."
-                className={styles.input}
+                value={dbPassword}
+                onChange={(e) => setDbPassword(e.target.value)}
+                placeholder="Database password from Supabase Settings → Database"
                 required
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className={`${styles.button} ${loading ? styles.buttonDisabled : ''}`}
-            >
-              {loading ? 'Checking Connection...' : '🔍 Connect Database & Next'}
+            <button type="submit" disabled={loading}>
+              {loading ? 'Testing Connection...' : 'Next →'}
             </button>
           </form>
         ) : (
-          <form onSubmit={handleCompleteInstallation} id="superadmin-config-form">
+          <form onSubmit={handleCompleteInstallation} id="installation-form">
             <div className={styles.formGroup}>
-              <label htmlFor="siteTitle" className={styles.label}>Site Title</label>
+              <label htmlFor="siteTitle">Site Title</label>
               <input
                 id="siteTitle"
-                name="siteTitle"
                 type="text"
                 autoComplete="off"
                 value={siteTitle}
                 onChange={(e) => setSiteTitle(e.target.value)}
-                placeholder="My Awesome Website"
-                className={styles.input}
                 required
               />
             </div>
 
             <div className={styles.formGroup}>
-              <label htmlFor="adminEmail" className={styles.label}>Superadmin Email</label>
+              <label htmlFor="adminEmail">Admin Email</label>
               <input
                 id="adminEmail"
-                name="adminEmail"
                 type="email"
                 autoComplete="username"
                 value={adminEmail}
                 onChange={(e) => setAdminEmail(e.target.value)}
-                placeholder="admin@example.com"
-                className={styles.input}
                 required
               />
             </div>
 
             <div className={styles.formGroup}>
-              <label htmlFor="adminPassword" className={styles.label}>Superadmin Password</label>
+              <label htmlFor="adminPassword">Admin Password</label>
               <input
                 id="adminPassword"
-                name="adminPassword"
                 type="password"
                 autoComplete="new-password"
                 value={adminPassword}
                 onChange={(e) => setAdminPassword(e.target.value)}
-                placeholder="Minimum 6 characters"
-                className={styles.input}
                 minLength={6}
                 required
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className={`${styles.button} ${styles.buttonConnected} ${loading ? styles.buttonDisabled : ''}`}
-            >
-              {loading ? 'Executing Migrations & Creating Admin...' : '🚀 Complete Installation'}
+            <button type="submit" disabled={loading}>
+              {loading ? 'Building Database & Creating Admin...' : '🚀 Finish Installation'}
             </button>
 
             <button
