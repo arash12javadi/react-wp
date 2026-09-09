@@ -31,11 +31,14 @@ const checkDatabase = async (): Promise<boolean> => {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), 5000);
   try {
-    const response = await fetch(`${url.replace(/\/$/, '')}/rest/v1/options?select=option_name&limit=1`, {
-      headers: { apikey: key, Authorization: `Bearer ${key}` },
-      signal: controller.signal,
-    });
-    return response.ok;
+    const headers = { apikey: key, Authorization: `Bearer ${key}` };
+    const baseUrl = url.replace(/\/$/, '');
+    const responses = await Promise.all([
+      fetch(`${baseUrl}/rest/v1/options?select=option_name&limit=1`, { headers, signal: controller.signal }),
+      fetch(`${baseUrl}/rest/v1/posts?select=id&limit=1`, { headers, signal: controller.signal }),
+      fetch(`${baseUrl}/rest/v1/menus?select=id&limit=1`, { headers, signal: controller.signal }),
+    ]);
+    return responses.every((response) => response.ok);
   } catch {
     return false;
   } finally {
