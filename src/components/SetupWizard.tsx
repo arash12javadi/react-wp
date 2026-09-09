@@ -126,6 +126,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
         email: adminEmail,
         password: adminPassword,
         options: {
+          emailRedirectTo: `${window.location.origin}/admin`,
           data: {
             role: 'administrator',
             display_name: 'Administrator',

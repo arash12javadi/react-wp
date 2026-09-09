@@ -17,7 +17,7 @@ const defaults: SettingsForm = {
   siteTitle: 'My React-WP Site',
   siteDescription: '',
   adminEmail: '',
-  menuLinks: '[{"label":"Home","url":"/"},{"label":"Sample Page","url":"/sample-page"},{"label":"Admin Dashboard","url":"/admin"}]',
+  menuLinks: '[{"label":"Home","url":"/"},{"label":"Sample Page","url":"/sample-page"}]',
 };
 
 export default function SiteSettings({ onSiteTitleChange }: SiteSettingsProps) {

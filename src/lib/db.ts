@@ -1,8 +1,11 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 export const getSupabaseClient = (): SupabaseClient => {
-  const url = (import.meta as any).env?.VITE_SUPABASE_URL || localStorage.getItem('supabase_url');
-  const key = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || localStorage.getItem('supabase_key');
+  const url = localStorage.getItem('supabase_url') || (import.meta as any).env?.VITE_SUPABASE_URL;
+  const key =
+    localStorage.getItem('supabase_key') ||
+    (import.meta as any).env?.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
 
   if (!url || !key) {
     throw new Error('CMS is not configured.');

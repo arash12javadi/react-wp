@@ -5,15 +5,42 @@ import AdminLayout, { type AdminSection } from './components/AdminLayout';
 import PostEditor from './components/PostEditor';
 import PostsManager from './components/PostsManager';
 import SiteSettings from './components/SiteSettings';
+import MenuManager from './components/MenuManager';
 import PublicHome from './components/PublicHome';
 import type { Post } from './lib/types';
 import { getUserRole, canAccessAdmin, canManageSettings } from './lib/roles';
 import styles from './Dashboard.module.css';
 
 const getSupabaseClient = (): SupabaseClient | null => {
-  const url = (import.meta as any).env?.VITE_SUPABASE_URL || localStorage.getItem('supabase_url');
-  const key = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || localStorage.getItem('supabase_key');
+  const url = localStorage.getItem('supabase_url') || (import.meta as any).env?.VITE_SUPABASE_URL;
+  const key =
+    localStorage.getItem('supabase_key') ||
+    (import.meta as any).env?.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
   return url && key ? createClient(url, key) : null;
+};
+
+const checkDatabase = async (): Promise<boolean> => {
+  const url = localStorage.getItem('supabase_url') || (import.meta as any).env?.VITE_SUPABASE_URL;
+  const key =
+    localStorage.getItem('supabase_key') ||
+    (import.meta as any).env?.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
+  if (!url || !key) return false;
+
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(`${url.replace(/\/$/, '')}/rest/v1/options?select=option_name&limit=1`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+      signal: controller.signal,
+    });
+    return response.ok;
+  } catch {
+    return false;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
 };
 
 function LoginScreen({ supabase, onLogin }: { supabase: SupabaseClient; onLogin: (session: Session) => void }) {
@@ -26,13 +53,24 @@ function LoginScreen({ supabase, onLogin }: { supabase: SupabaseClient; onLogin:
     event.preventDefault();
     setLoading(true);
     setError('');
-    const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-    if (signInError || !data.session) {
-      setError(signInError?.message || 'Unable to sign in.');
-    } else {
-      onLogin(data.session);
+    try {
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError || !data.session) {
+        setError(signInError?.message || 'Unable to sign in.');
+      } else {
+        onLogin(data.session);
+      }
+    } catch (loginError: unknown) {
+      setError(
+        loginError instanceof TypeError
+          ? 'Supabase could not be reached. Your saved project URL may be old or invalid. Reconfigure the site with the current Supabase URL and publishable key.'
+          : loginError instanceof Error
+            ? loginError.message
+            : 'Unable to sign in.',
+      );
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
@@ -95,23 +133,43 @@ function SimpleSection({ title, description }: { title: string; description: str
   );
 }
 
-function InstalledDashboard({ supabase }: { supabase: SupabaseClient }) {
+function ConnectionError({ onReconfigure }: { onReconfigure: () => void }) {
+  return (
+    <div className={styles.loadingScreen} role="alert">
+      <div className={styles.loginCard}>
+        <h1>Supabase connection failed</h1>
+        <p>The saved Supabase project could not be reached. This usually means the project was deleted, paused, or its URL has changed.</p>
+        <button type="button" onClick={onReconfigure}>Reconfigure Supabase</button>
+      </div>
+    </div>
+  );
+}
+
+function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseClient; onReconfigure: () => void }) {
   const [session, setSession] = useState<Session | null>(null);
   const [activeSection, setActiveSection] = useState<AdminSection>('dashboard');
   const [editingPost, setEditingPost] = useState<Post | null>(null);
   const [creatingPost, setCreatingPost] = useState(false);
   const [siteTitle, setSiteTitle] = useState('React-WP');
   const [authLoading, setAuthLoading] = useState(true);
+  const [connectionError, setConnectionError] = useState(false);
   const role = session ? getUserRole(session.user) : 'subscriber';
 
   useEffect(() => {
     let mounted = true;
-    supabase.auth.getSession().then(({ data }) => {
-      if (mounted) {
+    supabase.auth.getSession()
+      .then(({ data, error }) => {
+        if (!mounted) return;
+        if (error) setConnectionError(true);
         setSession(data.session);
         setAuthLoading(false);
-      }
-    });
+      })
+      .catch(() => {
+        if (mounted) {
+          setConnectionError(true);
+          setAuthLoading(false);
+        }
+      });
     const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       if (mounted) setSession(nextSession);
     });
@@ -127,10 +185,15 @@ function InstalledDashboard({ supabase }: { supabase: SupabaseClient }) {
       .select('option_value')
       .eq('option_name', 'site_title')
       .maybeSingle()
-      .then(({ data }) => {
+      .then(({ data, error }) => {
         if (data?.option_value) setSiteTitle(data.option_value);
+        if (error && error.code !== 'PGRST116') setConnectionError(true);
       });
   }, [supabase]);
+
+  if (connectionError) {
+    return <ConnectionError onReconfigure={onReconfigure} />;
+  }
 
   if (authLoading) {
     return <div className={styles.loadingScreen} role="status">Loading dashboard…</div>;
@@ -141,7 +204,7 @@ function InstalledDashboard({ supabase }: { supabase: SupabaseClient }) {
   }
 
   if (!canAccessAdmin(role)) {
-    return <PublicHome />;
+    return <PublicHome onReconfigure={onReconfigure} />;
   }
 
   const navigate = (section: AdminSection) => {
@@ -167,6 +230,8 @@ function InstalledDashboard({ supabase }: { supabase: SupabaseClient }) {
         setCreatingPost(false);
       }} />
     );
+  } else if (activeSection === 'menus' && canManageSettings(role)) {
+    content = <MenuManager />;
   } else if (activeSection === 'settings' && canManageSettings(role)) {
     content = <SiteSettings onSiteTitleChange={setSiteTitle} />;
   } else if (activeSection === 'comments') {
@@ -193,46 +258,45 @@ function InstalledDashboard({ supabase }: { supabase: SupabaseClient }) {
 }
 
 export default function App() {
-  const [isInstalled, setIsInstalled] = useState<boolean | null>(null);
   const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
+  const [checkingDatabase, setCheckingDatabase] = useState(true);
   const isAdminRoute = window.location.pathname.replace(/\/+$/, '') === '/admin';
+  const reconfigure = () => {
+    localStorage.removeItem('supabase_url');
+    localStorage.removeItem('supabase_key');
+    window.location.reload();
+  };
 
   useEffect(() => {
     const client = getSupabaseClient();
     if (!client) {
-      setIsInstalled(false);
+      setCheckingDatabase(false);
       return;
     }
-    setSupabase(client);
-    void (async () => {
-      try {
-        const { data, error } = await client
-          .from('options')
-          .select('option_value')
-          .eq('option_name', 'installed')
-          .maybeSingle();
-        setIsInstalled(!error && data?.option_value === 'true');
-      } catch {
-        setIsInstalled(false);
-      }
-    })();
+
+    const fallbackTimer = window.setTimeout(() => setCheckingDatabase(false), 6000);
+    void checkDatabase().then((connected) => {
+      window.clearTimeout(fallbackTimer);
+      if (connected) setSupabase(client);
+      setCheckingDatabase(false);
+    });
+    return () => window.clearTimeout(fallbackTimer);
   }, []);
 
-  if (isInstalled === null) {
-    return <div className={styles.loadingScreen} role="status">Loading React-WP…</div>;
+  if (checkingDatabase) {
+    return <div className={styles.loadingScreen} role="status">Checking database connection…</div>;
   }
 
-  if (!isInstalled) {
+  if (!supabase) {
     return <SetupWizard onComplete={() => {
       const client = getSupabaseClient();
       setSupabase(client);
-      setIsInstalled(true);
     }} />;
   }
 
   if (isAdminRoute) {
-    return supabase ? <InstalledDashboard supabase={supabase} /> : <SetupWizard onComplete={() => setIsInstalled(true)} />;
+    return <InstalledDashboard supabase={supabase} onReconfigure={reconfigure} />;
   }
 
-  return <PublicHome />;
+  return <PublicHome onReconfigure={reconfigure} />;
 }

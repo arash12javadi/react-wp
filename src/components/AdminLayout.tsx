@@ -3,7 +3,7 @@ import styles from './AdminLayout.module.css';
 import { canManageComments, canManageSettings, type UserRole, roleLabels } from '../lib/roles';
 import AdminToolbar from './AdminToolbar';
 
-export type AdminSection = 'dashboard' | 'posts' | 'comments' | 'settings' | 'profile';
+export type AdminSection = 'dashboard' | 'posts' | 'comments' | 'menus' | 'settings' | 'profile';
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -21,6 +21,7 @@ const baseNavigation: Array<{ id: AdminSection; label: string; icon: string }> =
   { id: 'posts', label: 'Posts', icon: '▤' },
   { id: 'comments', label: 'Comments', icon: '◌' },
   { id: 'settings', label: 'Settings', icon: '⚙' },
+  { id: 'menus', label: 'Menus', icon: '☷' },
   { id: 'profile', label: 'Profile', icon: '◉' },
 ];
 
@@ -37,7 +38,8 @@ export default function AdminLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const navigation = baseNavigation.filter((item) =>
     (item.id !== 'comments' || canManageComments(role)) &&
-    (item.id !== 'settings' || canManageSettings(role)),
+    (item.id !== 'settings' || canManageSettings(role)) &&
+    (item.id !== 'menus' || canManageSettings(role)),
   );
 
   const navigate = (section: AdminSection) => {

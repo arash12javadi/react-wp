@@ -9,7 +9,6 @@ const defaultTitle = 'Just another React-WP site';
 const defaultMenuLinks = [
   { label: 'Home', url: '/' },
   { label: 'Sample Page', url: '/sample-page' },
-  { label: 'Admin Dashboard', url: '/admin' },
 ];
 const seedPost: Post = {
   id: 0,
@@ -27,7 +26,7 @@ const formatDate = (date: string) =>
     ? 'Welcome'
     : new Date(date).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
 
-export default function PublicHome() {
+export default function PublicHome({ onReconfigure }: { onReconfigure?: () => void }) {
   const [siteTitle, setSiteTitle] = useState(defaultTitle);
   const [posts, setPosts] = useState<Post[]>([]);
   const [search, setSearch] = useState('');
@@ -40,16 +39,17 @@ export default function PublicHome() {
   useEffect(() => {
     let mounted = true;
     const loadHome = async () => {
-      const supabase = getSupabaseClient();
-      const { data: sessionData } = await supabase.auth.getSession();
-      const user = sessionData.session?.user;
-      if (mounted && user) {
-        const role = getUserRole(user);
-        setAdminEmail(user.email || undefined);
-        setUserRole(role);
-      }
-
       try {
+        const supabase = getSupabaseClient();
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
+        const user = sessionData.session?.user;
+        if (mounted && user) {
+          const role = getUserRole(user);
+          setAdminEmail(user.email || undefined);
+          setUserRole(role);
+        }
+
         const [{ data: option }, { data: menuOption }, { data, error: postsError }] = await Promise.all([
           supabase.from('options').select('option_value').eq('option_name', 'site_title').maybeSingle(),
           supabase.from('options').select('option_value').eq('option_name', 'menu_links').maybeSingle(),
@@ -121,7 +121,12 @@ export default function PublicHome() {
               </div>
               {loading && <span className={styles.muted}>Loading…</span>}
             </div>
-            {error && <p className={styles.error} role="alert">Posts could not be loaded. Showing the default post.</p>}
+            {error && (
+              <div className={styles.error} role="alert">
+                <p>Supabase could not be reached, so database posts are unavailable.</p>
+                {onReconfigure && <button type="button" onClick={onReconfigure}>Reconfigure Supabase</button>}
+              </div>
+            )}
             {visiblePosts.length ? visiblePosts.map((post) => (
               <article className={styles.postCard} key={post.id}>
                 <p className={styles.postMeta}>{formatDate(post.created_at)} · {post.status}</p>
