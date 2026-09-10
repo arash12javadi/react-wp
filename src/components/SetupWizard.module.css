@@ -45,6 +45,46 @@
   word-break: break-word;
 }
 
+.guideBox {
+  background-color: #f7fafc;
+  border: 1px solid #cbd5e0;
+  border-radius: 8px;
+  color: #4a5568;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  margin: 0.75rem 0 1.25rem;
+  padding: 1rem;
+  text-align: left;
+}
+
+.guideBox strong {
+  color: #2d3748;
+}
+
+.guideBox p {
+  margin: 0.6rem 0 0;
+  text-align: left;
+}
+
+.guideBox p:first-of-type {
+  margin-top: 0.75rem;
+}
+
+.guideToggle {
+  background: none;
+  border: none;
+  color: #3182ce;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.guideToggleRow {
+  margin: 0 0 1rem;
+  text-align: left;
+}
+
 .formGroup {
   margin-bottom: 1.25rem;
   display: flex;

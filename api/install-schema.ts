@@ -9,7 +9,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const body = req.body || {};
   const projectRef = typeof body.projectRef === 'string' ? body.projectRef.trim() : '';
   const dbPassword = typeof body.dbPassword === 'string' ? body.dbPassword : '';
-  const connectionString = typeof body.connectionString === 'string' ? body.connectionString.trim() : '';
+  const connectionString = typeof body.connectionString === 'string'
+    ? body.connectionString.trim()
+    : typeof body.databaseUrl === 'string'
+      ? body.databaseUrl.trim()
+      : '';
   const { saveSettings, siteTitle, adminEmail } = body;
   if ((!projectRef || !dbPassword) && !connectionString) {
     return res.status(400).json({ error: 'Project reference and database password, or a PostgreSQL connection string, are required.' });

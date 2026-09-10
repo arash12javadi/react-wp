@@ -37,12 +37,17 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
     e.preventDefault();
     setLoading(true);
     setError('');
-    setShowConnectionString(false);
 
     const cleanUrl = supabaseUrl.trim().replace(/\/$/, '');
     const cleanAnonKey = supabaseKey.trim();
+    const suppliedConnectionString = connectionString.trim();
 
     try {
+      if (showConnectionString && !suppliedConnectionString) {
+        throw new Error('Paste the PostgreSQL connection string from Supabase before trying again.');
+      }
+      if (!suppliedConnectionString) setShowConnectionString(false);
+
       const parsedUrl = new URL(cleanUrl);
       if (!parsedUrl.protocol.startsWith('http')) {
         throw new Error('Supabase Project URL must start with http:// or https://');
@@ -81,7 +86,8 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
         body: JSON.stringify({
           projectRef: getProjectRef(cleanUrl),
           dbPassword: dbPassword.trim(),
-          connectionString: connectionString.trim() || undefined,
+          connectionString: suppliedConnectionString || undefined,
+          databaseUrl: suppliedConnectionString || undefined,
         }),
       });
 
@@ -150,7 +156,8 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
         body: JSON.stringify({
           projectRef: getProjectRef(url),
           dbPassword: dbPassword.trim(),
-          connectionString: connectionString.trim() || undefined,
+          connectionString: suppliedConnectionString || undefined,
+          databaseUrl: suppliedConnectionString || undefined,
           siteTitle,
           adminEmail,
           saveSettings: true,
@@ -235,17 +242,17 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
               </div>
             )}
 
-            <p>
+            <p className={styles.guideToggleRow}>
               <button
                 type="button"
                 onClick={() => setShowGuide((visible) => !visible)}
-                style={{ background: 'none', border: 'none', color: '#3182ce', cursor: 'pointer', padding: 0 }}
+                className={styles.guideToggle}
               >
                 {showGuide ? 'Hide Supabase credential guide' : 'How do I find these credentials?'}
               </button>
             </p>
             {showGuide && (
-              <div className={styles.errorBox} role="note">
+              <div className={styles.guideBox} role="note">
                 <strong>Where to find your Supabase credentials</strong>
                 <p>Open your Supabase project and click <strong>Connect</strong>.</p>
                 <p>For the Project URL and publishable/anon key, use <strong>Project Settings → API</strong>. Never use a service_role or secret key here.</p>
