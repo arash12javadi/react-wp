@@ -6,13 +6,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { projectRef, dbPassword, saveSettings, siteTitle, adminEmail } = req.body || {};
-  if (!projectRef || !dbPassword) {
-    return res.status(400).json({ error: 'Project reference and database password are required.' });
+  const { projectRef, dbPassword, connectionString, saveSettings, siteTitle, adminEmail } = req.body || {};
+  if ((!projectRef || !dbPassword) && !connectionString) {
+    return res.status(400).json({ error: 'Project reference and database password, or a PostgreSQL connection string, are required.' });
   }
 
   const client = new Client({
-    connectionString: `postgres://postgres:${encodeURIComponent(dbPassword)}@db.${projectRef}.supabase.co:5432/postgres`,
+    connectionString: connectionString || `postgres://postgres:${encodeURIComponent(dbPassword)}@db.${projectRef}.supabase.co:5432/postgres`,
     ssl: { rejectUnauthorized: false },
     connectionTimeoutMillis: 15000,
   });

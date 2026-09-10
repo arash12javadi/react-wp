@@ -19,6 +19,8 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
   const [supabaseUrl, setSupabaseUrl] = useState<string>('');
   const [supabaseKey, setSupabaseKey] = useState<string>('');
   const [dbPassword, setDbPassword] = useState<string>('');
+  const [connectionString, setConnectionString] = useState<string>('');
+  const [showConnectionString, setShowConnectionString] = useState(false);
 
   // Step 2: Admin & Site fields
   const [siteTitle, setSiteTitle] = useState<string>('My React-WP Site');
@@ -34,6 +36,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setShowConnectionString(false);
 
     const cleanUrl = supabaseUrl.trim().replace(/\/$/, '');
     const cleanAnonKey = supabaseKey.trim();
@@ -77,11 +80,13 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
         body: JSON.stringify({
           projectRef: getProjectRef(cleanUrl),
           dbPassword: dbPassword.trim(),
+          connectionString: connectionString.trim() || undefined,
         }),
       });
 
       if (!schemaResponse.ok) {
         const data = await schemaResponse.json().catch(() => ({}));
+        setShowConnectionString(true);
         throw new Error(data.error || 'Database setup failed.');
       }
 
@@ -144,6 +149,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
         body: JSON.stringify({
           projectRef: getProjectRef(url),
           dbPassword: dbPassword.trim(),
+          connectionString: connectionString.trim() || undefined,
           siteTitle,
           adminEmail,
           saveSettings: true,
@@ -212,6 +218,27 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
                 required
               />
             </div>
+
+            {showConnectionString && (
+              <div className={styles.formGroup}>
+                <label htmlFor="connectionString">PostgreSQL Connection String (fallback)</label>
+                <input
+                  id="connectionString"
+                  type="password"
+                  autoComplete="off"
+                  value={connectionString}
+                  onChange={(e) => setConnectionString(e.target.value)}
+                  placeholder="postgresql://postgres:...@.../postgres"
+                />
+                <small>
+                  The automatic connection failed. Copy the exact connection string from your Supabase Connect dialog.
+                  {' '}
+                  <a href="https://supabase.com/docs/guides/platform/connecting-to-postgres" target="_blank" rel="noreferrer">
+                    View Supabase credential guide
+                  </a>
+                </small>
+              </div>
+            )}
 
             <button type="submit" disabled={loading}>
               {loading ? 'Testing Connection...' : 'Next →'}
