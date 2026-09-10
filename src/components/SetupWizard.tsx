@@ -120,6 +120,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
     try {
       const url = localStorage.getItem('supabase_url') || supabaseUrl;
       const key = localStorage.getItem('supabase_key') || supabaseKey;
+      const suppliedConnectionString = connectionString.trim();
 
       const supabase = createClient(url, key);
       const { error: schemaError } = await supabase
