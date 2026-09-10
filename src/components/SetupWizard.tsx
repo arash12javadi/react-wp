@@ -21,6 +21,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
   const [dbPassword, setDbPassword] = useState<string>('');
   const [connectionString, setConnectionString] = useState<string>('');
   const [showConnectionString, setShowConnectionString] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
 
   // Step 2: Admin & Site fields
   const [siteTitle, setSiteTitle] = useState<string>('My React-WP Site');
@@ -230,13 +231,27 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
                   onChange={(e) => setConnectionString(e.target.value)}
                   placeholder="postgresql://postgres:...@.../postgres"
                 />
-                <small>
-                  The automatic connection failed. Copy the exact connection string from your Supabase Connect dialog.
-                  {' '}
-                  <a href="https://supabase.com/docs/guides/platform/connecting-to-postgres" target="_blank" rel="noreferrer">
-                    View Supabase credential guide
-                  </a>
-                </small>
+                <small>The automatic connection failed. Copy the exact connection string from your Supabase Connect dialog.</small>
+              </div>
+            )}
+
+            <p>
+              <button
+                type="button"
+                onClick={() => setShowGuide((visible) => !visible)}
+                style={{ background: 'none', border: 'none', color: '#3182ce', cursor: 'pointer', padding: 0 }}
+              >
+                {showGuide ? 'Hide Supabase credential guide' : 'How do I find these credentials?'}
+              </button>
+            </p>
+            {showGuide && (
+              <div className={styles.errorBox} role="note">
+                <strong>Where to find your Supabase credentials</strong>
+                <p>Open your Supabase project and click <strong>Connect</strong>.</p>
+                <p>For the Project URL and publishable/anon key, use <strong>Project Settings → API</strong>. Never use a service_role or secret key here.</p>
+                <p>For the database password, open <strong>Project Settings → Database</strong>. If you cannot view it, reset it there and save the new password.</p>
+                <p>For the PostgreSQL connection string, open <strong>Connect → Database/Postgres</strong> and copy the exact Direct, Session pooler, or Transaction pooler string. Replace its password placeholder with your database password if necessary.</p>
+                <p>Keep passwords and connection strings private. They are sent to the installation server only and should not be committed to Git.</p>
               </div>
             )}
 
