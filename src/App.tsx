@@ -2,13 +2,14 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
 import SetupWizard from './components/SetupWizard';
 import AdminLayout, { type AdminSection } from './components/AdminLayout';
-import PostEditor from './components/PostEditor';
-import PostsManager from './components/PostsManager';
 import SiteSettings from './components/SiteSettings';
 import MenuManager from './components/MenuManager';
 import PluginsManager from './components/PluginsManager';
+import PagesList from './components/PagesList';
+import PageEditor from './components/PageEditor';
+import CategoriesManager from './components/CategoriesManager';
 import PublicHome from './components/PublicHome';
-import type { Post } from './lib/types';
+import PublicContent from './components/PublicContent';
 import { getUserRole, canAccessAdmin, canManageSettings } from './lib/roles';
 import { rwp } from './lib/rwp';
 import styles from './Dashboard.module.css';
@@ -79,6 +80,17 @@ const checkDatabase = async (): Promise<boolean> => {
   }
 };
 
+const wait = (milliseconds: number) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+
+const checkDatabaseWithRetry = async (): Promise<SupabaseClient | null> => {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const client = getSupabaseClient();
+    if (client && await checkDatabase()) return client;
+    if (attempt < 2) await wait(400);
+  }
+  return null;
+};
+
 function LoginScreen({ supabase, onLogin }: { supabase: SupabaseClient; onLogin: (session: Session) => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -139,12 +151,12 @@ function Overview({ onNavigate }: { onNavigate: (section: AdminSection) => void 
           <h2 id="overview-heading">Welcome to your dashboard</h2>
           <p>Manage your content and site settings from one place.</p>
         </div>
-        <button type="button" onClick={() => onNavigate('posts')}>Manage posts →</button>
+        <button type="button" onClick={() => onNavigate('content')}>Manage pages & posts →</button>
       </div>
       <div className={styles.cards}>
-        <button type="button" className={styles.card} onClick={() => onNavigate('posts')}>
+        <button type="button" className={styles.card} onClick={() => onNavigate('content')}>
           <span className={styles.cardIcon} aria-hidden="true">▤</span>
-          <strong>Posts</strong>
+          <strong>Page & Posts</strong>
           <span>Create and manage your content</span>
         </button>
         <button type="button" className={styles.card} onClick={() => onNavigate('settings')}>
@@ -191,8 +203,8 @@ function ConnectionError({ onReconfigure }: { onReconfigure: () => void }) {
 function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseClient; onReconfigure: () => void }) {
   const [session, setSession] = useState<Session | null>(null);
   const [activeSection, setActiveSection] = useState<AdminSection>('dashboard');
-  const [editingPost, setEditingPost] = useState<Post | null>(null);
-  const [creatingPost, setCreatingPost] = useState(false);
+  const [editingPage, setEditingPage] = useState<import('./lib/types').Page | null>(null);
+  const [creatingPost, setCreatingPost] = useState<boolean | null>(null);
   const [siteTitle, setSiteTitle] = useState('React-WP');
   const [authLoading, setAuthLoading] = useState(true);
   const [connectionError, setConnectionError] = useState(false);
@@ -253,8 +265,8 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
 
   const navigate = (section: AdminSection) => {
     setActiveSection(section);
-    setEditingPost(null);
-    setCreatingPost(false);
+    setEditingPage(null);
+    setCreatingPost(null);
   };
 
   const logout = async () => {
@@ -268,15 +280,20 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
   if (pluginPage) {
     const PluginPage = pluginPage.component;
     content = <PluginPage />;
-  } else if (activeSection === 'posts') {
-    content = creatingPost ? (
-      <PostEditor role={role} onSaved={() => setCreatingPost(false)} onCancel={() => setCreatingPost(false)} />
-    ) : editingPost ? (
-      <PostEditor role={role} post={editingPost} onSaved={() => setEditingPost(null)} onCancel={() => setEditingPost(null)} />
+  } else if (activeSection === 'content') {
+    content = creatingPost !== null ? (
+      <PageEditor
+        role={role}
+        initialIsPost={creatingPost}
+        onSaved={() => setCreatingPost(null)}
+        onCancel={() => setCreatingPost(null)}
+      />
+    ) : editingPage ? (
+      <PageEditor role={role} page={editingPage} onSaved={() => setEditingPage(null)} onCancel={() => setEditingPage(null)} />
     ) : (
-      <PostsManager role={role} onCreate={() => setCreatingPost(true)} onEdit={(post) => {
-        setEditingPost(post);
-        setCreatingPost(false);
+      <PagesList role={role} onCreate={(isPost) => setCreatingPost(isPost)} onEdit={(page) => {
+        setEditingPage(page);
+        setCreatingPost(null);
       }} />
     );
   } else if (activeSection === 'menus' && canManageSettings(role)) {
@@ -285,6 +302,8 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
     content = <SiteSettings onSiteTitleChange={setSiteTitle} />;
   } else if (activeSection === 'plugins' && canManageSettings(role)) {
     content = <PluginsManager />;
+  } else if (activeSection === 'categories' && canManageSettings(role)) {
+    content = <CategoriesManager />;
   } else if (activeSection === 'comments') {
     content = <SimpleSection title="Comments" description="Comment moderation will appear here." />;
   } else if (activeSection === 'profile') {
@@ -320,21 +339,24 @@ export default function App() {
 
   useEffect(() => {
     rwp.actions.do('rwp_init');
-    const client = getSupabaseClient();
-    if (!client) {
-      setCheckingDatabase(false);
-      return;
-    }
-
-    const fallbackTimer = window.setTimeout(() => setCheckingDatabase(false), 6000);
-    void checkDatabase().then((connected) => {
-      window.clearTimeout(fallbackTimer);
-      if (connected) {
-        void initializePlugins(client).then(() => setSupabase(client));
+    let mounted = true;
+    void checkDatabaseWithRetry().then((client) => {
+      if (!mounted) return;
+      if (client) {
+        void initializePlugins(client)
+          .then(() => {
+            if (mounted) setSupabase(client);
+          })
+          .finally(() => {
+            if (mounted) setCheckingDatabase(false);
+          });
+        return;
       }
       setCheckingDatabase(false);
     });
-    return () => window.clearTimeout(fallbackTimer);
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   if (checkingDatabase) {
@@ -349,6 +371,12 @@ export default function App() {
 
   if (isAdminRoute) {
     return <InstalledDashboard supabase={supabase} onReconfigure={reconfigure} />;
+  }
+
+  const pathname = window.location.pathname.replace(/^\/+|\/+$/g, '');
+  if (pathname) {
+    const slug = pathname.replace(/^posts\//, '').replace(/^pages\//, '');
+    return <PublicContent slug={slug} onReconfigure={reconfigure} />;
   }
 
   return <PublicHome onReconfigure={reconfigure} />;

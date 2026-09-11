@@ -10,6 +10,7 @@
 .selector { align-items: end; margin-bottom: 24px; padding: 16px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; }
 .selector label, .panel label, .inlineEdit label { display: grid; gap: 6px; color: #334155; font-size: .82rem; font-weight: 700; }
 .selector select, .selector input, .panel input, .inlineEdit input { min-width: 180px; padding: 9px; border: 1px solid #d1d5db; border-radius: 5px; background: #fff; font: inherit; }
+.search { box-sizing: border-box; width: 100%; min-width: 0 !important; margin: 12px 0; }
 .newMenu span { display: flex; gap: 8px; }.newMenu button { padding: 8px 12px; }
 .builder { align-items: flex-start; }.panel { flex: 0 0 32%; }.structure { flex: 1; }
 .panel, .structure { padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; }.panel h3, .structure h3 { margin-top: 0; color: #111827; }

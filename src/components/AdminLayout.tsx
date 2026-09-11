@@ -4,7 +4,7 @@ import { canManageComments, canManageSettings, type UserRole, roleLabels } from 
 import AdminToolbar from './AdminToolbar';
 import { rwp } from '../lib/rwp';
 
-export type AdminSection = 'dashboard' | 'posts' | 'comments' | 'menus' | 'settings' | 'plugins' | 'profile';
+export type AdminSection = 'dashboard' | 'content' | 'comments' | 'menus' | 'settings' | 'categories' | 'plugins' | 'profile';
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -19,10 +19,11 @@ interface AdminLayoutProps {
 
 const baseNavigation: Array<{ id: AdminSection; label: string; icon: string }> = [
   { id: 'dashboard', label: 'Dashboard', icon: '▦' },
-  { id: 'posts', label: 'Posts', icon: '▤' },
+  { id: 'content', label: 'Pages & Posts', icon: '▤' },
   { id: 'comments', label: 'Comments', icon: '◌' },
   { id: 'settings', label: 'Settings', icon: '⚙' },
   { id: 'menus', label: 'Menus', icon: '☷' },
+  { id: 'categories', label: 'Categories', icon: '▦' },
   { id: 'plugins', label: 'Plugins', icon: '◈' },
   { id: 'profile', label: 'Profile', icon: '◉' },
 ];
@@ -52,6 +53,7 @@ export default function AdminLayout({
     (item.id !== 'comments' || canManageComments(role)) &&
     (item.id !== 'settings' || canManageSettings(role)) &&
     (item.id !== 'menus' || canManageSettings(role)) &&
+    (item.id !== 'categories' || canManageSettings(role)) &&
     (item.id !== 'plugins' || canManageSettings(role)),
   );
 

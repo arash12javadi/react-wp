@@ -55,12 +55,13 @@ export default function PublicHome({ onReconfigure }: { onReconfigure?: () => vo
           supabase.from('options').select('option_value').eq('option_name', 'site_title').maybeSingle(),
           supabase.from('options').select('option_value').eq('option_name', 'menu_links').maybeSingle(),
           supabase
-            .from('posts')
-            .select('id,title,slug,content,excerpt,status,author_id,created_at,updated_at')
+            .from('pages')
+            .select('id,title,slug,content,excerpt,status,author_id,created_at,updated_at,is_post')
             .eq('status', 'published')
+            .eq('is_post', true)
             .order('created_at', { ascending: false }),
         ]);
-        if (postsError) throw postsError;
+        if (postsError && postsError.code !== '42P01' && postsError.code !== 'PGRST205') throw postsError;
         if (mounted) {
           setSiteTitle(rwp.filters.apply('rwp_site_title', option?.option_value || defaultTitle));
           if (menuOption?.option_value) {
@@ -134,7 +135,7 @@ export default function PublicHome({ onReconfigure }: { onReconfigure?: () => vo
                 <p className={styles.postMeta}>{formatDate(post.created_at)} · {post.status}</p>
                 <h3>{rwp.filters.apply('rwp_post_title', post.title, post)}</h3>
                 <p>{rwp.filters.apply('rwp_post_excerpt', post.excerpt || post.content.slice(0, 180), post)}</p>
-                <a href={`/posts/${post.slug}`}>Read More <span aria-hidden="true">→</span></a>
+                <a href={`/${post.slug}`}>Read More <span aria-hidden="true">→</span></a>
               </article>
             )) : <p className={styles.muted}>No posts match your search.</p>}
           </section>
@@ -147,7 +148,7 @@ export default function PublicHome({ onReconfigure }: { onReconfigure?: () => vo
             </div>
             <div className={styles.widget}>
               <h2>Recent Posts</h2>
-              <ul>{recentPosts.map((post) => <li key={post.id}><a href={`/posts/${post.slug}`}>{post.title}</a></li>)}</ul>
+              <ul>{recentPosts.map((post) => <li key={post.id}><a href={`/${post.slug}`}>{post.title}</a></li>)}</ul>
             </div>
             <div className={styles.widget}>
               <h2>Meta</h2>

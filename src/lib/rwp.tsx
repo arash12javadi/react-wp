@@ -9,6 +9,9 @@ export type RwpActionName =
   | 'rwp_post_created'
   | 'rwp_post_updated'
   | 'rwp_post_deleted'
+  | 'rwp_page_created'
+  | 'rwp_page_updated'
+  | 'rwp_page_deleted'
   | 'rwp_settings_saved'
   | 'rwp_menu_saved'
   | 'rwp_plugin_activated'
@@ -22,6 +25,7 @@ export type RwpFilterName =
   | 'rwp_post_title'
   | 'rwp_post_excerpt'
   | 'rwp_post_content'
+  | 'rwp_page_content'
   | 'rwp_admin_navigation';
 
 export interface RwpAdminPage {

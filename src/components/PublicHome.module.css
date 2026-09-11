@@ -4,6 +4,49 @@
   padding: 48px 40px 24px;
 }
 
+.content {
+  color: #334155;
+  line-height: 1.75;
+}
+
+.content :global(h1),
+.content :global(h2),
+.content :global(h3),
+.content :global(h4),
+.content :global(h5),
+.content :global(h6) {
+  margin: 1.4em 0 .55em;
+  color: #0f172a;
+  line-height: 1.25;
+}
+
+.content :global(p) {
+  margin: 0 0 1em;
+}
+
+.content :global(ul),
+.content :global(ol) {
+  margin: 0 0 1em;
+  padding-left: 1.5rem;
+}
+
+.content :global(blockquote) {
+  margin: 1.25em 0;
+  padding: .75rem 1rem;
+  border-left: 4px solid #6366f1;
+  color: #475569;
+  background: #f8fafc;
+}
+
+.content :global(a) {
+  color: #4f46e5;
+}
+
+.content :global(img) {
+  max-width: 100%;
+  height: auto;
+}
+
 .hero {
   padding: clamp(32px, 7vw, 78px);
   background: #f1eadf;

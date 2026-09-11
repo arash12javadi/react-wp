@@ -91,6 +91,10 @@ The Plugins screen has a **Delete** action for removing a plugin record and its 
 
 If the site was installed before plugin support was added, run [`supabase/migrations/20260911_create_plugins.sql`](./supabase/migrations/20260911_create_plugins.sql) in the Supabase SQL Editor. The initial installer creates this table for new installations, but it cannot change an already-installed database unless the installation endpoint is run again.
 
+### Unified pages and posts
+
+Run [`supabase/migrations/20260911_create_pages_categories.sql`](./supabase/migrations/20260911_create_pages_categories.sql) for an existing installation. It creates `categories` and the unified `pages` table, then copies existing rows from `posts` into `pages` as blog posts. New installations create these tables from `supabase/schema.sql`.
+
 ### Installing a personal copy
 
 The repository contains only placeholders. Each person can download or clone the project and install it against their own Supabase project:

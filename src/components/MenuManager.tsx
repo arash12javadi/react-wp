@@ -1,6 +1,6 @@
 import { useEffect, useState, type DragEvent } from 'react';
 import { getSupabaseClient, updateOption } from '../lib/db';
-import type { Post } from '../lib/types';
+import type { Page } from '../lib/types';
 import styles from './MenuManager.module.css';
 import { rwp } from '../lib/rwp';
 
@@ -8,7 +8,7 @@ interface MenuItem {
   id: string;
   label: string;
   url: string;
-  type: 'custom' | 'post';
+  type: 'custom' | 'post' | 'page';
 }
 
 interface MenuRecord {
@@ -32,7 +32,8 @@ export default function MenuManager() {
   const [name, setName] = useState('');
   const [label, setLabel] = useState('');
   const [url, setUrl] = useState('');
-  const [posts, setPosts] = useState<Post[]>([]);
+  const [content, setContent] = useState<Page[]>([]);
+  const [contentSearch, setContentSearch] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -46,16 +47,16 @@ export default function MenuManager() {
     const load = async () => {
       try {
         const supabase = getSupabaseClient();
-        const [{ data: menuData, error: menuError }, { data: postData, error: postError }] = await Promise.all([
+        const [{ data: menuData, error: menuError }, { data: contentData, error: contentError }] = await Promise.all([
           supabase.from('menus').select('id,name,slug,location,items').order('name'),
-          supabase.from('posts').select('id,title,slug,content,excerpt,status,author_id,created_at,updated_at').eq('status', 'published').order('created_at', { ascending: false }),
+          supabase.from('pages').select('id,title,slug,content,excerpt,status,is_post,category_id,featured_category_id,posts_limit,display_layout,author_id,created_at,updated_at').eq('status', 'published').order('updated_at', { ascending: false }),
         ]);
         if (menuError) throw menuError;
-        if (postError) throw postError;
+        if (contentError) throw contentError;
         const records = (menuData || []).map((menu) => ({ ...menu, items: Array.isArray(menu.items) ? menu.items : [] })) as MenuRecord[];
         setMenus(records);
         setActiveId(records[0]?.id || null);
-        setPosts((postData || []) as Post[]);
+        setContent((contentData || []) as Page[]);
       } catch (loadError: unknown) {
         setError(loadError instanceof Error ? loadError.message : 'Unable to load menus.');
       } finally {
@@ -91,8 +92,11 @@ export default function MenuManager() {
 
   const addItem = (item: MenuItem) => {
     if (!activeMenu) return setError('Create or select a menu first.');
+    if (activeMenu.items.some((current) => current.url === item.url)) return;
     updateActiveItems([...activeMenu.items, item]);
   };
+
+  const filteredContent = content.filter((item) => item.title.toLowerCase().includes(contentSearch.trim().toLowerCase()));
 
   const handleDrop = (event: DragEvent<HTMLDivElement>, targetId: string) => {
     event.preventDefault();
@@ -157,14 +161,28 @@ export default function MenuManager() {
             <label>URL<input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://example.com" /></label>
             <button type="button" onClick={() => { if (label.trim() && url.trim()) { addItem({ id: `custom-${Date.now()}`, label: label.trim(), url: url.trim(), type: 'custom' }); setLabel(''); setUrl(''); } }}>Add to Menu</button>
           </details>
-          <details><summary>Published Posts</summary>
-            {posts.length === 0 ? <p className={styles.muted}>No published posts found.</p> : posts.map((post) => (
-              <label className={styles.check} key={post.id}><input type="checkbox" checked={Boolean(activeMenu?.items.some((item) => item.url === `/posts/${post.slug}`))} onChange={() => {
-                const exists = activeMenu?.items.some((item) => item.url === `/posts/${post.slug}`);
-                if (exists) updateActiveItems(activeMenu!.items.filter((item) => item.url !== `/posts/${post.slug}`));
-                else addItem({ id: `post-${post.id}`, label: post.title, url: `/posts/${post.slug}`, type: 'post' });
-              }} />{post.title}</label>
-            ))}
+          <details open><summary>Published Pages &amp; Posts</summary>
+            <input
+              className={styles.search}
+              type="search"
+              value={contentSearch}
+              onChange={(event) => setContentSearch(event.target.value)}
+              placeholder="Search pages and posts…"
+              aria-label="Search published pages and posts"
+            />
+            {filteredContent.length === 0 ? <p className={styles.muted}>{content.length ? 'No content matches your search.' : 'No published pages or posts found.'}</p> : filteredContent.map((item) => {
+              const url = `/${item.slug}`;
+              const exists = Boolean(activeMenu?.items.some((menuItem) => menuItem.url === url));
+              return (
+                <label className={styles.check} key={item.id}>
+                  <input type="checkbox" checked={exists} onChange={() => {
+                    if (exists) updateActiveItems(activeMenu!.items.filter((menuItem) => menuItem.url !== url));
+                    else addItem({ id: `${item.is_post ? 'post' : 'page'}-${item.id}`, label: item.title, url, type: item.is_post ? 'post' : 'page' });
+                  }} />
+                  <span>{item.title} <small>({item.is_post ? 'Post' : 'Page'})</small></span>
+                </label>
+              );
+            })}
           </details>
         </aside>
         <div className={styles.structure}>
@@ -172,7 +190,7 @@ export default function MenuManager() {
           {!activeMenu ? <p className={styles.muted}>Create a menu to begin.</p> : activeMenu.items.length === 0 ? <p className={styles.muted}>Add items from the left panel.</p> : activeMenu.items.map((item) => (
             <div className={styles.item} key={item.id} draggable onDragStart={() => setDraggedId(item.id)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => handleDrop(event, item.id)}>
               <span className={styles.handle} aria-hidden="true">⠿</span>
-              <div className={styles.itemMain}><strong>{item.label}</strong><span>{item.type === 'post' ? 'Post' : 'Custom Link'} · {item.url}</span></div>
+              <div className={styles.itemMain}><strong>{item.label}</strong><span>{item.type === 'post' ? 'Post' : item.type === 'page' ? 'Page' : 'Custom Link'} · {item.url}</span></div>
               <button type="button" onClick={() => setExpanded(expanded === item.id ? null : item.id)} aria-expanded={expanded === item.id}>Edit</button>
               <button type="button" onClick={() => updateActiveItems(activeMenu.items.filter((current) => current.id !== item.id))}>Remove</button>
               {expanded === item.id && <div className={styles.inlineEdit}><label>Label<input value={item.label} onChange={(event) => updateActiveItems(activeMenu.items.map((current) => current.id === item.id ? { ...current, label: event.target.value } : current))} /></label><label>URL<input value={item.url} onChange={(event) => updateActiveItems(activeMenu.items.map((current) => current.id === item.id ? { ...current, url: event.target.value } : current))} /></label></div>}
