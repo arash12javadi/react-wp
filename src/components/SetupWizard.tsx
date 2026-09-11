@@ -85,6 +85,8 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           projectRef: getProjectRef(cleanUrl),
+          supabaseUrl: cleanUrl,
+          supabasePublishableKey: cleanAnonKey,
           dbPassword: dbPassword.trim(),
           connectionString: suppliedConnectionString || undefined,
           databaseUrl: suppliedConnectionString || undefined,
@@ -156,6 +158,8 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           projectRef: getProjectRef(url),
+          supabaseUrl: url,
+          supabasePublishableKey: key,
           dbPassword: dbPassword.trim(),
           connectionString: suppliedConnectionString || undefined,
           databaseUrl: suppliedConnectionString || undefined,
@@ -230,16 +234,19 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
 
             {showConnectionString && (
               <div className={styles.formGroup}>
-                <label htmlFor="connectionString">PostgreSQL Connection String (fallback)</label>
+                <label htmlFor="connectionString">Supabase Session Pooler Connection String</label>
                 <input
                   id="connectionString"
                   type="password"
                   autoComplete="off"
                   value={connectionString}
                   onChange={(e) => setConnectionString(e.target.value)}
-                  placeholder="postgresql://postgres:...@.../postgres"
+                  placeholder="postgresql://postgres.project-ref:password@...pooler.supabase.com:6543/postgres"
                 />
-                <small>The automatic connection failed. Copy the exact connection string from your Supabase Connect dialog.</small>
+                <small>
+                  The direct connection is unavailable from this server. In Supabase, open
+                  <strong> Connect → Database → Session pooler</strong> and paste the exact URI here.
+                </small>
               </div>
             )}
 
@@ -258,7 +265,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
                 <p>Open your Supabase project and click <strong>Connect</strong>.</p>
                 <p>For the Project URL and publishable/anon key, use <strong>Project Settings → API</strong>. Never use a service_role or secret key here.</p>
                 <p>For the database password, open <strong>Project Settings → Database</strong>. If you cannot view it, reset it there and save the new password.</p>
-                <p>For the PostgreSQL connection string, open <strong>Connect → Database/Postgres</strong> and copy the exact Direct, Session pooler, or Transaction pooler string. Replace its password placeholder with your database password if necessary.</p>
+                <p>For Vercel, use the <strong>Session pooler</strong>: open <strong>Connect → Database → Session pooler</strong> and copy its exact URI. It normally uses port <strong>6543</strong> and a host ending in <strong>.pooler.supabase.com</strong>. Replace its password placeholder with your database password if necessary.</p>
                 <p>Keep passwords and connection strings private. They are sent to the installation server only and should not be committed to Git.</p>
               </div>
             )}

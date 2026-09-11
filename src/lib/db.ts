@@ -1,11 +1,13 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 export const getSupabaseClient = (): SupabaseClient => {
-  const url = localStorage.getItem('supabase_url') || (import.meta as any).env?.VITE_SUPABASE_URL;
+  const serverConfig = (window as Window & { __REACT_WP_CONFIG__?: { supabaseUrl?: string; supabasePublishableKey?: string } }).__REACT_WP_CONFIG__;
+  const url = serverConfig?.supabaseUrl || (import.meta as any).env?.VITE_SUPABASE_URL || localStorage.getItem('supabase_url');
   const key =
-    localStorage.getItem('supabase_key') ||
+    serverConfig?.supabasePublishableKey ||
     (import.meta as any).env?.VITE_SUPABASE_PUBLISHABLE_KEY ||
-    (import.meta as any).env?.VITE_SUPABASE_ANON_KEY;
+    (import.meta as any).env?.VITE_SUPABASE_ANON_KEY ||
+    localStorage.getItem('supabase_key');
 
   if (!url || !key) {
     throw new Error('CMS is not configured.');

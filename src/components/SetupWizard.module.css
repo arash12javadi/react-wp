@@ -70,6 +70,13 @@
   margin-top: 0.75rem;
 }
 
+.formGroup small {
+  color: #718096;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  margin-top: 0.45rem;
+}
+
 .guideToggle {
   background: none;
   border: none;

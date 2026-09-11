@@ -29,3 +29,16 @@ pnpm-debug.log*
 .vite
 .vercel
 .env*
+data/
+
+# React-WP server installation/configuration files
+react-wp.config.json
+react-wp.config.*.json
+**/react-wp-config.json
+**/react-wp-config.*.json
+
+# Database dumps and private key material
+*.sql.gz
+*.dump
+*.pem
+*.key

@@ -11,6 +11,40 @@ The publishable key is safe for browser use when Row Level Security is configure
 
 The browser-local setup wizard remains a development fallback when the Vite environment variables are absent. For a deployed site, configure the variables in the hosting provider (for example, Vercel) and redeploy.
 
+## Self-hosted WordPress-style installation
+
+For a host with a persistent Node.js process and writable storage, use the portable server:
+
+```bash
+npm run build
+npm start
+```
+
+The first installation writes the public site configuration to:
+
+```text
+data/react-wp-config.json
+```
+
+This is the React-WP equivalent of `wp-config.php`. It is created by the installer, is excluded from Git, and is served only through the public values needed by the browser. Database passwords and PostgreSQL connection strings are never returned to browsers.
+
+Keep the `data/` directory on a persistent volume. If the host clears that directory on restart, React-WP will ask for installation again.
+
+The installer first tries the generated PostgreSQL host. If that is unavailable from the host, enter the exact Supabase Session pooler connection string in the setup wizard. The server uses it to install the schema and then stores the shared public Supabase configuration for every browser.
+
+### Installing a personal copy
+
+The repository contains only placeholders. Each person can download or clone the project and install it against their own Supabase project:
+
+1. Copy the project to their computer or Node.js host.
+2. Run `npm install`, `npm run build`, and `npm start`.
+3. Open the site and enter their own Supabase URL, publishable/anon key, database password, and (when needed) Session pooler connection string.
+4. Complete the administrator setup.
+
+The installer creates `data/react-wp-config.json` locally on that installation. The file is intentionally ignored by Git, so it is not uploaded to GitHub. It contains only the public Supabase URL/key used by browsers; database passwords and PostgreSQL connection strings are used by the server during installation and are not written to that file.
+
+Never commit `.env`, `.env.local`, database dumps, connection strings, database passwords, secret keys, or service-role keys. The tracked [`react-wp.config.example.json`](./react-wp.config.example.json) contains placeholders only.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:
