@@ -1,0 +1,8 @@
+{
+  "id": "rwp-sample-plugin",
+  "name": "RWP Sample plugin",
+  "version": "1.0.555",
+  "author": "AJ-React-wp",
+  "description": "A small plugin used to verify the RWP extension API.",
+  "entry": "./index.tsx"
+}

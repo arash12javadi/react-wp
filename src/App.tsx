@@ -6,11 +6,35 @@ import PostEditor from './components/PostEditor';
 import PostsManager from './components/PostsManager';
 import SiteSettings from './components/SiteSettings';
 import MenuManager from './components/MenuManager';
+import PluginsManager from './components/PluginsManager';
 import PublicHome from './components/PublicHome';
 import type { Post } from './lib/types';
 import { getUserRole, canAccessAdmin, canManageSettings } from './lib/roles';
 import { rwp } from './lib/rwp';
 import styles from './Dashboard.module.css';
+
+const readPluginIds = (value: string | null | undefined): string[] => {
+  if (!value) return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+};
+
+const initializePlugins = async (supabase: SupabaseClient) => {
+  const [{ data: activeRow }, { data: deletedRow }] = await Promise.all([
+    supabase.from('options').select('option_value').eq('option_name', 'rwp_active_plugins').maybeSingle(),
+    supabase.from('options').select('option_value').eq('option_name', 'rwp_deleted_plugins').maybeSingle(),
+  ]);
+  const deletedIds = readPluginIds(deletedRow?.option_value);
+  const registered = rwp.getPlugins();
+  const activeIds = activeRow ? readPluginIds(activeRow.option_value) : registered.map((plugin) => plugin.id);
+  registered.forEach((plugin) => {
+    if (!deletedIds.includes(plugin.id) && activeIds.includes(plugin.id)) rwp.activatePlugin(plugin.id);
+  });
+};
 
 const getSupabaseClient = (): SupabaseClient | null => {
   const configWindow = window as Window & { __REACT_WP_CONFIG__?: { supabaseUrl?: string; supabasePublishableKey?: string } | null };
@@ -259,6 +283,8 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
     content = <MenuManager />;
   } else if (activeSection === 'settings' && canManageSettings(role)) {
     content = <SiteSettings onSiteTitleChange={setSiteTitle} />;
+  } else if (activeSection === 'plugins' && canManageSettings(role)) {
+    content = <PluginsManager />;
   } else if (activeSection === 'comments') {
     content = <SimpleSection title="Comments" description="Comment moderation will appear here." />;
   } else if (activeSection === 'profile') {
@@ -303,7 +329,9 @@ export default function App() {
     const fallbackTimer = window.setTimeout(() => setCheckingDatabase(false), 6000);
     void checkDatabase().then((connected) => {
       window.clearTimeout(fallbackTimer);
-      if (connected) setSupabase(client);
+      if (connected) {
+        void initializePlugins(client).then(() => setSupabase(client));
+      }
       setCheckingDatabase(false);
     });
     return () => window.clearTimeout(fallbackTimer);

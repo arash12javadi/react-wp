@@ -1,10 +1,10 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import styles from './AdminLayout.module.css';
 import { canManageComments, canManageSettings, type UserRole, roleLabels } from '../lib/roles';
 import AdminToolbar from './AdminToolbar';
 import { rwp } from '../lib/rwp';
 
-export type AdminSection = 'dashboard' | 'posts' | 'comments' | 'menus' | 'settings' | 'profile';
+export type AdminSection = 'dashboard' | 'posts' | 'comments' | 'menus' | 'settings' | 'plugins' | 'profile';
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -23,6 +23,7 @@ const baseNavigation: Array<{ id: AdminSection; label: string; icon: string }> =
   { id: 'comments', label: 'Comments', icon: '◌' },
   { id: 'settings', label: 'Settings', icon: '⚙' },
   { id: 'menus', label: 'Menus', icon: '☷' },
+  { id: 'plugins', label: 'Plugins', icon: '◈' },
   { id: 'profile', label: 'Profile', icon: '◉' },
 ];
 
@@ -37,6 +38,8 @@ export default function AdminLayout({
   onViewSite,
 }: AdminLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [, refresh] = useState(0);
+  useEffect(() => rwp.subscribe(() => refresh((value) => value + 1)), []);
   const pluginNavigation = rwp.getAdminPages().map((page) => ({
     id: page.id as AdminSection,
     label: page.label,
@@ -48,7 +51,8 @@ export default function AdminLayout({
   ).filter((item) =>
     (item.id !== 'comments' || canManageComments(role)) &&
     (item.id !== 'settings' || canManageSettings(role)) &&
-    (item.id !== 'menus' || canManageSettings(role)),
+    (item.id !== 'menus' || canManageSettings(role)) &&
+    (item.id !== 'plugins' || canManageSettings(role)),
   );
 
   const navigate = (section: AdminSection) => {

@@ -20,6 +20,15 @@ npm run build
 npm start
 ```
 
+`npm start` rebuilds the frontend before starting the server, so changes to a
+plugin manifest or source are included. If you run `node server.mjs` directly,
+run `npm run build` first.
+
+For hot-reloading development, start `npm start` first and then run
+`npm run dev`. Vite serves the frontend at `http://localhost:5173`, reads the
+same `data/react-wp-config.json`, and proxies `/api` requests to port 3000, so
+both ports use the same Supabase installation.
+
 The first installation writes the public site configuration to:
 
 ```text
@@ -71,6 +80,16 @@ const cleanup = rwp.registerPlugin({
 Available actions include `rwp_init`, `rwp_admin_loaded`, `rwp_public_loaded`, `rwp_user_logged_in`, `rwp_post_created`, `rwp_post_updated`, `rwp_settings_saved`, and `rwp_menu_saved`. Filters include `rwp_site_title`, `rwp_public_menu`, `rwp_posts`, `rwp_post_title`, `rwp_post_excerpt`, and `rwp_admin_navigation`.
 
 Registered admin pages appear in the admin navigation, dashboard widgets render on the dashboard, and registered shortcodes can be rendered by future content components. Plugin cleanup functions should always remove registrations when a plugin is deactivated.
+
+Administrators can manage registered plugins from the **Plugins** admin section. Activation state is stored in the `rwp_active_plugins` option, so it is shared across browsers and deployments connected to the same database. The current manager only activates plugins that are already bundled with the application. Arbitrary ZIP or JavaScript uploads are intentionally not executed; a future installer must validate manifests, isolate code, enforce permissions, and provide rollback before third-party uploads are enabled.
+
+Bundled plugin source folders belong in [`plugins/`](./plugins). Each plugin folder should contain a `manifest.json` with its ID, name, version, metadata, and entry file. Vite automatically discovers `index.tsx` files one level below this directory at build time. The Supabase schema creates a `plugins` table containing the plugin ID, metadata, source folder, activation state, and timestamps. The Plugins screen synchronizes registered bundled plugins into this table and displays them in a WordPress-style table. Adding files to the folder makes them available after the next build; arbitrary runtime JavaScript is not executed.
+
+The Plugins screen has a **Delete** action for removing a plugin record and its activation state from the database. Deleted bundled IDs are stored in the `rwp_deleted_plugins` option, so the same source folder is not immediately re-created. To permanently remove a bundled plugin, remove its folder, then rebuild and redeploy.
+
+### Updating an existing database for plugins
+
+If the site was installed before plugin support was added, run [`supabase/migrations/20260911_create_plugins.sql`](./supabase/migrations/20260911_create_plugins.sql) in the Supabase SQL Editor. The initial installer creates this table for new installations, but it cannot change an already-installed database unless the installation endpoint is run again.
 
 ### Installing a personal copy
 

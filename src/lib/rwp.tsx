@@ -10,7 +10,9 @@ export type RwpActionName =
   | 'rwp_post_updated'
   | 'rwp_post_deleted'
   | 'rwp_settings_saved'
-  | 'rwp_menu_saved';
+  | 'rwp_menu_saved'
+  | 'rwp_plugin_activated'
+  | 'rwp_plugin_deactivated';
 
 export type RwpFilterName =
   | 'rwp_site_title'
@@ -68,6 +70,19 @@ export interface RwpPlugin {
   register?: (context: RwpPluginContext) => void | (() => void);
 }
 
+export interface RwpPluginManifest {
+  id: string;
+  name: string;
+  version: string;
+  author?: string;
+  description?: string;
+  entry?: string;
+}
+
+export interface RwpInstalledPlugin extends RwpPlugin {
+  active: boolean;
+}
+
 type ActionCallback = (...args: unknown[]) => void;
 type FilterCallback = (value: unknown, ...args: unknown[]) => unknown;
 
@@ -76,7 +91,16 @@ const filters = new Map<RwpFilterName, Set<FilterCallback>>();
 const adminPages = new Map<string, RwpAdminPage>();
 const dashboardWidgets = new Map<string, RwpDashboardWidget>();
 const shortcodes = new Map<string, RwpShortcode>();
-const plugins = new Map<string, RwpPlugin>();
+interface PluginRecord {
+  plugin: RwpPlugin;
+  cleanup?: () => void;
+  active: boolean;
+}
+
+const plugins = new Map<string, PluginRecord>();
+const subscribers = new Set<() => void>();
+
+const notifySubscribers = () => subscribers.forEach((subscriber) => subscriber());
 
 function addTo<T>(map: Map<string, Set<T>>, name: string, callback: T) {
   const callbacks = map.get(name) || new Set<T>();
@@ -87,9 +111,12 @@ function addTo<T>(map: Map<string, Set<T>>, name: string, callback: T) {
 
 export const rwp: RwpPluginContext & {
   registerPlugin: (plugin: RwpPlugin) => () => void;
+  activatePlugin: (id: string) => boolean;
+  deactivatePlugin: (id: string) => boolean;
+  subscribe: (listener: () => void) => () => void;
   getAdminPages: () => RwpAdminPage[];
   getDashboardWidgets: () => RwpDashboardWidget[];
-  getPlugins: () => RwpPlugin[];
+  getPlugins: () => RwpInstalledPlugin[];
 } = {
   actions: {
     add: (name, callback) => addTo(actions, name, callback),
@@ -109,31 +136,67 @@ export const rwp: RwpPluginContext & {
   admin: {
     registerPage: (page) => {
       adminPages.set(page.id, page);
-      return () => adminPages.delete(page.id);
+      notifySubscribers();
+      return () => {
+        adminPages.delete(page.id);
+        notifySubscribers();
+      };
     },
     registerDashboardWidget: (widget) => {
       dashboardWidgets.set(widget.id, widget);
-      return () => dashboardWidgets.delete(widget.id);
+      notifySubscribers();
+      return () => {
+        dashboardWidgets.delete(widget.id);
+        notifySubscribers();
+      };
     },
   },
   shortcodes: {
     register: (shortcode) => {
       shortcodes.set(shortcode.name, shortcode);
-      return () => shortcodes.delete(shortcode.name);
+      notifySubscribers();
+      return () => {
+        shortcodes.delete(shortcode.name);
+        notifySubscribers();
+      };
     },
   },
   registerPlugin: (plugin) => {
     if (plugins.has(plugin.id)) throw new Error(`RWP plugin "${plugin.id}" is already registered.`);
-    plugins.set(plugin.id, plugin);
-    const cleanup = plugin.register?.(rwp);
+    const record: PluginRecord = { plugin, active: false };
+    plugins.set(plugin.id, record);
     return () => {
-      if (typeof cleanup === 'function') cleanup();
+      rwp.deactivatePlugin(plugin.id);
       plugins.delete(plugin.id);
     };
   },
+  activatePlugin: (id) => {
+    const record = plugins.get(id);
+    if (!record || record.active) return Boolean(record);
+    const cleanup = record.plugin.register?.(rwp);
+    record.cleanup = typeof cleanup === 'function' ? cleanup : undefined;
+    record.active = true;
+    rwp.actions.do('rwp_plugin_activated', record.plugin);
+    notifySubscribers();
+    return true;
+  },
+  deactivatePlugin: (id) => {
+    const record = plugins.get(id);
+    if (!record || !record.active) return Boolean(record);
+    record.cleanup?.();
+    record.cleanup = undefined;
+    record.active = false;
+    rwp.actions.do('rwp_plugin_deactivated', record.plugin);
+    notifySubscribers();
+    return true;
+  },
   getAdminPages: () => [...adminPages.values()],
   getDashboardWidgets: () => [...dashboardWidgets.values()],
-  getPlugins: () => [...plugins.values()],
+  getPlugins: () => [...plugins.values()].map(({ plugin, active }) => ({ ...plugin, active })),
+  subscribe: (listener) => {
+    subscribers.add(listener);
+    return () => subscribers.delete(listener);
+  },
 };
 
 export function parseShortcodes(content: string): ReactNode[] {

@@ -90,6 +90,7 @@ const serveFile = async (request, response, pathname) => {
     } else {
       response.writeHead(200, {
         'Content-Type': contentTypes[path.extname(filePath).toLowerCase()] || 'application/octet-stream',
+        'Cache-Control': 'no-store, max-age=0',
       });
       createReadStream(filePath).pipe(response);
     }

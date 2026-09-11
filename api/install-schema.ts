@@ -86,10 +86,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         created_at timestamptz default timezone('utc'::text, now()) not null,
         updated_at timestamptz default timezone('utc'::text, now()) not null
       );
+      create table if not exists public.plugins (
+        plugin_id text primary key,
+        name text not null,
+        version text not null,
+        author text,
+        description text default '',
+        folder text,
+        source text not null default 'bundled',
+        active boolean not null default false,
+        installed_at timestamptz default timezone('utc'::text, now()) not null,
+        updated_at timestamptz default timezone('utc'::text, now()) not null
+      );
       alter table public.posts enable row level security;
       alter table public.comments enable row level security;
       alter table public.options enable row level security;
       alter table public.menus enable row level security;
+      alter table public.plugins enable row level security;
       drop policy if exists "Authenticated users can manage posts" on public.posts;
       create policy "Authenticated users can manage posts"
         on public.posts for all to authenticated using (true) with check (true);
@@ -105,6 +118,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       drop policy if exists "Authenticated users can manage menus" on public.menus;
       create policy "Authenticated users can manage menus"
         on public.menus for all to authenticated using (true) with check (true);
+      drop policy if exists "Authenticated users can manage plugins" on public.plugins;
+      create policy "Authenticated users can manage plugins"
+        on public.plugins for all to authenticated using (true) with check (true);
     `);
     await client.end();
     return res.status(200).json({ success: true });
