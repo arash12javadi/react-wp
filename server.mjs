@@ -9,6 +9,19 @@ const port = Number(process.env.PORT || 3000);
 const root = path.resolve('dist');
 const schema = await readFile(path.resolve('supabase/schema.sql'), 'utf8');
 
+const contentTypes = {
+  '.css': 'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.ico': 'image/x-icon',
+  '.webp': 'image/webp',
+};
+
 const json = (response, status, value) => {
   response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
   response.end(JSON.stringify(value));
@@ -75,6 +88,9 @@ const serveFile = async (request, response, pathname) => {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
       response.end(html.replace('window.__REACT_WP_CONFIG__=null;', `window.__REACT_WP_CONFIG__=${JSON.stringify(config)};`));
     } else {
+      response.writeHead(200, {
+        'Content-Type': contentTypes[path.extname(filePath).toLowerCase()] || 'application/octet-stream',
+      });
       createReadStream(filePath).pipe(response);
     }
     return true;
