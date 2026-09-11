@@ -2,6 +2,7 @@ import { useEffect, useState, type DragEvent } from 'react';
 import { getSupabaseClient, updateOption } from '../lib/db';
 import type { Post } from '../lib/types';
 import styles from './MenuManager.module.css';
+import { rwp } from '../lib/rwp';
 
 interface MenuItem {
   id: string;
@@ -80,6 +81,7 @@ export default function MenuManager() {
     setMenus((current) => [...current, menu]);
     setActiveId(menu.id);
     setName('');
+    rwp.actions.do('rwp_menu_saved', menu);
   };
 
   const updateActiveItems = (items: MenuItem[]) => {
@@ -119,6 +121,7 @@ export default function MenuManager() {
         if (!saved) throw new Error('Menu saved, but the public menu option could not be updated.');
       }
       setFeedback('Menu saved successfully.');
+      rwp.actions.do('rwp_menu_saved', activeMenu);
     } catch (saveError: unknown) {
       setError(saveError instanceof Error ? saveError.message : 'Unable to save menu.');
     } finally {

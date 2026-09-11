@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import styles from './AdminLayout.module.css';
 import { canManageComments, canManageSettings, type UserRole, roleLabels } from '../lib/roles';
 import AdminToolbar from './AdminToolbar';
+import { rwp } from '../lib/rwp';
 
 export type AdminSection = 'dashboard' | 'posts' | 'comments' | 'menus' | 'settings' | 'profile';
 
@@ -36,7 +37,15 @@ export default function AdminLayout({
   onViewSite,
 }: AdminLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const navigation = baseNavigation.filter((item) =>
+  const pluginNavigation = rwp.getAdminPages().map((page) => ({
+    id: page.id as AdminSection,
+    label: page.label,
+    icon: page.icon || '◈',
+  }));
+  const navigation = rwp.filters.apply(
+    'rwp_admin_navigation',
+    [...baseNavigation, ...pluginNavigation],
+  ).filter((item) =>
     (item.id !== 'comments' || canManageComments(role)) &&
     (item.id !== 'settings' || canManageSettings(role)) &&
     (item.id !== 'menus' || canManageSettings(role)),

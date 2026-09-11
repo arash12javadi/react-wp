@@ -3,6 +3,7 @@ import { getSupabaseClient } from '../lib/db';
 import type { Post, PostInput } from '../lib/types';
 import { canManageAllPosts, canPublishPosts, type UserRole } from '../lib/roles';
 import styles from './PostEditor.module.css';
+import { rwp } from '../lib/rwp';
 
 interface PostEditorProps {
   post?: Post | null;
@@ -93,6 +94,7 @@ export default function PostEditor({ post, onSaved, onCancel, role }: PostEditor
         }
         throw result.error;
       }
+      rwp.actions.do(post ? 'rwp_post_updated' : 'rwp_post_created', { ...payload, id: post?.id });
       onSaved();
     } catch (saveError: unknown) {
       setError(saveError instanceof Error ? saveError.message : 'Unable to save this post.');

@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { getSupabaseClient, updateOption } from '../lib/db';
 import styles from './SiteSettings.module.css';
+import { rwp } from '../lib/rwp';
 
 interface SiteSettingsProps {
   onSiteTitleChange?: (title: string) => void;
@@ -84,6 +85,7 @@ export default function SiteSettings({ onSiteTitleChange }: SiteSettingsProps) {
       if (!titleSaved || !descriptionSaved || !emailSaved || !menuSaved) throw new Error('Settings could not be saved.');
       setForm((current) => ({ ...current, siteTitle: title }));
       onSiteTitleChange?.(title);
+      rwp.actions.do('rwp_settings_saved', { ...form, siteTitle: title });
       setFeedback('Settings saved successfully.');
     } catch (saveError: unknown) {
       setError(saveError instanceof Error ? saveError.message : 'Unable to save settings.');

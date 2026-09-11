@@ -9,6 +9,7 @@ import MenuManager from './components/MenuManager';
 import PublicHome from './components/PublicHome';
 import type { Post } from './lib/types';
 import { getUserRole, canAccessAdmin, canManageSettings } from './lib/roles';
+import { rwp } from './lib/rwp';
 import styles from './Dashboard.module.css';
 
 const getSupabaseClient = (): SupabaseClient | null => {
@@ -69,6 +70,7 @@ function LoginScreen({ supabase, onLogin }: { supabase: SupabaseClient; onLogin:
       if (signInError || !data.session) {
         setError(signInError?.message || 'Unable to sign in.');
       } else {
+        rwp.actions.do('rwp_user_logged_in', data.session.user);
         onLogin(data.session);
       }
     } catch (loginError: unknown) {
@@ -127,6 +129,12 @@ function Overview({ onNavigate }: { onNavigate: (section: AdminSection) => void 
           <span>Update your site information</span>
         </button>
       </div>
+      {rwp.getDashboardWidgets().map(({ id, title, component: Widget }) => (
+        <section key={id} aria-labelledby={`${id}-heading`}>
+          <h2 id={`${id}-heading`}>{title}</h2>
+          <Widget />
+        </section>
+      ))}
     </section>
   );
 }
@@ -167,6 +175,7 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
   const role = session ? getUserRole(session.user) : 'subscriber';
 
   useEffect(() => {
+    rwp.actions.do('rwp_admin_loaded');
     let mounted = true;
     supabase.auth.getSession()
       .then(({ data, error }) => {
@@ -226,11 +235,16 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
 
   const logout = async () => {
     await supabase.auth.signOut();
+    rwp.actions.do('rwp_user_logged_out');
     setSession(null);
   };
 
   let content;
-  if (activeSection === 'posts') {
+  const pluginPage = rwp.getAdminPages().find((page) => page.id === activeSection);
+  if (pluginPage) {
+    const PluginPage = pluginPage.component;
+    content = <PluginPage />;
+  } else if (activeSection === 'posts') {
     content = creatingPost ? (
       <PostEditor role={role} onSaved={() => setCreatingPost(false)} onCancel={() => setCreatingPost(false)} />
     ) : editingPost ? (
@@ -279,6 +293,7 @@ export default function App() {
   };
 
   useEffect(() => {
+    rwp.actions.do('rwp_init');
     const client = getSupabaseClient();
     if (!client) {
       setCheckingDatabase(false);

@@ -32,6 +32,46 @@ Keep the `data/` directory on a persistent volume. If the host clears that direc
 
 The installer first tries the generated PostgreSQL host. If that is unavailable from the host, enter the exact Supabase Session pooler connection string in the setup wizard. The server uses it to install the schema and then stores the shared public Supabase configuration for every browser.
 
+## RWP plugin and hook API
+
+React-WP exposes a typed extension API from [`src/lib/plugin-api.ts`](./src/lib/plugin-api.ts). Plugin IDs should use a unique prefix such as `ajdwp-`; public hooks use the `rwp_` prefix.
+
+```ts
+import { rwp } from './src/lib/plugin-api';
+
+const cleanup = rwp.registerPlugin({
+  id: 'ajdwp-seo-checklist',
+  name: 'AJDWP SEO Checklist',
+  version: '1.0.0',
+  author: 'Arash Javadi',
+  register({ actions, filters, admin, shortcodes }) {
+    const removeFilter = filters.add('rwp_post_excerpt', (excerpt) => `${excerpt} [SEO]`);
+    const removeAction = actions.add('rwp_post_created', (post) => {
+      console.log('New post:', post);
+    });
+    const removePage = admin.registerPage({
+      id: 'seo-checklist',
+      label: 'SEO Checklist',
+      component: SeoChecklistPage,
+    });
+    const removeShortcode = shortcodes.register({
+      name: 'seo_score',
+      render: () => 'SEO score',
+    });
+    return () => {
+      removeFilter();
+      removeAction();
+      removePage();
+      removeShortcode();
+    };
+  },
+});
+```
+
+Available actions include `rwp_init`, `rwp_admin_loaded`, `rwp_public_loaded`, `rwp_user_logged_in`, `rwp_post_created`, `rwp_post_updated`, `rwp_settings_saved`, and `rwp_menu_saved`. Filters include `rwp_site_title`, `rwp_public_menu`, `rwp_posts`, `rwp_post_title`, `rwp_post_excerpt`, and `rwp_admin_navigation`.
+
+Registered admin pages appear in the admin navigation, dashboard widgets render on the dashboard, and registered shortcodes can be rendered by future content components. Plugin cleanup functions should always remove registrations when a plugin is deactivated.
+
 ### Installing a personal copy
 
 The repository contains only placeholders. Each person can download or clone the project and install it against their own Supabase project:

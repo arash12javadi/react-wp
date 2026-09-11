@@ -4,6 +4,7 @@ import { getUserRole, type UserRole } from '../lib/roles';
 import type { Post } from '../lib/types';
 import PublicLayout from './PublicLayout';
 import styles from './PublicHome.module.css';
+import { rwp } from '../lib/rwp';
 
 const defaultTitle = 'Just another React-WP site';
 const defaultMenuLinks = [
@@ -61,18 +62,18 @@ export default function PublicHome({ onReconfigure }: { onReconfigure?: () => vo
         ]);
         if (postsError) throw postsError;
         if (mounted) {
-          setSiteTitle(option?.option_value || defaultTitle);
+          setSiteTitle(rwp.filters.apply('rwp_site_title', option?.option_value || defaultTitle));
           if (menuOption?.option_value) {
             try {
               const parsed = JSON.parse(menuOption.option_value);
               if (Array.isArray(parsed) && parsed.every((link) => link && typeof link.label === 'string' && typeof link.url === 'string')) {
-                setMenuLinks(parsed);
+                setMenuLinks(rwp.filters.apply('rwp_public_menu', parsed));
               }
             } catch {
               // Keep the default menu when an option contains invalid JSON.
             }
           }
-          setPosts((data || []) as Post[]);
+          setPosts(rwp.filters.apply('rwp_posts', (data || []) as Post[]));
         }
       } catch (loadError: unknown) {
         if (mounted) setError(loadError instanceof Error ? loadError.message : 'Unable to load posts.');
@@ -81,6 +82,7 @@ export default function PublicHome({ onReconfigure }: { onReconfigure?: () => vo
       }
     };
     void loadHome();
+    rwp.actions.do('rwp_public_loaded');
     return () => { mounted = false; };
   }, []);
 
@@ -107,7 +109,7 @@ export default function PublicHome({ onReconfigure }: { onReconfigure?: () => vo
       <main className={styles.container}>
         <section className={styles.hero} aria-labelledby="home-heading">
           <p className={styles.kicker}>A fresh start</p>
-          <h1 id="home-heading">Welcome to {siteTitle}</h1>
+          <h1 id="home-heading">Welcome to {rwp.filters.apply('rwp_site_title', siteTitle)}</h1>
           <p>This is your new React-WP website. Customize this homepage, publish your first post, and make it yours from the Admin Dashboard.</p>
           <a className={styles.heroLink} href="/admin">Go to Admin Dashboard <span aria-hidden="true">→</span></a>
         </section>
@@ -130,8 +132,8 @@ export default function PublicHome({ onReconfigure }: { onReconfigure?: () => vo
             {visiblePosts.length ? visiblePosts.map((post) => (
               <article className={styles.postCard} key={post.id}>
                 <p className={styles.postMeta}>{formatDate(post.created_at)} · {post.status}</p>
-                <h3>{post.title}</h3>
-                <p>{post.excerpt || post.content.slice(0, 180)}</p>
+                <h3>{rwp.filters.apply('rwp_post_title', post.title, post)}</h3>
+                <p>{rwp.filters.apply('rwp_post_excerpt', post.excerpt || post.content.slice(0, 180), post)}</p>
                 <a href={`/posts/${post.slug}`}>Read More <span aria-hidden="true">→</span></a>
               </article>
             )) : <p className={styles.muted}>No posts match your search.</p>}
