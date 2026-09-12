@@ -11,6 +11,8 @@ interface AdminToolbarProps {
   onViewAdmin?: () => void;
   onProfile?: () => void;
   onLogout?: () => void;
+  /** Set on the public site when the viewer may edit the page being displayed. */
+  editLink?: string;
 }
 
 export default function AdminToolbar({
@@ -21,6 +23,7 @@ export default function AdminToolbar({
   onViewAdmin,
   onProfile,
   onLogout,
+  editLink,
 }: AdminToolbarProps) {
   return (
     <div className={styles.toolbar} role="toolbar" aria-label="WordPress-style admin toolbar">
@@ -32,7 +35,10 @@ export default function AdminToolbar({
         {view === 'admin' ? (
           onViewSite && <button type="button" onClick={onViewSite}>View site</button>
         ) : (
-          onViewAdmin && canAccessAdmin(role) && <button type="button" onClick={onViewAdmin}>Dashboard</button>
+          <>
+            {onViewAdmin && canAccessAdmin(role) && <button type="button" onClick={onViewAdmin}>Dashboard</button>}
+            {editLink && <a className={styles.editLink} href={editLink}>✎ Edit page</a>}
+          </>
         )}
       </div>
       <div className={styles.right}>

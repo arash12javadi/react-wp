@@ -1,0 +1,157 @@
+.container {
+  width: 100%;
+}
+
+.intro {
+  margin-bottom: 22px;
+}
+
+.intro h2 {
+  margin: 0 0 5px;
+  color: #111827;
+  font-size: 1.55rem;
+}
+
+.intro p {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.88rem;
+}
+
+.intro code {
+  border-radius: 4px;
+  padding: 1px 5px;
+  background: #f1f5f9;
+  font-size: 0.82rem;
+}
+
+.status {
+  padding: 26px 0;
+  color: #64748b;
+}
+
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.table th {
+  padding: 11px 14px;
+  border-bottom: 1px solid #e5e7eb;
+  color: #64748b;
+  background: #f8fafc;
+  font-size: 0.74rem;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.table td {
+  padding: 13px 14px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: top;
+}
+
+.table tr:last-child td {
+  border-bottom: 0;
+}
+
+.table strong {
+  display: block;
+  color: #111827;
+}
+
+.table small {
+  display: block;
+  margin-top: 2px;
+  color: #94a3b8;
+  font-size: 0.76rem;
+}
+
+.table select {
+  border: 1px solid #dbe1ea;
+  border-radius: 6px;
+  padding: 7px 9px;
+  color: #1e293b;
+  background: #fff;
+  font: inherit;
+  font-size: 0.84rem;
+}
+
+.table select:disabled {
+  color: #94a3b8;
+  background: #f8fafc;
+  cursor: not-allowed;
+}
+
+.hint {
+  margin-top: 4px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.chip {
+  border: 1px solid #e0e7ff;
+  border-radius: 999px;
+  padding: 3px 9px;
+  color: #4338ca;
+  background: #eef2ff;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.more {
+  border: 0;
+  color: #4f46e5;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-decoration: underline;
+}
+
+.notice,
+.error,
+.feedback {
+  margin-bottom: 14px;
+  border-radius: 7px;
+  padding: 11px 13px;
+  font-size: 0.85rem;
+}
+
+.notice {
+  border: 1px solid #fde68a;
+  color: #92400e;
+  background: #fffbeb;
+}
+
+.error {
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  background: #fef2f2;
+}
+
+.feedback {
+  border: 1px solid #bbf7d0;
+  color: #166534;
+  background: #f0fdf4;
+}
+
+.footnote {
+  margin-top: 14px;
+  color: #94a3b8;
+  font-size: 0.8rem;
+}

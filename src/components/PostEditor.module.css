@@ -97,6 +97,15 @@
   min-height: 300px;
 }
 
+.editorField {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: #334155;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
 .help {
   color: #94a3b8;
   font-size: 0.74rem;

@@ -30,16 +30,37 @@
   text-decoration: underline;
 }
 
-.header {
+.header,
+.headerWide,
+.headerFull {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 32px;
-  max-width: 1120px;
   margin: 0 auto;
   padding: 32px 40px;
   background: #fff;
   border-bottom: 1px solid #e5e7eb;
+}
+
+/* Widths mirror the content containers in PublicHome.module.css. */
+.header { max-width: 1040px; }
+.headerWide { max-width: 1440px; }
+.headerFull { max-width: none; }
+
+.authLinks {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.footerWidgets {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 32px;
+  width: 100%;
+  padding-top: 32px;
+  border-top: 1px solid #e5e7eb;
 }
 
 .brand {
@@ -76,6 +97,39 @@
   color: #2271b1;
 }
 
+.hasChildren {
+  position: relative;
+}
+
+.submenu {
+  display: none;
+  position: absolute;
+  z-index: 5;
+  top: 100%;
+  left: 0;
+  min-width: 190px;
+  padding: 6px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 12px 30px rgb(17 24 39 / 12%);
+}
+
+.submenuOpen {
+  display: grid;
+}
+
+.submenu a {
+  padding: 9px 11px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+
+.submenu a:hover,
+.submenu a:focus-visible {
+  background: #f1f5f9;
+}
+
 .menuButton {
   display: none;
   border: 1px solid #d1d5db;
@@ -86,23 +140,30 @@
   cursor: pointer;
 }
 
-.footer {
+.footer,
+.footerWide,
+.footerFull {
   display: flex;
   justify-content: space-between;
   gap: 20px;
-  max-width: 1040px;
   margin: 0 auto;
   padding: 30px 40px;
   color: #6b7280;
   font-size: .82rem;
 }
 
+.footer { max-width: 1040px; }
+.footerWide { max-width: 1440px; }
+.footerFull { max-width: none; }
+
 @media (max-width: 700px) {
   .adminBar {
     padding: 8px 20px;
     font-size: .72rem;
   }
-  .header {
+  .header,
+  .headerWide,
+  .headerFull {
     position: relative;
     padding: 22px 20px;
   }
@@ -136,8 +197,25 @@
     padding: 11px 12px;
   }
 
-  .footer {
+  /* No hover on touch, so submenus stay expanded inline rather than as dropdowns. */
+  .submenu {
+    display: grid;
+    position: static;
+    padding: 0 0 0 14px;
+    border: 0;
+    border-left: 2px solid #e5e7eb;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .footer,
+  .footerWide,
+  .footerFull {
     flex-direction: column;
     padding: 24px 20px;
+  }
+
+  .authLinks {
+    padding: 10px 12px;
   }
 }

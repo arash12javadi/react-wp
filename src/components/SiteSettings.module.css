@@ -1,5 +1,124 @@
 .container {
-  max-width: 760px;
+  width: 100%;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 22px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.tab,
+.tabActive {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 9px 15px;
+  color: #64748b;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.tab:hover {
+  color: #4f46e5;
+}
+
+.tabActive {
+  border-bottom-color: #4f46e5;
+  color: #4f46e5;
+}
+
+.iconRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.iconRow input {
+  flex: 1;
+  min-width: 220px;
+}
+
+.iconPreview {
+  width: 40px;
+  height: 40px;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+  background: #f8fafc;
+  object-fit: contain;
+}
+
+.secondaryButton {
+  border: 1px solid #dbe1ea;
+  border-radius: 6px;
+  padding: 9px 13px;
+  color: #334155;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.secondaryButton:hover {
+  border-color: #4f46e5;
+  color: #4f46e5;
+}
+
+.configToggleRow {
+  margin-bottom: 18px;
+}
+
+.checkboxRow {
+  flex-direction: row !important;
+  gap: 10px !important;
+  align-items: center;
+}
+
+.checkboxRow input {
+  width: auto !important;
+}
+
+.fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px 18px;
+}
+
+.fieldset legend {
+  padding: 0 6px;
+  color: #334155;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.steps {
+  margin: 0;
+  padding-left: 20px;
+  color: #64748b;
+  font-size: 0.78rem;
+  line-height: 1.6;
+}
+
+.steps li + li {
+  margin-top: 6px;
+}
+
+.steps code {
+  border-radius: 4px;
+  padding: 1px 5px;
+  background: #f1f5f9;
+  word-break: break-all;
 }
 
 .pageIntro {
@@ -26,6 +145,8 @@
   display: flex;
   flex-direction: column;
   gap: 21px;
+  max-width: 760px;
+  margin-bottom: 24px;
   padding: 24px;
   border: 1px solid #e5e7eb;
   border-radius: 9px;
@@ -42,7 +163,8 @@
 }
 
 .form input,
-.form textarea {
+.form textarea,
+.form select {
   box-sizing: border-box;
   width: 100%;
   border: 1px solid #dbe1ea;
@@ -57,10 +179,23 @@
   resize: vertical;
 }
 
+.form select:disabled {
+  color: #94a3b8;
+  background: #f8fafc;
+}
+
 .form input:focus,
-.form textarea:focus {
+.form textarea:focus,
+.form select:focus {
   border-color: #6366f1;
   box-shadow: 0 0 0 3px rgb(99 102 241 / 14%);
+}
+
+.form code {
+  border-radius: 4px;
+  padding: 1px 5px;
+  background: #f1f5f9;
+  font-size: 0.8rem;
 }
 
 .help {

@@ -1,161 +1,43 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { getSupabaseClient, updateOption } from '../lib/db';
+import { useState } from 'react';
+import SiteSettingsPanel from './settings/SiteSettingsPanel';
+import AccountsPanel from './settings/AccountsPanel';
 import styles from './SiteSettings.module.css';
-import { rwp } from '../lib/rwp';
 
-interface SiteSettingsProps {
-  onSiteTitleChange?: (title: string) => void;
-}
+type SettingsTab = 'site' | 'accounts';
 
-interface SettingsForm {
-  siteTitle: string;
-  siteDescription: string;
-  adminEmail: string;
-  menuLinks: string;
-}
+const tabs: Array<[SettingsTab, string, string]> = [
+  ['site', 'Site', 'Configure the basic information shown across your site.'],
+  ['accounts', 'Accounts', 'Control who can register, what they become, and how they sign in.'],
+];
 
-const defaults: SettingsForm = {
-  siteTitle: 'My React-WP Site',
-  siteDescription: '',
-  adminEmail: '',
-  menuLinks: '[{"label":"Home","url":"/"},{"label":"Sample Page","url":"/sample-page"}]',
-};
-
-export default function SiteSettings({ onSiteTitleChange }: SiteSettingsProps) {
-  const [form, setForm] = useState<SettingsForm>(defaults);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [feedback, setFeedback] = useState('');
-
-  const loadSettings = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const supabase = getSupabaseClient();
-      const { data, error: queryError } = await supabase
-        .from('options')
-        .select('option_name,option_value')
-        .in('option_name', ['site_title', 'site_description', 'admin_email']);
-      if (queryError) throw queryError;
-      const values = (data || []).reduce<Record<string, string>>((result, item) => {
-        result[item.option_name] = item.option_value;
-        return result;
-      }, {});
-      setForm({
-        siteTitle: values.site_title || defaults.siteTitle,
-        siteDescription: values.site_description || defaults.siteDescription,
-        adminEmail: values.admin_email || defaults.adminEmail,
-        menuLinks: values.menu_links || defaults.menuLinks,
-      });
-    } catch (loadError: unknown) {
-      setError(loadError instanceof Error ? loadError.message : 'Unable to load site settings.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    void loadSettings();
-  }, []);
-
-  const saveSettings = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setSaving(true);
-    setError('');
-    setFeedback('');
-    try {
-      const title = form.siteTitle.trim();
-      if (!title) throw new Error('Site title is required.');
-      let menuLinks: unknown;
-      try {
-        menuLinks = JSON.parse(form.menuLinks);
-        if (!Array.isArray(menuLinks) || !menuLinks.every((link) => link && typeof link.label === 'string' && typeof link.url === 'string')) {
-          throw new Error('Menu links must be a JSON array with label and url fields.');
-        }
-      } catch (parseError: unknown) {
-        throw new Error(parseError instanceof Error ? parseError.message : 'Menu links contain invalid JSON.');
-      }
-      const [titleSaved, descriptionSaved, emailSaved, menuSaved] = await Promise.all([
-        updateOption('site_title', title),
-        updateOption('site_description', form.siteDescription.trim()),
-        updateOption('admin_email', form.adminEmail.trim()),
-        updateOption('menu_links', menuLinks),
-      ]);
-      if (!titleSaved || !descriptionSaved || !emailSaved || !menuSaved) throw new Error('Settings could not be saved.');
-      setForm((current) => ({ ...current, siteTitle: title }));
-      onSiteTitleChange?.(title);
-      rwp.actions.do('rwp_settings_saved', { ...form, siteTitle: title });
-      setFeedback('Settings saved successfully.');
-    } catch (saveError: unknown) {
-      setError(saveError instanceof Error ? saveError.message : 'Unable to save settings.');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (loading) {
-    return <div className={styles.loading} role="status">Loading settings…</div>;
-  }
+export default function SiteSettings({ onSiteTitleChange }: { onSiteTitleChange?: (title: string) => void }) {
+  const [tab, setTab] = useState<SettingsTab>('site');
+  const active = tabs.find(([id]) => id === tab) || tabs[0];
 
   return (
     <section className={styles.container} aria-labelledby="settings-heading">
       <div className={styles.pageIntro}>
-        <h2 id="settings-heading">Site settings</h2>
-        <p>Configure the basic information shown across your site.</p>
+        <h2 id="settings-heading">Settings</h2>
+        <p>{active[2]}</p>
       </div>
-      {error && (
-        <div className={styles.error} role="alert">
-          <span>{error}</span>
-          <button type="button" onClick={() => void loadSettings()}>Retry</button>
-        </div>
-      )}
-      {feedback && <div className={styles.success} role="status">{feedback}</div>}
-      <form className={styles.form} onSubmit={saveSettings}>
-        <label>
-          Site title
-          <input
-            type="text"
-            value={form.siteTitle}
-            onChange={(event) => setForm((current) => ({ ...current, siteTitle: event.target.value }))}
-            required
-          />
-          <span className={styles.help}>The name displayed in your admin navigation and site metadata.</span>
-        </label>
-        <label>
-          Site description
-          <textarea
-            value={form.siteDescription}
-            onChange={(event) => setForm((current) => ({ ...current, siteDescription: event.target.value }))}
-            placeholder="A short description of your site"
-            rows={5}
-          />
-        </label>
-        <label>
-          Admin email
-          <input
-            type="email"
-            value={form.adminEmail}
-            onChange={(event) => setForm((current) => ({ ...current, adminEmail: event.target.value }))}
-            required
-          />
-        </label>
-        <label>
-          Public menu links (JSON)
-          <textarea
-            value={form.menuLinks}
-            onChange={(event) => setForm((current) => ({ ...current, menuLinks: event.target.value }))}
-            rows={6}
-            spellCheck={false}
-          />
-          <span className={styles.help}>Use an array of objects with <code>label</code> and <code>url</code>, for example: [{"{"}"label":"Home","url":"/"{"}"}].</span>
-        </label>
-        <div className={styles.actions}>
-          <button type="submit" className={styles.saveButton} disabled={saving}>
-            {saving ? 'Saving…' : 'Save settings'}
+
+      <div className={styles.tabs} role="tablist" aria-label="Settings sections">
+        {tabs.map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            className={tab === id ? styles.tabActive : styles.tab}
+            onClick={() => setTab(id)}
+          >
+            {label}
           </button>
-        </div>
-      </form>
+        ))}
+      </div>
+
+      {tab === 'site' && <SiteSettingsPanel onSiteTitleChange={onSiteTitleChange} />}
+      {tab === 'accounts' && <AccountsPanel />}
     </section>
   );
 }

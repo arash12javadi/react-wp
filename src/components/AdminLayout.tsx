@@ -1,10 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import styles from './AdminLayout.module.css';
-import { canManageComments, canManageSettings, type UserRole, roleLabels } from '../lib/roles';
+import { canManageComments, canManageSettings, canManageUsers, canUploadMedia, type UserRole, roleLabels } from '../lib/roles';
 import AdminToolbar from './AdminToolbar';
 import { rwp } from '../lib/rwp';
 
-export type AdminSection = 'dashboard' | 'content' | 'comments' | 'menus' | 'settings' | 'categories' | 'plugins' | 'profile';
+export type AdminSection = 'content' | 'media' | 'comments' | 'menus' | 'settings' | 'categories' | 'plugins' | 'users' | 'profile';
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -18,13 +18,14 @@ interface AdminLayoutProps {
 }
 
 const baseNavigation: Array<{ id: AdminSection; label: string; icon: string }> = [
-  { id: 'dashboard', label: 'Dashboard', icon: '▦' },
   { id: 'content', label: 'Pages & Posts', icon: '▤' },
+  { id: 'media', label: 'Media', icon: '▧' },
   { id: 'comments', label: 'Comments', icon: '◌' },
-  { id: 'settings', label: 'Settings', icon: '⚙' },
-  { id: 'menus', label: 'Menus', icon: '☷' },
   { id: 'categories', label: 'Categories', icon: '▦' },
+  { id: 'menus', label: 'Menus', icon: '☷' },
+  { id: 'users', label: 'Users', icon: '◍' },
   { id: 'plugins', label: 'Plugins', icon: '◈' },
+  { id: 'settings', label: 'Settings', icon: '⚙' },
   { id: 'profile', label: 'Profile', icon: '◉' },
 ];
 
@@ -51,6 +52,8 @@ export default function AdminLayout({
     [...baseNavigation, ...pluginNavigation],
   ).filter((item) =>
     (item.id !== 'comments' || canManageComments(role)) &&
+    (item.id !== 'media' || canUploadMedia(role)) &&
+    (item.id !== 'users' || canManageUsers(role)) &&
     (item.id !== 'settings' || canManageSettings(role)) &&
     (item.id !== 'menus' || canManageSettings(role)) &&
     (item.id !== 'categories' || canManageSettings(role)) &&

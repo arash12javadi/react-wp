@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getSupabaseClient } from '../lib/db';
+import { fetchProfile } from '../lib/profiles';
 import { getUserRole, type UserRole } from '../lib/roles';
+import { resolveExcerpt } from '../lib/excerpt';
+import { defaultSettings, loadSettings, type SiteSettings } from '../lib/settings';
 import type { Post } from '../lib/types';
 import PublicLayout from './PublicLayout';
+import PublicSidebar from './PublicSidebar';
+import { applyMeta, buildMeta } from '../lib/seo';
 import styles from './PublicHome.module.css';
 import { rwp } from '../lib/rwp';
 
@@ -36,6 +41,8 @@ export default function PublicHome({ onReconfigure }: { onReconfigure?: () => vo
   const [adminEmail, setAdminEmail] = useState<string>();
   const [userRole, setUserRole] = useState<UserRole>('subscriber');
   const [menuLinks, setMenuLinks] = useState(defaultMenuLinks);
+  const [settings, setSettings] = useState<SiteSettings>(defaultSettings);
+  const [excerptLength, setExcerptLength] = useState(55);
 
   useEffect(() => {
     let mounted = true;
@@ -46,24 +53,33 @@ export default function PublicHome({ onReconfigure }: { onReconfigure?: () => vo
         if (sessionError) throw sessionError;
         const user = sessionData.session?.user;
         if (mounted && user) {
-          const role = getUserRole(user);
           setAdminEmail(user.email || undefined);
-          setUserRole(role);
+          const profile = await fetchProfile(user.id).catch(() => null);
+          if (mounted) setUserRole(profile ? profile.role : getUserRole(user));
         }
 
-        const [{ data: option }, { data: menuOption }, { data, error: postsError }] = await Promise.all([
-          supabase.from('options').select('option_value').eq('option_name', 'site_title').maybeSingle(),
+        const settings = await loadSettings();
+        const [{ data: menuOption }, { data, error: postsError }] = await Promise.all([
           supabase.from('options').select('option_value').eq('option_name', 'menu_links').maybeSingle(),
           supabase
             .from('pages')
             .select('id,title,slug,content,excerpt,status,author_id,created_at,updated_at,is_post')
             .eq('status', 'published')
             .eq('is_post', true)
-            .order('created_at', { ascending: false }),
+            .order('created_at', { ascending: false })
+            .limit(settings.posts_per_page),
         ]);
         if (postsError && postsError.code !== '42P01' && postsError.code !== 'PGRST205') throw postsError;
         if (mounted) {
-          setSiteTitle(rwp.filters.apply('rwp_site_title', option?.option_value || defaultTitle));
+          setSettings(settings);
+          setSiteTitle(rwp.filters.apply('rwp_site_title', settings.site_title || defaultTitle));
+          setExcerptLength(settings.excerpt_length);
+          applyMeta(buildMeta(null, {
+            siteTitle: settings.site_title || defaultTitle,
+            siteTagline: settings.site_tagline,
+            siteIcon: settings.site_icon,
+            origin: window.location.origin,
+          }));
           if (menuOption?.option_value) {
             try {
               const parsed = JSON.parse(menuOption.option_value);
@@ -100,6 +116,9 @@ export default function PublicHome({ onReconfigure }: { onReconfigure?: () => vo
       adminEmail={adminEmail}
       role={userRole}
       menuLinks={menuLinks}
+      layout={settings.home_layout}
+      showAuthLinks={settings.show_auth_links}
+      canRegister={settings.users_can_register}
       onViewAdmin={() => { window.location.href = `${window.location.origin}/admin`; }}
       onLogout={async () => {
         await getSupabaseClient().auth.signOut();
@@ -107,7 +126,7 @@ export default function PublicHome({ onReconfigure }: { onReconfigure?: () => vo
         setUserRole('subscriber');
       }}
     >
-      <main className={styles.container}>
+      <main className={settings.home_layout === 'full' ? styles.containerFull : settings.home_layout === 'wide' ? styles.containerWide : styles.container}>
         <section className={styles.hero} aria-labelledby="home-heading">
           <p className={styles.kicker}>A fresh start</p>
           <h1 id="home-heading">Welcome to {rwp.filters.apply('rwp_site_title', siteTitle)}</h1>
@@ -134,31 +153,13 @@ export default function PublicHome({ onReconfigure }: { onReconfigure?: () => vo
               <article className={styles.postCard} key={post.id}>
                 <p className={styles.postMeta}>{formatDate(post.created_at)} · {post.status}</p>
                 <h3>{rwp.filters.apply('rwp_post_title', post.title, post)}</h3>
-                <p>{rwp.filters.apply('rwp_post_excerpt', post.excerpt || post.content.slice(0, 180), post)}</p>
+                <p>{rwp.filters.apply('rwp_post_excerpt', resolveExcerpt(post, excerptLength), post)}</p>
                 <a href={`/${post.slug}`}>Read More <span aria-hidden="true">→</span></a>
               </article>
             )) : <p className={styles.muted}>No posts match your search.</p>}
           </section>
 
-          <aside className={styles.sidebar} aria-label="Sidebar">
-            <div className={styles.widget}>
-              <h2>Search</h2>
-              <label htmlFor="public-search" className={styles.srOnly}>Search posts</label>
-              <input id="public-search" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search posts…" />
-            </div>
-            <div className={styles.widget}>
-              <h2>Recent Posts</h2>
-              <ul>{recentPosts.map((post) => <li key={post.id}><a href={`/${post.slug}`}>{post.title}</a></li>)}</ul>
-            </div>
-            <div className={styles.widget}>
-              <h2>Meta</h2>
-              <ul>
-                <li><a href="/admin">Log in</a></li>
-                <li><a href="/feed.json">JSON Feed</a></li>
-                <li><a href="/feed.xml">RSS Feed</a></li>
-              </ul>
-            </div>
-          </aside>
+          <PublicSidebar recentPosts={recentPosts} search={search} onSearch={setSearch} />
         </div>
       </main>
     </PublicLayout>

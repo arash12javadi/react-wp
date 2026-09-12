@@ -120,6 +120,7 @@ export const rwp: RwpPluginContext & {
   subscribe: (listener: () => void) => () => void;
   getAdminPages: () => RwpAdminPage[];
   getDashboardWidgets: () => RwpDashboardWidget[];
+  getShortcodes: () => RwpShortcode[];
   getPlugins: () => RwpInstalledPlugin[];
 } = {
   actions: {
@@ -196,6 +197,7 @@ export const rwp: RwpPluginContext & {
   },
   getAdminPages: () => [...adminPages.values()],
   getDashboardWidgets: () => [...dashboardWidgets.values()],
+  getShortcodes: () => [...shortcodes.values()],
   getPlugins: () => [...plugins.values()].map(({ plugin, active }) => ({ ...plugin, active })),
   subscribe: (listener) => {
     subscribers.add(listener);
@@ -203,24 +205,3 @@ export const rwp: RwpPluginContext & {
   },
 };
 
-export function parseShortcodes(content: string): ReactNode[] {
-  const output: ReactNode[] = [];
-  const shortcodePattern = /\[([a-zA-Z0-9_-]+)([^\]]*)\]/g;
-  let cursor = 0;
-  let match: RegExpExecArray | null;
-  while ((match = shortcodePattern.exec(content))) {
-    if (match.index > cursor) output.push(content.slice(cursor, match.index));
-    const shortcode = shortcodes.get(match[1]);
-    if (!shortcode) output.push(match[0]);
-    else {
-      const attributes: Record<string, string> = {};
-      const attributePattern = /([a-zA-Z0-9_-]+)="([^"]*)"/g;
-      let attribute: RegExpExecArray | null;
-      while ((attribute = attributePattern.exec(match[2]))) attributes[attribute[1]] = attribute[2];
-      output.push(shortcode.render(attributes));
-    }
-    cursor = match.index + match[0].length;
-  }
-  if (cursor < content.length) output.push(content.slice(cursor));
-  return output;
-}

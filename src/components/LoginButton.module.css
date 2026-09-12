@@ -1,0 +1,35 @@
+.button {
+  display: inline-block;
+  border: 0;
+  border-radius: 6px;
+  padding: 9px 16px;
+  color: #fff;
+  background: #4f46e5;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.button:hover,
+.button:focus-visible {
+  color: #fff;
+  background: #4338ca;
+}
+
+.link {
+  border: 0;
+  padding: 0;
+  color: #2271b1;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.92rem;
+  text-decoration: none;
+}
+
+.link:hover,
+.link:focus-visible {
+  text-decoration: underline;
+}

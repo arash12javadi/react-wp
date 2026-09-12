@@ -1,9 +1,14 @@
+// Must come first: it populates process.env before other modules read it at import time.
+import './server/env.mjs';
+import { createHmac, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { access, readFile } from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import { Client } from 'pg';
 import { publicConfig, readConfig, writeConfig } from './server/config.mjs';
+import { authorizeUploader, deleteFromProvider, describeDeleteSupport } from './server/media.mjs';
+import { renderSeoTags } from './server/seo.mjs';
 
 const port = Number(process.env.PORT || 3000);
 const root = path.resolve('dist');
@@ -60,9 +65,10 @@ const install = async (body) => {
         ['site_title', body.siteTitle, 'admin_email', body.adminEmail, 'installed', 'true'],
       );
       await client.query(
-        `update auth.users
-         set raw_user_meta_data = coalesce(raw_user_meta_data, '{}'::jsonb) || jsonb_build_object('role', 'administrator')
-         where lower(email) = lower($1)`,
+        `insert into public.profiles (id, email, display_name, role)
+         select id, email, coalesce(raw_user_meta_data ->> 'display_name', 'Administrator'), 'administrator'
+         from auth.users where lower(email) = lower($1)
+         on conflict (id) do update set role = 'administrator'`,
         [body.adminEmail],
       );
       await writeConfig({
@@ -76,7 +82,7 @@ const install = async (body) => {
   }
 };
 
-const serveFile = async (request, response, pathname) => {
+const serveFile = async (request, response, pathname, seoPath = pathname) => {
   const relative = pathname === '/' || pathname === '/admin' ? 'index.html' : pathname.slice(1);
   const filePath = path.resolve(root, relative);
   if (!filePath.startsWith(`${root}${path.sep}`)) return false;
@@ -85,8 +91,18 @@ const serveFile = async (request, response, pathname) => {
     if (relative === 'index.html') {
       const html = await readFile(filePath, 'utf8');
       const config = publicConfig(await readConfig());
+      const isAdmin = seoPath.replace(/\/+$/, '') === '/admin';
+      const origin = `http://${request.headers.host || 'localhost'}`;
+      const seoTags = isAdmin ? '' : await renderSeoTags(seoPath, origin, config);
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-      response.end(html.replace('window.__REACT_WP_CONFIG__=null;', `window.__REACT_WP_CONFIG__=${JSON.stringify(config)};`));
+      // The injected block carries its own <title>; leaving the placeholder one in place
+      // would win, because browsers honour the first title in the document.
+      const withSeo = seoTags
+        ? html.replace(/\s*<title>.*?<\/title>/i, '').replace('<!--rwp-seo-->', seoTags)
+        : html.replace('<!--rwp-seo-->', '');
+      response.end(
+        withSeo.replace('window.__REACT_WP_CONFIG__=null;', `window.__REACT_WP_CONFIG__=${JSON.stringify(config)};`),
+      );
     } else {
       response.writeHead(200, {
         'Content-Type': contentTypes[path.extname(filePath).toLowerCase()] || 'application/octet-stream',
@@ -109,6 +125,51 @@ const server = http.createServer(async (request, response) => {
       response.end(`window.__REACT_WP_CONFIG__=${JSON.stringify(config)};`);
       return;
     }
+    if (url.pathname === '/api/imagekit-auth' && request.method === 'GET') {
+      const privateKey = process.env.IMAGEKIT_PRIVATE_KEY;
+      if (!privateKey) {
+        json(response, 501, { error: 'IMAGEKIT_PRIVATE_KEY is not configured on this server.' });
+        return;
+      }
+      const token = randomUUID();
+      const expire = Math.floor(Date.now() / 1000) + 600;
+      const signature = createHmac('sha1', privateKey).update(token + expire).digest('hex');
+      response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+      response.end(JSON.stringify({ token, expire, signature }));
+      return;
+    }
+    if (url.pathname === '/api/media-delete' && request.method === 'POST') {
+      const config = publicConfig(await readConfig());
+      if (!config?.supabaseUrl || !config?.supabasePublishableKey) {
+        json(response, 501, { error: 'This site is not installed, so media cannot be deleted.' });
+        return;
+      }
+      const token = (request.headers.authorization || '').replace(/^Bearer\s+/i, '');
+      const auth = await authorizeUploader(config.supabaseUrl, config.supabasePublishableKey, token);
+      if (!auth.ok) {
+        json(response, auth.status, { error: auth.error });
+        return;
+      }
+      const body = await readBody(request);
+      const result = await deleteFromProvider(
+        body.provider,
+        body.providerFileId,
+        body.url,
+        config.supabaseUrl,
+        config.supabasePublishableKey,
+      );
+      if (!result.ok) {
+        json(response, result.status, { error: result.error });
+        return;
+      }
+      json(response, 200, { success: true, skipped: Boolean(result.skipped) });
+      return;
+    }
+    if (url.pathname === '/api/media-config' && request.method === 'GET') {
+      // Reports only whether deletion is possible; never echoes a secret.
+      json(response, 200, describeDeleteSupport());
+      return;
+    }
     if (url.pathname === '/api/install-schema' && request.method === 'POST') {
       const body = await readBody(request);
       await install(body);
@@ -117,7 +178,8 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.method === 'GET' && await serveFile(request, response, url.pathname)) return;
     if (request.method === 'GET') {
-      await serveFile(request, response, '/');
+      // SPA fallback: serve index.html but keep the real path so SEO tags match the route.
+      await serveFile(request, response, '/', url.pathname);
       return;
     }
     json(response, 405, { error: 'Method not allowed' });

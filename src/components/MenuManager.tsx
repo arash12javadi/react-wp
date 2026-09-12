@@ -9,7 +9,24 @@ interface MenuItem {
   label: string;
   url: string;
   type: 'custom' | 'post' | 'page';
+  /** 0 = top level, 1 = dropdown child of the nearest item above at depth 0. */
+  depth?: number;
 }
+
+/** Flat list with depth markers becomes the nested shape the public navbar renders. */
+const toNestedLinks = (items: MenuItem[]) => {
+  const links: Array<{ label: string; url: string; children?: Array<{ label: string; url: string }> }> = [];
+  items.forEach((item) => {
+    const link = { label: item.label, url: item.url };
+    if ((item.depth || 0) > 0 && links.length > 0) {
+      const parent = links[links.length - 1];
+      parent.children = [...(parent.children || []), link];
+    } else {
+      links.push(link);
+    }
+  });
+  return links;
+};
 
 interface MenuRecord {
   id: number;
@@ -121,7 +138,7 @@ export default function MenuManager() {
       const { error: saveError } = await supabase.from('menus').update({ items: activeMenu.items }).eq('id', activeMenu.id);
       if (saveError) throw saveError;
       if (activeMenu.location === 'primary') {
-        const saved = await updateOption('menu_links', activeMenu.items.map(({ label: itemLabel, url: itemUrl }) => ({ label: itemLabel, url: itemUrl })));
+        const saved = await updateOption('menu_links', toNestedLinks(activeMenu.items));
         if (!saved) throw new Error('Menu saved, but the public menu option could not be updated.');
       }
       setFeedback('Menu saved successfully.');
@@ -187,15 +204,39 @@ export default function MenuManager() {
         </aside>
         <div className={styles.structure}>
           <h3>{activeMenu?.name || 'Select a menu'}</h3>
-          {!activeMenu ? <p className={styles.muted}>Create a menu to begin.</p> : activeMenu.items.length === 0 ? <p className={styles.muted}>Add items from the left panel.</p> : activeMenu.items.map((item) => (
-            <div className={styles.item} key={item.id} draggable onDragStart={() => setDraggedId(item.id)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => handleDrop(event, item.id)}>
-              <span className={styles.handle} aria-hidden="true">⠿</span>
-              <div className={styles.itemMain}><strong>{item.label}</strong><span>{item.type === 'post' ? 'Post' : item.type === 'page' ? 'Page' : 'Custom Link'} · {item.url}</span></div>
-              <button type="button" onClick={() => setExpanded(expanded === item.id ? null : item.id)} aria-expanded={expanded === item.id}>Edit</button>
-              <button type="button" onClick={() => updateActiveItems(activeMenu.items.filter((current) => current.id !== item.id))}>Remove</button>
-              {expanded === item.id && <div className={styles.inlineEdit}><label>Label<input value={item.label} onChange={(event) => updateActiveItems(activeMenu.items.map((current) => current.id === item.id ? { ...current, label: event.target.value } : current))} /></label><label>URL<input value={item.url} onChange={(event) => updateActiveItems(activeMenu.items.map((current) => current.id === item.id ? { ...current, url: event.target.value } : current))} /></label></div>}
-            </div>
-          ))}
+          {!activeMenu ? <p className={styles.muted}>Create a menu to begin.</p> : activeMenu.items.length === 0 ? <p className={styles.muted}>Add items from the left panel.</p> : activeMenu.items.map((item, index) => {
+            const depth = item.depth || 0;
+            // An item can only become a child if something sits above it to be a child of.
+            const canIndent = index > 0 && depth === 0;
+            const setDepth = (nextDepth: number) => updateActiveItems(
+              activeMenu.items.map((current) => current.id === item.id ? { ...current, depth: nextDepth } : current),
+            );
+            return (
+              <div
+                className={styles.item}
+                style={{ marginLeft: `${depth * 32}px` }}
+                key={item.id}
+                draggable
+                onDragStart={() => setDraggedId(item.id)}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => handleDrop(event, item.id)}
+              >
+                <span className={styles.handle} aria-hidden="true">⠿</span>
+                <div className={styles.itemMain}>
+                  <strong>{item.label}</strong>
+                  <span>
+                    {item.type === 'post' ? 'Post' : item.type === 'page' ? 'Page' : 'Custom Link'} · {item.url}
+                    {depth > 0 && ' · submenu item'}
+                  </span>
+                </div>
+                <button type="button" title="Make a submenu item" aria-label="Indent" disabled={!canIndent} onClick={() => setDepth(1)}>⇥</button>
+                <button type="button" title="Move to top level" aria-label="Outdent" disabled={depth === 0} onClick={() => setDepth(0)}>⇤</button>
+                <button type="button" onClick={() => setExpanded(expanded === item.id ? null : item.id)} aria-expanded={expanded === item.id}>Edit</button>
+                <button type="button" onClick={() => updateActiveItems(activeMenu.items.filter((current) => current.id !== item.id))}>Remove</button>
+                {expanded === item.id && <div className={styles.inlineEdit}><label>Label<input value={item.label} onChange={(event) => updateActiveItems(activeMenu.items.map((current) => current.id === item.id ? { ...current, label: event.target.value } : current))} /></label><label>URL<input value={item.url} onChange={(event) => updateActiveItems(activeMenu.items.map((current) => current.id === item.id ? { ...current, url: event.target.value } : current))} /></label></div>}
+              </div>
+            );
+          })}
         </div>
       </div>
     </section>

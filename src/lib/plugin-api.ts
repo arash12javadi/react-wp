@@ -1,5 +1,4 @@
 export {
-  parseShortcodes,
   rwp,
   type RwpActionName,
   type RwpAdminPage,

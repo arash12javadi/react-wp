@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/install-schema.ts": {
+      "includeFiles": "supabase/schema.sql"
+    }
+  }
+}

@@ -1,16 +1,24 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
+import { useEffect, useState } from 'react';
+import { type Session, type SupabaseClient } from '@supabase/supabase-js';
 import SetupWizard from './components/SetupWizard';
 import AdminLayout, { type AdminSection } from './components/AdminLayout';
 import SiteSettings from './components/SiteSettings';
-import MenuManager from './components/MenuManager';
+import MenusScreen from './components/MenusScreen';
+import CommentsManager from './components/CommentsManager';
+import ProfileManager from './components/ProfileManager';
 import PluginsManager from './components/PluginsManager';
 import PagesList from './components/PagesList';
 import PageEditor from './components/PageEditor';
 import CategoriesManager from './components/CategoriesManager';
+import MediaLibrary from './components/MediaLibrary';
+import UsersManager from './components/UsersManager';
 import PublicHome from './components/PublicHome';
 import PublicContent from './components/PublicContent';
-import { getUserRole, canAccessAdmin, canManageSettings } from './lib/roles';
+import AuthPage from './components/AuthPage';
+import { canAccessAdmin, canManageComments, canManageSettings, canManageUsers, canUploadMedia } from './lib/roles';
+import { useCurrentProfile } from './lib/profiles';
+import { resolveSupabaseConfig, tryGetSupabaseClient } from './lib/db';
+import { applySiteIcon, loadSettings } from './lib/settings';
 import { rwp } from './lib/rwp';
 import styles from './Dashboard.module.css';
 
@@ -37,36 +45,15 @@ const initializePlugins = async (supabase: SupabaseClient) => {
   });
 };
 
-const getSupabaseClient = (): SupabaseClient | null => {
-  const configWindow = window as Window & { __REACT_WP_CONFIG__?: { supabaseUrl?: string; supabasePublishableKey?: string } | null };
-  const serverConfig = configWindow.__REACT_WP_CONFIG__;
-  const serverMode = Object.prototype.hasOwnProperty.call(configWindow, '__REACT_WP_CONFIG__');
-  const url = serverConfig?.supabaseUrl || (import.meta as any).env?.VITE_SUPABASE_URL || (serverMode ? null : localStorage.getItem('supabase_url'));
-  const key =
-    serverConfig?.supabasePublishableKey ||
-    (import.meta as any).env?.VITE_SUPABASE_PUBLISHABLE_KEY ||
-    (import.meta as any).env?.VITE_SUPABASE_ANON_KEY ||
-    (serverMode ? null : localStorage.getItem('supabase_key'));
-  return url && key ? createClient(url, key) : null;
-};
-
 const checkDatabase = async (): Promise<boolean> => {
-  const configWindow = window as Window & { __REACT_WP_CONFIG__?: { supabaseUrl?: string; supabasePublishableKey?: string } | null };
-  const serverConfig = configWindow.__REACT_WP_CONFIG__;
-  const serverMode = Object.prototype.hasOwnProperty.call(configWindow, '__REACT_WP_CONFIG__');
-  const url = serverConfig?.supabaseUrl || (import.meta as any).env?.VITE_SUPABASE_URL || (serverMode ? null : localStorage.getItem('supabase_url'));
-  const key =
-    serverConfig?.supabasePublishableKey ||
-    (import.meta as any).env?.VITE_SUPABASE_PUBLISHABLE_KEY ||
-    (import.meta as any).env?.VITE_SUPABASE_ANON_KEY ||
-    (serverMode ? null : localStorage.getItem('supabase_key'));
-  if (!url || !key) return false;
+  const config = resolveSupabaseConfig();
+  if (!config) return false;
 
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), 5000);
   try {
-    const headers = { apikey: key, Authorization: `Bearer ${key}` };
-    const baseUrl = url.replace(/\/$/, '');
+    const headers = { apikey: config.key, Authorization: `Bearer ${config.key}` };
+    const baseUrl = config.url.replace(/\/$/, '');
     const responses = await Promise.all([
       fetch(`${baseUrl}/rest/v1/options?select=option_name&limit=1`, { headers, signal: controller.signal }),
       fetch(`${baseUrl}/rest/v1/posts?select=id&limit=1`, { headers, signal: controller.signal }),
@@ -84,94 +71,42 @@ const wait = (milliseconds: number) => new Promise((resolve) => window.setTimeou
 
 const checkDatabaseWithRetry = async (): Promise<SupabaseClient | null> => {
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const client = getSupabaseClient();
+    const client = tryGetSupabaseClient();
     if (client && await checkDatabase()) return client;
     if (attempt < 2) await wait(400);
   }
   return null;
 };
 
-function LoginScreen({ supabase, onLogin }: { supabase: SupabaseClient; onLogin: (session: Session) => void }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setLoading(true);
-    setError('');
-    try {
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-      if (signInError || !data.session) {
-        setError(signInError?.message || 'Unable to sign in.');
-      } else {
-        rwp.actions.do('rwp_user_logged_in', data.session.user);
-        onLogin(data.session);
-      }
-    } catch (loginError: unknown) {
-      setError(
-        loginError instanceof TypeError
-          ? 'Supabase could not be reached. Your saved project URL may be old or invalid. Reconfigure the site with the current Supabase URL and publishable key.'
-          : loginError instanceof Error
-            ? loginError.message
-            : 'Unable to sign in.',
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className={styles.authShell}>
-      <form className={styles.loginCard} onSubmit={handleSubmit}>
-        <div className={styles.authMark} aria-hidden="true">R</div>
-        <h1>Welcome back</h1>
-        <p>Sign in to manage your React-WP site.</p>
-        {error && <div className={styles.authError} role="alert">{error}</div>}
-        <label>
-          Email
-          <input type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} required />
-        </label>
-        <label>
-          Password
-          <input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required />
-        </label>
-        <button type="submit" disabled={loading}>{loading ? 'Signing in…' : 'Sign in'}</button>
-      </form>
-    </div>
-  );
+interface PublicRouting {
+  homePageId: string;
+  postsPageSlug: string;
 }
 
-function Overview({ onNavigate }: { onNavigate: (section: AdminSection) => void }) {
+const loadPublicRouting = async (supabase: SupabaseClient): Promise<PublicRouting> => {
+  const settings = await loadSettings();
+  applySiteIcon(settings.site_icon);
+  let postsPageSlug = '';
+  if (settings.home_page_id && settings.posts_page_id) {
+    const { data } = await supabase.from('pages').select('slug').eq('id', settings.posts_page_id).maybeSingle();
+    postsPageSlug = data?.slug || '';
+  }
+  return { homePageId: settings.home_page_id, postsPageSlug };
+};
+
+/** Plugin widgets used to live on the Dashboard. That screen is gone, so they render here. */
+function PluginWidgets() {
+  const widgets = rwp.getDashboardWidgets();
+  if (widgets.length === 0) return null;
   return (
-    <section className={styles.overview} aria-labelledby="overview-heading">
-      <div className={styles.welcome}>
-        <div>
-          <h2 id="overview-heading">Welcome to your dashboard</h2>
-          <p>Manage your content and site settings from one place.</p>
-        </div>
-        <button type="button" onClick={() => onNavigate('content')}>Manage pages & posts →</button>
-      </div>
-      <div className={styles.cards}>
-        <button type="button" className={styles.card} onClick={() => onNavigate('content')}>
-          <span className={styles.cardIcon} aria-hidden="true">▤</span>
-          <strong>Page & Posts</strong>
-          <span>Create and manage your content</span>
-        </button>
-        <button type="button" className={styles.card} onClick={() => onNavigate('settings')}>
-          <span className={styles.cardIcon} aria-hidden="true">⚙</span>
-          <strong>Site settings</strong>
-          <span>Update your site information</span>
-        </button>
-      </div>
-      {rwp.getDashboardWidgets().map(({ id, title, component: Widget }) => (
-        <section key={id} aria-labelledby={`${id}-heading`}>
+    <>
+      {widgets.map(({ id, title, component: Widget }) => (
+        <section key={id} className={styles.overview} aria-labelledby={`${id}-heading`}>
           <h2 id={`${id}-heading`}>{title}</h2>
           <Widget />
         </section>
       ))}
-    </section>
+    </>
   );
 }
 
@@ -188,6 +123,14 @@ function SimpleSection({ title, description }: { title: string; description: str
   );
 }
 
+const adminSections: AdminSection[] = ['content', 'media', 'comments', 'categories', 'menus', 'users', 'plugins', 'settings', 'profile'];
+
+/** Supports the public site's "Edit page" link, e.g. /admin?section=content&edit=12 */
+const initialSection = (): AdminSection => {
+  const requested = new URLSearchParams(window.location.search).get('section');
+  return adminSections.includes(requested as AdminSection) ? requested as AdminSection : 'content';
+};
+
 function ConnectionError({ onReconfigure }: { onReconfigure: () => void }) {
   return (
     <div className={styles.loadingScreen} role="alert">
@@ -202,13 +145,13 @@ function ConnectionError({ onReconfigure }: { onReconfigure: () => void }) {
 
 function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseClient; onReconfigure: () => void }) {
   const [session, setSession] = useState<Session | null>(null);
-  const [activeSection, setActiveSection] = useState<AdminSection>('dashboard');
+  const [activeSection, setActiveSection] = useState<AdminSection>(initialSection());
   const [editingPage, setEditingPage] = useState<import('./lib/types').Page | null>(null);
   const [creatingPost, setCreatingPost] = useState<boolean | null>(null);
   const [siteTitle, setSiteTitle] = useState('React-WP');
   const [authLoading, setAuthLoading] = useState(true);
   const [connectionError, setConnectionError] = useState(false);
-  const role = session ? getUserRole(session.user) : 'subscriber';
+  const { role, loading: roleLoading } = useCurrentProfile(session?.user);
 
   useEffect(() => {
     rwp.actions.do('rwp_admin_loaded');
@@ -236,6 +179,18 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
   }, [supabase]);
 
   useEffect(() => {
+    const editId = new URLSearchParams(window.location.search).get('edit');
+    if (!editId || !session) return;
+    let mounted = true;
+    void supabase.from('pages').select('*').eq('id', editId).maybeSingle().then(({ data }) => {
+      if (mounted && data) setEditingPage(data as import('./lib/types').Page);
+      // Clear the query string so a later reload does not reopen the editor.
+      window.history.replaceState({}, '', '/admin');
+    });
+    return () => { mounted = false; };
+  }, [session, supabase]);
+
+  useEffect(() => {
     supabase
       .from('options')
       .select('option_value')
@@ -251,12 +206,13 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
     return <ConnectionError onReconfigure={onReconfigure} />;
   }
 
-  if (authLoading) {
+  if (authLoading || roleLoading) {
     return <div className={styles.loadingScreen} role="status">Loading dashboard…</div>;
   }
 
   if (!session) {
-    return <LoginScreen supabase={supabase} onLogin={setSession} />;
+    window.location.href = '/login?redirect=%2Fadmin';
+    return <div className={styles.loadingScreen} role="status">Redirecting to sign in…</div>;
   }
 
   if (!canAccessAdmin(role)) {
@@ -291,25 +247,32 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
     ) : editingPage ? (
       <PageEditor role={role} page={editingPage} onSaved={() => setEditingPage(null)} onCancel={() => setEditingPage(null)} />
     ) : (
-      <PagesList role={role} onCreate={(isPost) => setCreatingPost(isPost)} onEdit={(page) => {
-        setEditingPage(page);
-        setCreatingPost(null);
-      }} />
+      <>
+        <PluginWidgets />
+        <PagesList role={role} onCreate={(isPost) => setCreatingPost(isPost)} onEdit={(page) => {
+          setEditingPage(page);
+          setCreatingPost(null);
+        }} />
+      </>
     );
+  } else if (activeSection === 'media' && canUploadMedia(role)) {
+    content = <MediaLibrary role={role} />;
+  } else if (activeSection === 'users' && canManageUsers(role)) {
+    content = <UsersManager role={role} />;
   } else if (activeSection === 'menus' && canManageSettings(role)) {
-    content = <MenuManager />;
+    content = <MenusScreen />;
   } else if (activeSection === 'settings' && canManageSettings(role)) {
     content = <SiteSettings onSiteTitleChange={setSiteTitle} />;
   } else if (activeSection === 'plugins' && canManageSettings(role)) {
     content = <PluginsManager />;
   } else if (activeSection === 'categories' && canManageSettings(role)) {
     content = <CategoriesManager />;
-  } else if (activeSection === 'comments') {
-    content = <SimpleSection title="Comments" description="Comment moderation will appear here." />;
+  } else if (activeSection === 'comments' && canManageComments(role)) {
+    content = <CommentsManager />;
   } else if (activeSection === 'profile') {
-    content = <SimpleSection title="Profile" description="Manage your account profile and password." />;
+    content = <ProfileManager role={role} />;
   } else {
-    content = <Overview onNavigate={navigate} />;
+    content = <SimpleSection title="Not available" description="Your role does not have access to this section." />;
   }
 
   return (
@@ -329,6 +292,7 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
 
 export default function App() {
   const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
+  const [routing, setRouting] = useState<PublicRouting>({ homePageId: '', postsPageSlug: '' });
   const [checkingDatabase, setCheckingDatabase] = useState(true);
   const isAdminRoute = window.location.pathname.replace(/\/+$/, '') === '/admin';
   const reconfigure = () => {
@@ -340,19 +304,22 @@ export default function App() {
   useEffect(() => {
     rwp.actions.do('rwp_init');
     let mounted = true;
-    void checkDatabaseWithRetry().then((client) => {
+    void checkDatabaseWithRetry().then(async (client) => {
       if (!mounted) return;
-      if (client) {
-        void initializePlugins(client)
-          .then(() => {
-            if (mounted) setSupabase(client);
-          })
-          .finally(() => {
-            if (mounted) setCheckingDatabase(false);
-          });
+      if (!client) {
+        setCheckingDatabase(false);
         return;
       }
-      setCheckingDatabase(false);
+      try {
+        await initializePlugins(client);
+        const publicRouting = await loadPublicRouting(client).catch(() => ({ homePageId: '', postsPageSlug: '' }));
+        if (mounted) {
+          setRouting(publicRouting);
+          setSupabase(client);
+        }
+      } finally {
+        if (mounted) setCheckingDatabase(false);
+      }
     });
     return () => {
       mounted = false;
@@ -374,10 +341,19 @@ export default function App() {
   }
 
   const pathname = window.location.pathname.replace(/^\/+|\/+$/g, '');
-  if (pathname) {
-    const slug = pathname.replace(/^posts\//, '').replace(/^pages\//, '');
-    return <PublicContent slug={slug} onReconfigure={reconfigure} />;
+
+  if (pathname === 'login') return <AuthPage mode="login" />;
+  if (pathname === 'register') return <AuthPage mode="register" />;
+
+  if (!pathname) {
+    return routing.homePageId
+      ? <PublicContent pageId={routing.homePageId} onReconfigure={reconfigure} />
+      : <PublicHome onReconfigure={reconfigure} />;
   }
 
-  return <PublicHome onReconfigure={reconfigure} />;
+  const slug = pathname.replace(/^posts\//, '').replace(/^pages\//, '');
+  if (routing.postsPageSlug && slug === routing.postsPageSlug) {
+    return <PublicHome onReconfigure={reconfigure} />;
+  }
+  return <PublicContent slug={slug} onReconfigure={reconfigure} />;
 }

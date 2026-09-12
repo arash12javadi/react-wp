@@ -4,6 +4,18 @@
   padding: 48px 40px 24px;
 }
 
+.containerWide {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 48px 40px 24px;
+}
+
+.containerFull {
+  max-width: none;
+  margin: 0;
+  padding: 48px 40px 24px;
+}
+
 .content {
   color: #334155;
   line-height: 1.75;
@@ -195,7 +207,9 @@
 }
 
 @media (max-width: 700px) {
-  .container {
+  .container,
+  .containerWide,
+  .containerFull {
     padding: 24px 20px;
   }
 
