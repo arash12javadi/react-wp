@@ -9,6 +9,7 @@ import { Client } from 'pg';
 import { publicConfig, readConfig, writeConfig } from './server/config.mjs';
 import { authorizeUploader, deleteFromProvider, describeDeleteSupport } from './server/media.mjs';
 import { renderSeoTags } from './server/seo.mjs';
+import { handlePluginRequest, resolveOrigin } from './server/plugins.mjs';
 
 const port = Number(process.env.PORT || 3000);
 const root = path.resolve('dist');
@@ -163,6 +164,31 @@ const server = http.createServer(async (request, response) => {
         return;
       }
       json(response, 200, { success: true, skipped: Boolean(result.skipped) });
+      return;
+    }
+    if (url.pathname.startsWith('/api/plugins/')) {
+      const chunks = [];
+      for await (const chunk of request) chunks.push(chunk);
+      const config = publicConfig(await readConfig());
+      const result = await handlePluginRequest({
+        method: request.method,
+        path: url.pathname.slice('/api/plugins/'.length),
+        query: Object.fromEntries(url.searchParams),
+        headers: request.headers,
+        // Kept raw: Stripe webhook signatures are computed over the exact bytes received.
+        rawBody: Buffer.concat(chunks),
+        supabase: { url: config?.supabaseUrl, publishableKey: config?.supabasePublishableKey },
+        origin: resolveOrigin(request.headers),
+      });
+      if (result.redirect) {
+        response.writeHead(result.status || 302, { Location: result.redirect });
+        response.end();
+      } else if (result.text !== undefined) {
+        response.writeHead(result.status, result.headers || { 'Content-Type': 'text/plain; charset=utf-8' });
+        response.end(result.text);
+      } else {
+        json(response, result.status, result.body ?? {});
+      }
       return;
     }
     if (url.pathname === '/api/media-config' && request.method === 'GET') {

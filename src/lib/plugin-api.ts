@@ -8,6 +8,9 @@ export {
   type RwpPluginManifest,
   type RwpPluginContext,
   type RwpShortcode,
+  type RwpRoute,
+  type RwpRouteProps,
+  type RwpHeaderItem,
 } from './rwp';
 
 import { rwp, type RwpPluginManifest, type RwpPluginContext } from './rwp';

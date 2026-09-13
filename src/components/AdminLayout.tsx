@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import styles from './AdminLayout.module.css';
-import { canManageComments, canManageSettings, canManageUsers, canUploadMedia, type UserRole, roleLabels } from '../lib/roles';
+import { canManageComments, canManageSettings, canManageUsers, canUploadMedia, hasCapability, type Capability, type UserRole, roleLabels } from '../lib/roles';
 import AdminToolbar from './AdminToolbar';
 import { rwp } from '../lib/rwp';
 
@@ -42,7 +42,9 @@ export default function AdminLayout({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [, refresh] = useState(0);
   useEffect(() => rwp.subscribe(() => refresh((value) => value + 1)), []);
-  const pluginNavigation = rwp.getAdminPages().map((page) => ({
+  const pluginNavigation = rwp.getAdminPages()
+    .filter((page) => !page.capability || hasCapability(role, page.capability as Capability))
+    .map((page) => ({
     id: page.id as AdminSection,
     label: page.label,
     icon: page.icon || '◈',

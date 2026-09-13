@@ -199,6 +199,33 @@ Commenting requires an account. The insert policy enforces `author_id = auth.uid
 
 **Widgets** are under **Menus & Widgets → Sidebar & Widgets**. Six widget types (Search, Recent Posts, Categories, Text/HTML, Navigation Menu, Login) can be dragged into a Sidebar or Footer area and reordered. Configuration is stored in the `rwp_widget_areas` option. The sidebar appears on pages with **Show sidebar** enabled; when no widgets are configured, the original default sidebar still renders so nothing disappears on upgrade.
 
+### Shop (the `rwp-shop` plugin)
+
+A WooCommerce-style store, shipped as a bundled plugin in [`plugins/rwp-shop`](./plugins/rwp-shop).
+
+**Setup**
+
+1. Run [`supabase/migrations/20260917_shop_plugin.sql`](./supabase/migrations/20260917_shop_plugin.sql) in the Supabase SQL Editor. Safe to re-run. New installations get it from `schema.sql`.
+2. Activate **RWP Shop** under **Plugins**. **Shop** and **Products** then appear in the admin menu for Administrators and the new **Shop Manager** role.
+3. Under **Shop → Settings**: pick the currency, store address, payment methods, tax and shipping zones. Add products under **Products**.
+4. For online payments and email, set the server environment variables listed in [`.env.example`](./.env.example) and restart: `SUPABASE_SECRET_KEY`, then any of `STRIPE_SECRET_KEY` (+ `STRIPE_WEBHOOK_SECRET`), `PAYPAL_CLIENT_ID`/`PAYPAL_CLIENT_SECRET`/`PAYPAL_MODE`, and `SMTP_*`. **Shop → Settings → Status** shows which are set.
+
+Public pages: `/shop`, `/product-category/<slug>`, `/product-tag/<slug>`, `/product/<slug>`, `/cart`, `/checkout`, `/checkout/order-received/<id>`, `/checkout/order-pay/<id>`, `/my-account`. Shortcodes: `[rwp_products limit="4" category="slug" featured="1" on_sale="1" orderby="popularity"]`, `[rwp_add_to_cart id="<product id>"]`, `[rwp_cart_link]`.
+
+Features: simple, variable (attributes → variations), grouped and external products; sale prices with schedules; stock with backorders, low-stock thresholds and held stock for unpaid orders; categories, tags and global attributes with layered filtering; gallery; upsells and cross-sells; downloadable products with limits and expiry; coupons (percent, fixed cart, fixed product; spend limits, product/category/email restrictions, usage limits); tax rates by country/state/postcode/city with classes, priorities and compound rates, prices entered with or without tax; shipping zones with flat rate (per item and per shipping class), free shipping and local pickup; Stripe Checkout, PayPal, bank transfer, cheque and cash on delivery; refunds (manual, or through Stripe/PayPal); order notes; guest checkout and customer accounts (orders, downloads, addresses); reviews with verified owners; reports; order emails.
+
+**Prices are decided by the database, never the browser.** The cart sends only product ids and quantities. `shop_calculate()` works out prices, coupons, tax and shipping, and `shop_place_order()` repeats that calculation and takes stock with a conditional update inside the same transaction, so two customers cannot both buy the last item. A total computed in the browser would be attacker-controlled.
+
+**Online payments are confirmed with the gateway, server-side.** After Stripe or PayPal redirects back (or Stripe's webhook fires), the server asks the gateway whether the payment succeeded and then calls `shop_mark_order_paid()`, which checks the amount and currency against the order total. That function is granted to `service_role` only, which is why `SUPABASE_SECRET_KEY` is needed; anon and signed-in users get "permission denied". The secret key is used for nothing else.
+
+**Order emails** go out through SMTP. Emails that a guest's browser can trigger (a new order) are recorded in `shop_orders.emails_sent` so a replayed request cannot send them twice; that record also needs the secret key.
+
+**On Vercel** the shop works the same way: `api/plugins.ts` serves the plugin routes, and `vercel.json` now also routes unknown paths to `index.html`, so refreshing `/shop` or any other client route no longer 404s. Set the same environment variables in the Vercel project.
+
+The migration also fixes a sign-up bug in `handle_new_user`: when the `default_user_role` option had never been saved, `null not in (...)` evaluated to null rather than true, so the fallback to `subscriber` never ran and every sign-up failed.
+
+To test Stripe without real money use a `sk_test_` key and card `4242 4242 4242 4242`; for PayPal leave `PAYPAL_MODE=sandbox` and use a sandbox buyer account.
+
 ### The editor
 
 The content editor is built on [TipTap](https://tiptap.dev) (ProseMirror). It replaced a hand-rolled `contentEditable` implementation that reassigned `innerHTML` from a React effect on every keystroke, which moved the caret back to the start of the document mid-sentence. TipTap owns its DOM, and external values are only applied while the editor is unfocused, so that class of bug cannot recur.

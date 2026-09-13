@@ -15,7 +15,8 @@ import UsersManager from './components/UsersManager';
 import PublicHome from './components/PublicHome';
 import PublicContent from './components/PublicContent';
 import AuthPage from './components/AuthPage';
-import { canAccessAdmin, canManageComments, canManageSettings, canManageUsers, canUploadMedia } from './lib/roles';
+import PublicChrome from './components/PublicChrome';
+import { canAccessAdmin, canManageComments, canManageSettings, canManageUsers, canUploadMedia, hasCapability, type Capability } from './lib/roles';
 import { useCurrentProfile } from './lib/profiles';
 import { resolveSupabaseConfig, tryGetSupabaseClient } from './lib/db';
 import { applySiteIcon, loadSettings } from './lib/settings';
@@ -233,9 +234,11 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
 
   let content;
   const pluginPage = rwp.getAdminPages().find((page) => page.id === activeSection);
-  if (pluginPage) {
+  if (pluginPage && (!pluginPage.capability || hasCapability(role, pluginPage.capability as Capability))) {
     const PluginPage = pluginPage.component;
     content = <PluginPage />;
+  } else if (pluginPage) {
+    content = <SimpleSection title="Not available" description="Your role does not have access to this section." />;
   } else if (activeSection === 'content') {
     content = creatingPost !== null ? (
       <PageEditor
@@ -344,6 +347,14 @@ export default function App() {
 
   if (pathname === 'login') return <AuthPage mode="login" />;
   if (pathname === 'register') return <AuthPage mode="register" />;
+
+  // Plugin routes are checked before page slugs, so a plugin owns its paths outright.
+  const pluginRoute = pathname ? rwp.matchRoute(`/${pathname}`) : null;
+  if (pluginRoute) {
+    const RouteComponent = pluginRoute.route.component;
+    const rendered = <RouteComponent params={pluginRoute.params} />;
+    return pluginRoute.route.chrome === false ? rendered : <PublicChrome>{rendered}</PublicChrome>;
+  }
 
   if (!pathname) {
     return routing.homePageId

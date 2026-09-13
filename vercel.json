@@ -3,5 +3,9 @@
     "api/install-schema.ts": {
       "includeFiles": "supabase/schema.sql"
     }
-  }
+  },
+  "rewrites": [
+    { "source": "/api/plugins/:path*", "destination": "/api/plugins?__path=:path*" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ]
 }

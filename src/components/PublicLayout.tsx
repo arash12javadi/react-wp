@@ -5,6 +5,7 @@ import LoginButton from './LoginButton';
 import WidgetRenderer from './WidgetRenderer';
 import { loadWidgetAreas, type Widget } from '../lib/widgets';
 import type { UserRole } from '../lib/roles';
+import { rwp } from '../lib/rwp';
 
 export interface MenuLink {
   label: string;
@@ -81,6 +82,9 @@ export default function PublicLayout({
 }: PublicLayoutProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [footerWidgets, setFooterWidgets] = useState<Widget[]>([]);
+  const [, refresh] = useState(0);
+  useEffect(() => rwp.subscribe(() => refresh((value) => value + 1)), []);
+  const headerItems = rwp.getHeaderItems();
   const links = menuLinks?.length ? menuLinks : defaultLinks;
   const headerClass = widthClass(layout, styles.header, styles.headerWide, styles.headerFull);
   const footerClass = widthClass(layout, styles.footer, styles.footerWide, styles.footerFull);
@@ -119,6 +123,7 @@ export default function PublicLayout({
           {links.map((link) => (
             <NavItem key={`${link.label}-${link.url}`} link={link} onNavigate={() => setMenuOpen(false)} />
           ))}
+          {headerItems.map(({ id, component: Item }) => <Item key={id} />)}
           {showAuthLinks && (
             <span className={styles.authLinks}>
               {!adminEmail && canRegister && <a href="/register">Register</a>}

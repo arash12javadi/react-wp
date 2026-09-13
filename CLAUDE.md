@@ -6,7 +6,7 @@ A WordPress-style CMS: React 19 + Vite SPA, Supabase (Postgres + Auth) as the wh
 
 - `npm start` — build, then run `server.mjs` on :3000. This is how the site is actually hosted.
 - `npm run dev` — Vite on :5173, proxying `/api` to :3000 (run `npm start` first).
-- `npm run build` and `npm run lint` — the only automated checks. There is **no TypeScript compiler** configured (no `typescript` dep, no tsconfig); Vite strips types without checking them.
+- `npm run build` and `npm run lint` — the only automated checks. There is **no TypeScript compiler** configured (no `typescript` dep, no tsconfig); Vite strips types without checking them. ESLint only covers `.js/.jsx`, so `.ts/.tsx` files are not linted either.
 - `git` is not on the shell PATH. Use `C:\Users\arash\AppData\Local\GitHubDesktop\app-3.6.5\resources\app\git\cmd\git.exe`.
 
 ## Database migrations
@@ -34,6 +34,10 @@ Audit that programmatically before handing a migration over. Getting this wrong 
 - **Content renders through `ContentRenderer`**, which portals shortcode components (e.g. `[rwp_login]`) into the sanitized HTML. Don't go back to raw `dangerouslySetInnerHTML`.
 - **The TipTap editor (`ClassicEditor.tsx`)** syncs external values by comparing against the last HTML it emitted, because TipTap normalises HTML. Don't wrap it in a `<label>`: labels forward clicks to the toolbar `<select>`. Its CSS is scoped under `.editor` so parent form styles can't override it.
 - Cloudinary uploads are unsigned (no secret needed); deletes are signed and go through `/api/media-delete`.
+- **Plugins can own public routes, header items and server routes** (`routes.register`, `header.register`, `plugins/<id>/server.mjs`). Server modules must be imported by hand in `server/plugins.mjs`, or Vercel won't bundle them.
+- **Shop (`plugins/rwp-shop`) prices, tax, shipping, coupons and stock are computed in SQL** (`shop_calculate`, `shop_place_order`). Never trust an amount from the browser. `shop_mark_order_paid`, `shop_claim_order_email` and `shop_set_gateway_data` are granted to `service_role` only; the server calls them with `SUPABASE_SECRET_KEY` after verifying the payment with the gateway.
+- **New `public` functions are executable by anon by default** (Supabase default privileges). Internal SECURITY DEFINER helpers must `revoke execute ... from public, anon, authenticated`.
+- There is no local database, but SQL can be exercised in PGlite (`@electric-sql/pglite` with the `pgcrypto` contrib) with small stubs for `auth.uid()` and the anon/authenticated/service_role roles.
 
 ## Working with the owner
 

@@ -1,8 +1,9 @@
-export const roles = ['administrator', 'editor', 'author', 'contributor', 'subscriber', 'super_admin'] as const;
+export const roles = ['administrator', 'shop_manager', 'editor', 'author', 'contributor', 'subscriber', 'super_admin'] as const;
 export type UserRole = (typeof roles)[number];
 
 export const roleLabels: Record<UserRole, string> = {
   administrator: 'Administrator',
+  shop_manager: 'Shop Manager',
   editor: 'Editor',
   author: 'Author',
   contributor: 'Contributor',
@@ -27,6 +28,7 @@ export const capabilities = [
   'list_users',
   'edit_users',
   'promote_users',
+  'manage_shop',
 ] as const;
 export type Capability = (typeof capabilities)[number];
 
@@ -47,6 +49,7 @@ export const capabilityLabels: Record<Capability, string> = {
   list_users: 'List users',
   edit_users: 'Edit users',
   promote_users: 'Change user roles',
+  manage_shop: 'Manage shop (products, orders, shop settings)',
 };
 
 const subscriber: Capability[] = ['read'];
@@ -61,6 +64,8 @@ const editor: Capability[] = [
   'manage_categories',
   'moderate_comments',
 ];
+// Mirrors WooCommerce's Shop Manager: an editor who also runs the shop, without site settings.
+const shopManager: Capability[] = [...editor, 'manage_shop', 'list_users'];
 const administrator: Capability[] = [
   ...editor,
   'manage_options',
@@ -68,6 +73,7 @@ const administrator: Capability[] = [
   'list_users',
   'edit_users',
   'promote_users',
+  'manage_shop',
 ];
 
 export const roleCapabilities: Record<UserRole, Capability[]> = {
@@ -75,6 +81,7 @@ export const roleCapabilities: Record<UserRole, Capability[]> = {
   contributor,
   author,
   editor,
+  shop_manager: shopManager,
   administrator,
   super_admin: [...capabilities],
 };
@@ -89,6 +96,7 @@ export const canManageAllPosts = (role: UserRole) => hasCapability(role, 'edit_o
 export const canPublishPosts = (role: UserRole) => hasCapability(role, 'publish_posts');
 export const canUploadMedia = (role: UserRole) => hasCapability(role, 'upload_files');
 export const canManageUsers = (role: UserRole) => hasCapability(role, 'list_users');
+export const canManageShop = (role: UserRole) => hasCapability(role, 'manage_shop');
 
 /** Legacy fallback only. Roles are authoritative in public.profiles; user_metadata is user-writable. */
 export const getUserRole = (user: { app_metadata?: Record<string, unknown>; user_metadata?: Record<string, unknown> }): UserRole => {

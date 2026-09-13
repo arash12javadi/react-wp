@@ -1,0 +1,8 @@
+{
+  "id": "rwp-shop",
+  "name": "RWP Shop",
+  "version": "1.0.0",
+  "author": "React-WP",
+  "description": "A WooCommerce-style store: products with variations, cart, checkout, orders, coupons, tax, shipping zones, Stripe, PayPal and offline payments, customer accounts, reviews, reports and order emails.",
+  "entry": "./index.tsx"
+}

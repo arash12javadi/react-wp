@@ -15,7 +15,9 @@ export type RwpActionName =
   | 'rwp_settings_saved'
   | 'rwp_menu_saved'
   | 'rwp_plugin_activated'
-  | 'rwp_plugin_deactivated';
+  | 'rwp_plugin_deactivated'
+  // Plugins may define their own actions; prefix them with the plugin id.
+  | (string & {});
 
 export type RwpFilterName =
   | 'rwp_site_title'
@@ -47,6 +49,27 @@ export interface RwpShortcode {
   render: (attributes: Record<string, string>) => ReactNode;
 }
 
+export interface RwpRouteProps {
+  /** Named segments from the path pattern, e.g. { slug: 'blue-shirt' } for /product/:slug */
+  params: Record<string, string>;
+}
+
+export interface RwpRoute {
+  /**
+   * Public path pattern. Segments starting with ":" are captured; a trailing "*" matches
+   * the rest of the path into params["*"]. Example: "/product/:slug", "/my-account/*".
+   */
+  path: string;
+  component: ComponentType<RwpRouteProps>;
+  /** Wrap in the site header, menu and footer. Defaults to true. */
+  chrome?: boolean;
+}
+
+export interface RwpHeaderItem {
+  id: string;
+  component: ComponentType;
+}
+
 export interface RwpPluginContext {
   actions: {
     add: (name: RwpActionName, callback: (...args: unknown[]) => void) => () => void;
@@ -63,7 +86,39 @@ export interface RwpPluginContext {
   shortcodes: {
     register: (shortcode: RwpShortcode) => () => void;
   };
+  routes: {
+    register: (route: RwpRoute) => () => void;
+  };
+  header: {
+    /** Renders next to the login links in the public site header (e.g. a cart link). */
+    register: (item: RwpHeaderItem) => () => void;
+  };
 }
+
+/** Matches a pathname against a route pattern and returns its params, or null. */
+export const matchRoutePath = (pattern: string, pathname: string): Record<string, string> | null => {
+  const patternParts = pattern.split('/').filter(Boolean);
+  const pathParts = pathname.split('/').filter(Boolean).map((part) => {
+    try {
+      return decodeURIComponent(part);
+    } catch {
+      return part;
+    }
+  });
+  const params: Record<string, string> = {};
+  for (let index = 0; index < patternParts.length; index += 1) {
+    const part = patternParts[index];
+    if (part === '*') {
+      params['*'] = pathParts.slice(index).join('/');
+      return params;
+    }
+    const value = pathParts[index];
+    if (value === undefined) return null;
+    if (part.startsWith(':')) params[part.slice(1)] = value;
+    else if (part !== value) return null;
+  }
+  return pathParts.length === patternParts.length ? params : null;
+};
 
 export interface RwpPlugin {
   id: string;
@@ -95,6 +150,8 @@ const filters = new Map<RwpFilterName, Set<FilterCallback>>();
 const adminPages = new Map<string, RwpAdminPage>();
 const dashboardWidgets = new Map<string, RwpDashboardWidget>();
 const shortcodes = new Map<string, RwpShortcode>();
+const routes = new Map<string, RwpRoute>();
+const headerItems = new Map<string, RwpHeaderItem>();
 interface PluginRecord {
   plugin: RwpPlugin;
   cleanup?: () => void;
@@ -121,6 +178,9 @@ export const rwp: RwpPluginContext & {
   getAdminPages: () => RwpAdminPage[];
   getDashboardWidgets: () => RwpDashboardWidget[];
   getShortcodes: () => RwpShortcode[];
+  getRoutes: () => RwpRoute[];
+  matchRoute: (pathname: string) => { route: RwpRoute; params: Record<string, string> } | null;
+  getHeaderItems: () => RwpHeaderItem[];
   getPlugins: () => RwpInstalledPlugin[];
 } = {
   actions: {
@@ -166,6 +226,26 @@ export const rwp: RwpPluginContext & {
       };
     },
   },
+  routes: {
+    register: (route) => {
+      routes.set(route.path, route);
+      notifySubscribers();
+      return () => {
+        routes.delete(route.path);
+        notifySubscribers();
+      };
+    },
+  },
+  header: {
+    register: (item) => {
+      headerItems.set(item.id, item);
+      notifySubscribers();
+      return () => {
+        headerItems.delete(item.id);
+        notifySubscribers();
+      };
+    },
+  },
   registerPlugin: (plugin) => {
     if (plugins.has(plugin.id)) throw new Error(`RWP plugin "${plugin.id}" is already registered.`);
     const record: PluginRecord = { plugin, active: false };
@@ -198,6 +278,19 @@ export const rwp: RwpPluginContext & {
   getAdminPages: () => [...adminPages.values()],
   getDashboardWidgets: () => [...dashboardWidgets.values()],
   getShortcodes: () => [...shortcodes.values()],
+  getRoutes: () => [...routes.values()],
+  matchRoute: (pathname) => {
+    // Literal segments beat parameters, so "/shop/cart" wins over "/shop/:slug".
+    const score = (path: string) => path.split('/').filter(Boolean)
+      .reduce((total, part) => total + (part === '*' ? 0 : part.startsWith(':') ? 1 : 2), 0);
+    const candidates = [...routes.values()].sort((a, b) => score(b.path) - score(a.path));
+    for (const route of candidates) {
+      const params = matchRoutePath(route.path, pathname);
+      if (params) return { route, params };
+    }
+    return null;
+  },
+  getHeaderItems: () => [...headerItems.values()],
   getPlugins: () => [...plugins.values()].map(({ plugin, active }) => ({ ...plugin, active })),
   subscribe: (listener) => {
     subscribers.add(listener);
