@@ -55,13 +55,15 @@ export function parseCloudinaryUrl(url) {
     const uploadIndex = segments.indexOf('upload');
     if (uploadIndex === -1) return null;
     const resourceType = segments[uploadIndex - 1] || 'image';
+    // The cloud the file actually lives in, which may differ from the one configured today.
+    const cloudName = uploadIndex >= 2 ? segments[uploadIndex - 2] : null;
     let rest = segments.slice(uploadIndex + 1);
     // Drop transformation segments and the version marker that precede the public id.
     const versionIndex = rest.findIndex((segment) => /^v\d+$/.test(segment));
     if (versionIndex !== -1) rest = rest.slice(versionIndex + 1);
     if (rest.length === 0) return null;
     const publicId = rest.join('/').replace(/\.[^./]+$/, '');
-    return { publicId, resourceType: ['image', 'video', 'raw'].includes(resourceType) ? resourceType : 'image' };
+    return { publicId, cloudName, resourceType: ['image', 'video', 'raw'].includes(resourceType) ? resourceType : 'image' };
   } catch {
     return null;
   }
@@ -94,24 +96,35 @@ export async function deleteFromProvider(provider, fileId, url, supabaseUrl, sup
       return { ok: false, status: 400, error: 'This item has no Cloudinary id and none could be recovered from its URL, so only the library record can be removed.' };
     }
 
-    const cloudName = process.env.CLOUDINARY_CLOUD_NAME
+    const cloudName = fromUrl?.cloudName
+      || process.env.CLOUDINARY_CLOUD_NAME
       || await readOption(supabaseUrl, supabaseKey, 'cloudinary_cloud_name');
     if (!cloudName) {
       return { ok: false, status: 501, error: 'No Cloudinary cloud name is configured under Media → Upload settings.' };
     }
 
+    // invalidate=true also purges the CDN copy; without it the old URL keeps serving the file
+    // for a while after deletion, which looks exactly like the delete did nothing.
+    // Signed parameters must be sorted alphabetically.
     const timestamp = Math.floor(Date.now() / 1000);
     const signature = createHash('sha1')
-      .update(`public_id=${publicId}&timestamp=${timestamp}${apiSecret}`)
+      .update(`invalidate=true&public_id=${publicId}&timestamp=${timestamp}${apiSecret}`)
       .digest('hex');
-    const body = new URLSearchParams({ public_id: publicId, api_key: apiKey, timestamp: String(timestamp), signature });
+    const body = new URLSearchParams({
+      public_id: publicId, invalidate: 'true', api_key: apiKey, timestamp: String(timestamp), signature,
+    });
     const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/${resourceType}/destroy`, { method: 'POST', body });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      return { ok: false, status: 502, error: payload.error?.message || `Cloudinary rejected the delete (HTTP ${response.status}).` };
+      const detail = payload.error?.message || `HTTP ${response.status}`;
+      return { ok: false, status: 502, error: `Cloudinary rejected the delete of ${publicId} in cloud "${cloudName}": ${detail}. Check that CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET belong to that cloud.` };
     }
-    if (payload.result && payload.result !== 'ok' && payload.result !== 'not found') {
-      return { ok: false, status: 502, error: `Cloudinary returned "${payload.result}" for ${publicId}.` };
+    if (payload.result === 'not found') {
+      // Previously treated as success, which hid wrong ids and wrong resource types.
+      return { ok: false, status: 404, error: `Cloudinary has no ${resourceType} "${publicId}" in cloud "${cloudName}". It may already have been deleted there.` };
+    }
+    if (payload.result !== 'ok') {
+      return { ok: false, status: 502, error: `Cloudinary returned "${payload.result ?? 'no result'}" for ${publicId}.` };
     }
     return { ok: true, publicId };
   }

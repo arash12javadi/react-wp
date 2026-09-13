@@ -210,7 +210,10 @@ export default function MediaManager({ onSelect, onClose, heading = 'Media Libra
         });
         if (!response.ok) {
           const payload = await response.json().catch(() => ({}));
-          const detail = payload.error || 'The file could not be deleted at the provider.';
+          // No JSON error means the request never reached server.mjs, e.g. the Vite dev proxy
+          // could not connect to port 3000.
+          const detail = payload.error
+            || `The media server did not handle the delete (HTTP ${response.status}). If you are using npm run dev, npm start must also be running on port 3000.`;
           if (!window.confirm(`${detail}\n\nRemove it from the library anyway? The file will stay in your ${providerLabels[selected.provider]} account.`)) {
             setError(detail);
             return;
