@@ -14,6 +14,7 @@ export interface SeoFields {
   og_description: string;
   og_image: string;
   twitter_card: string;
+  meta_keywords: string;
 }
 
 interface SeoPanelProps {
@@ -23,6 +24,8 @@ interface SeoPanelProps {
   slug: string;
   content: string;
   siteTitle: string;
+  /** App Settings → SEO → meta keywords. */
+  keywordsEnabled?: boolean;
 }
 
 type Tab = 'search' | 'social' | 'advanced';
@@ -30,7 +33,7 @@ type Tab = 'search' | 'social' | 'advanced';
 const scoreLabel = (score: number) => (score >= 80 ? 'Good' : score >= 50 ? 'Needs work' : 'Poor');
 const scoreClass = (score: number) => (score >= 80 ? styles.scoreGood : score >= 50 ? styles.scoreWarn : styles.scoreBad);
 
-export default function SeoPanel({ fields, onChange, title, slug, content, siteTitle }: SeoPanelProps) {
+export default function SeoPanel({ fields, onChange, title, slug, content, siteTitle, keywordsEnabled = false }: SeoPanelProps) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>('search');
   const [pickingImage, setPickingImage] = useState(false);
@@ -95,6 +98,15 @@ export default function SeoPanel({ fields, onChange, title, slug, content, siteT
                   {fields.meta_description.length} / {metaDescriptionLimit}
                 </span>
               </label>
+
+              {keywordsEnabled && (
+                <label>
+                  Meta keywords
+                  <input value={fields.meta_keywords} onChange={(event) => onChange('meta_keywords', event.target.value)}
+                    placeholder="keyword one, keyword two" />
+                  <span className={styles.counter}>Comma-separated. Google ignores this tag; some other search engines and site search tools still read it.</span>
+                </label>
+              )}
 
               <ul className={styles.checks}>
                 {checks.map((check) => (

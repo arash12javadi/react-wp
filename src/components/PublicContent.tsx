@@ -6,6 +6,7 @@ import { canManageAllPosts, getUserRole, type UserRole } from '../lib/roles';
 import { resolveExcerpt } from '../lib/excerpt';
 import { defaultSettings, loadSettings, type SiteSettings } from '../lib/settings';
 import { applyMeta, buildMeta } from '../lib/seo';
+import { defaultAppSettings, loadAppSettings, useAppSettings } from '../lib/appSettings';
 import PublicLayout from './PublicLayout';
 import PublicSidebar from './PublicSidebar';
 import ContentRenderer from './ContentRenderer';
@@ -35,6 +36,7 @@ export default function PublicContent({ slug, pageId, onReconfigure }: PublicCon
   const [role, setRole] = useState<UserRole>('subscriber');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const { settings: appSettings } = useAppSettings();
 
   useEffect(() => {
     let mounted = true;
@@ -42,13 +44,14 @@ export default function PublicContent({ slug, pageId, onReconfigure }: PublicCon
       try {
         const supabase = getSupabaseClient();
         const query = supabase.from('pages').select('*');
-        const [{ data, error: pageError }, { data: menuOption }, { data: sessionData }, settings] = await Promise.all([
+        const [{ data, error: pageError }, { data: menuOption }, { data: sessionData }, settings, app] = await Promise.all([
           pageId
             ? query.eq('id', pageId).eq('status', 'published').maybeSingle()
             : query.eq('slug', slug).eq('status', 'published').maybeSingle(),
           supabase.from('options').select('option_value').eq('option_name', 'menu_links').maybeSingle(),
           supabase.auth.getSession(),
           loadSettings(),
+          loadAppSettings().catch(() => defaultAppSettings),
         ]);
         if (pageError) throw pageError;
         if (!mounted) return;
@@ -62,6 +65,7 @@ export default function PublicContent({ slug, pageId, onReconfigure }: PublicCon
           siteTagline: settings.site_tagline,
           siteIcon: settings.site_icon,
           origin: window.location.origin,
+          keywordsEnabled: app.seo.meta_keywords_enabled,
         }));
         if (menuOption?.option_value) {
           try {
@@ -108,13 +112,20 @@ export default function PublicContent({ slug, pageId, onReconfigure }: PublicCon
     />
   ) : null;
 
+  const showTitle = page?.is_post ? appSettings.general.show_post_titles : appSettings.general.show_page_titles;
   const article = page && (renderer ? (
     <renderer.component page={page} comments={comments} />
   ) : (
     <article className={styles.feed} aria-labelledby="content-heading">
-      <p className={styles.kicker}>{page.is_post ? 'From the blog' : 'Page'}</p>
-      <h1 id="content-heading">{rwp.filters.apply('rwp_post_title', page.title, page)}</h1>
-      {page.excerpt && <p>{rwp.filters.apply('rwp_post_excerpt', resolveExcerpt(page, excerptLength), page)}</p>}
+      <p className={styles.kicker}>
+        {page.is_post ? 'From the blog' : 'Page'}
+        {page.is_post && appSettings.general.show_post_dates && (
+          <> · <time dateTime={page.created_at}>{new Date(page.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</time></>
+        )}
+      </p>
+      {/* A hidden title stays in the document for screen readers and the page outline. */}
+      <h1 id="content-heading" className={showTitle ? undefined : styles.srOnly}>{rwp.filters.apply('rwp_post_title', page.title, page)}</h1>
+      {page.excerpt && <p>{rwp.filters.apply('rwp_post_excerpt', resolveExcerpt(page, excerptLength, settings.excerpt_unit), page)}</p>}
       <ContentRenderer
         className={styles.content}
         html={rwp.filters.apply('rwp_page_content', page.content, page)}

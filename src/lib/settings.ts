@@ -1,5 +1,5 @@
 import { getSupabaseClient, updateOption } from './db';
-import { defaultExcerptLength } from './excerpt';
+import { defaultExcerptLength, type ExcerptUnit } from './excerpt';
 
 export interface SiteSettings {
   site_title: string;
@@ -9,6 +9,7 @@ export interface SiteSettings {
   posts_page_id: string;
   posts_per_page: number;
   excerpt_length: number;
+  excerpt_unit: ExcerptUnit;
   home_layout: string;
   cloudinary_cloud_name: string;
   cloudinary_upload_preset: string;
@@ -32,6 +33,7 @@ export const defaultSettings: SiteSettings = {
   posts_page_id: '',
   posts_per_page: 6,
   excerpt_length: defaultExcerptLength,
+  excerpt_unit: 'words',
   home_layout: 'boxed',
   cloudinary_cloud_name: '',
   cloudinary_upload_preset: '',
@@ -81,6 +83,7 @@ export const loadSettings = async (): Promise<SiteSettings> => {
     posts_page_id: values.posts_page_id || '',
     posts_per_page: toNumber(values.posts_per_page, defaultSettings.posts_per_page),
     excerpt_length: toNumber(values.excerpt_length, defaultSettings.excerpt_length),
+    excerpt_unit: values.excerpt_unit === 'characters' ? 'characters' : 'words',
     home_layout: values.home_layout || defaultSettings.home_layout,
     cloudinary_cloud_name: values.cloudinary_cloud_name || '',
     cloudinary_upload_preset: values.cloudinary_upload_preset || '',

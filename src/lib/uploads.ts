@@ -1,5 +1,6 @@
 import type { MediaItem, MediaProvider } from './types';
 import type { SiteSettings } from './settings';
+import { getSupabaseClient } from './db';
 
 export interface UploadResult {
   url: string;
@@ -78,8 +79,12 @@ export const uploadToImageKit = async (
   if (!settings.imagekit_public_key) {
     throw new Error('Set the ImageKit public key under Media → Upload settings first.');
   }
-  // The signature needs the private key, so it has to come from the server.
-  const authResponse = await fetch('/api/imagekit-auth');
+  // The signature needs the private key, so it has to come from the server, which also checks
+  // the caller may upload and has room in their disk quota for this file.
+  const { data: sessionData } = await getSupabaseClient().auth.getSession();
+  const authResponse = await fetch(`/api/imagekit-auth?bytes=${file.size}`, {
+    headers: { Authorization: `Bearer ${sessionData.session?.access_token || ''}` },
+  });
   if (!authResponse.ok) {
     const payload = await authResponse.json().catch(() => ({}));
     throw new Error(payload.error || 'Could not get ImageKit upload credentials from the server.');

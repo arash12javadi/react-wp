@@ -3,7 +3,8 @@ import { getSupabaseClient } from '../lib/db';
 import type { Category, Page } from '../lib/types';
 import { canPublishPosts, type UserRole } from '../lib/roles';
 import { defaultExcerptLength, makeExcerpt } from '../lib/excerpt';
-import { loadSettings } from '../lib/settings';
+import { loadSettings, type SiteSettings } from '../lib/settings';
+import { appSettingsMigration, useAppSettings } from '../lib/appSettings';
 import { rwp } from '../lib/rwp';
 import ClassicEditor from './ClassicEditor';
 import SeoPanel from './SeoPanel';
@@ -24,6 +25,7 @@ const empty = {
   layout: 'boxed', show_sidebar: false, comments_open: true,
   seo_title: '', meta_description: '', focus_keyword: '', canonical_url: '', noindex: false,
   og_title: '', og_description: '', og_image: '', twitter_card: 'summary_large_image',
+  meta_keywords: '',
 };
 
 export default function PageEditor({ page, initialIsPost = false, onSaved, onCancel, role }: PageEditorProps) {
@@ -31,13 +33,16 @@ export default function PageEditor({ page, initialIsPost = false, onSaved, onCan
   const [categories, setCategories] = useState<Category[]>([]);
   const [slugTouched, setSlugTouched] = useState(Boolean(page));
   const [excerptLength, setExcerptLength] = useState(defaultExcerptLength);
+  const [excerptUnit, setExcerptUnit] = useState<SiteSettings['excerpt_unit']>('words');
   const [siteTitle, setSiteTitle] = useState('React-WP');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const { settings: appSettings } = useAppSettings();
 
   useEffect(() => {
     loadSettings().then((settings) => {
       setExcerptLength(settings.excerpt_length);
+      setExcerptUnit(settings.excerpt_unit);
       setSiteTitle(settings.site_title);
     }).catch(() => {});
   }, []);
@@ -55,6 +60,7 @@ export default function PageEditor({ page, initialIsPost = false, onSaved, onCan
       noindex: Boolean(page.noindex), og_title: page.og_title || '',
       og_description: page.og_description || '', og_image: page.og_image || '',
       twitter_card: page.twitter_card || 'summary_large_image',
+      meta_keywords: page.meta_keywords || '',
     } : { ...empty, is_post: initialIsPost });
     setSlugTouched(Boolean(page));
     const supabase = getSupabaseClient();
@@ -81,11 +87,21 @@ export default function PageEditor({ page, initialIsPost = false, onSaved, onCan
       const supabase = getSupabaseClient();
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) throw new Error('You must be signed in to save content.');
-      const payload = { ...form, title, slug, content: form.content, excerpt: form.excerpt.trim(), category_id: form.is_post ? form.category_id || null : null, featured_category_id: form.featured_category_id || null, posts_limit: Math.max(1, Number(form.posts_limit) || 6), updated_at: new Date().toISOString(), author_id: userData.user.id };
+      const { meta_keywords: metaKeywords, ...fields } = form;
+      // Sent only when the field is in use, so saving still works on a database that predates
+      // the meta_keywords column (the 20260920 migration).
+      const keywordColumn: { meta_keywords?: string | null } = {};
+      if (appSettings.seo.meta_keywords_enabled || Boolean(page && 'meta_keywords' in page)) {
+        keywordColumn.meta_keywords = metaKeywords.trim() || null;
+      }
+      const payload = { ...fields, ...keywordColumn, title, slug, content: form.content, excerpt: form.excerpt.trim(), category_id: form.is_post ? form.category_id || null : null, featured_category_id: form.featured_category_id || null, posts_limit: Math.max(1, Number(form.posts_limit) || 6), updated_at: new Date().toISOString(), author_id: userData.user.id };
       const result = page
         ? await supabase.from('pages').update(payload).eq('id', page.id)
         : await supabase.from('pages').insert(payload);
       if (result.error) {
+        if (result.error.message.includes('meta_keywords')) {
+          throw new Error(`The pages table has no meta_keywords column yet, but meta keywords are enabled under App Settings → SEO. Run ${appSettingsMigration} in the Supabase SQL Editor. (${result.error.message})`);
+        }
         if (result.error.message.includes('public.pages') || result.error.message.includes('relation "pages"')) {
           throw new Error('The pages table is missing. Run supabase/migrations/20260911_create_pages_categories.sql in the Supabase SQL Editor, then reload this page.');
         }
@@ -116,7 +132,7 @@ export default function PageEditor({ page, initialIsPost = false, onSaved, onCan
             <span>Content</span>
             <ClassicEditor value={form.content} onChange={(content) => field('content', content)} placeholder="Start writing your content…" />
           </div>
-          <label>Excerpt<textarea rows={4} value={form.excerpt} onChange={(e) => field('excerpt', e.target.value)} placeholder="Leave empty to generate one from the content" /><button type="button" className={styles.secondaryButton} onClick={() => field('excerpt', makeExcerpt(form.content, excerptLength))}>Generate from content</button></label>
+          <label>Excerpt<textarea rows={4} value={form.excerpt} onChange={(e) => field('excerpt', e.target.value)} placeholder="Leave empty to generate one from the content" /><button type="button" className={styles.secondaryButton} onClick={() => field('excerpt', makeExcerpt(form.content, excerptLength, excerptUnit))}>Generate from content</button></label>
           <SeoPanel
             fields={form}
             onChange={field}
@@ -124,6 +140,7 @@ export default function PageEditor({ page, initialIsPost = false, onSaved, onCan
             slug={form.slug}
             content={form.content}
             siteTitle={siteTitle}
+            keywordsEnabled={appSettings.seo.meta_keywords_enabled}
           />
         </div>
         <aside className={styles.formAside}>

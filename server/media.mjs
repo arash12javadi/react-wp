@@ -1,8 +1,19 @@
 import { createHash } from 'node:crypto';
 
+const rpc = (baseUrl, headers, name, body) => fetch(`${baseUrl}/rest/v1/rpc/${name}`, {
+  method: 'POST',
+  headers: { ...headers, 'Content-Type': 'application/json' },
+  body: JSON.stringify(body),
+});
+
+// PostgREST answers 404 (PGRST202) for a function that does not exist yet.
+const functionMissing = (response) => response.status === 404;
+
 /**
- * Confirms the caller is a signed-in user whose role may upload files, using only the
- * publishable key and the caller's own access token. No service-role key is involved.
+ * Confirms the caller is a signed-in user who may upload files, using only the publishable key
+ * and the caller's own access token. No service-role key is involved. The capability is asked
+ * of public.user_has_cap() rather than decided from a role list here, so roles granted uploads
+ * under App Settings → Roles are recognised.
  */
 export async function authorizeUploader(supabaseUrl, supabaseKey, accessToken) {
   if (!accessToken) return { ok: false, status: 401, error: 'Sign in required.' };
@@ -10,21 +21,76 @@ export async function authorizeUploader(supabaseUrl, supabaseKey, accessToken) {
   const headers = { apikey: supabaseKey, Authorization: `Bearer ${accessToken}` };
 
   const userResponse = await fetch(`${baseUrl}/auth/v1/user`, { headers });
-  if (!userResponse.ok) return { ok: false, status: 401, error: 'Your session is not valid.' };
+  if (!userResponse.ok) return { ok: false, status: 401, error: 'Your session is not valid. Sign in again.' };
   const user = await userResponse.json();
 
-  const profileResponse = await fetch(
-    `${baseUrl}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}&select=role`,
-    { headers },
-  );
-  if (!profileResponse.ok) return { ok: false, status: 403, error: 'Could not read your profile.' };
-  const [profile] = await profileResponse.json();
-
-  const uploaders = ['super_admin', 'administrator', 'editor', 'author'];
-  if (!profile || !uploaders.includes(profile.role)) {
-    return { ok: false, status: 403, error: 'Your role cannot manage media.' };
+  const capResponse = await rpc(baseUrl, headers, 'user_has_cap', { capability: 'upload_files' });
+  if (!capResponse.ok) {
+    return { ok: false, status: 502, error: `Could not check your upload permission: user_has_cap returned HTTP ${capResponse.status}.` };
   }
-  return { ok: true, userId: user.id, role: profile.role };
+  if (await capResponse.json() !== true) {
+    return { ok: false, status: 403, error: 'Your role cannot upload or manage media: it does not have the upload_files capability.' };
+  }
+  return { ok: true, userId: user.id, baseUrl, headers };
+}
+
+/**
+ * Authorises deleting one library item at its provider. The provider id comes from the stored
+ * row, never from the request, and rwp_can_manage_media() applies the same ownership rule as
+ * the media delete policy — otherwise any uploader could delete anyone's file by sending its id.
+ */
+export async function authorizeMediaDelete(supabaseUrl, supabaseKey, accessToken, mediaId) {
+  const auth = await authorizeUploader(supabaseUrl, supabaseKey, accessToken);
+  if (!auth.ok) return auth;
+  if (typeof mediaId !== 'string' || !mediaId) {
+    return { ok: false, status: 400, error: 'The request did not say which media item to delete. Reload the Media screen and try again.' };
+  }
+
+  const rowResponse = await fetch(
+    `${auth.baseUrl}/rest/v1/media?id=eq.${encodeURIComponent(mediaId)}&select=id,provider,provider_file_id,url,uploaded_by`,
+    { headers: auth.headers },
+  );
+  if (!rowResponse.ok) {
+    return { ok: false, status: 502, error: `Could not read the media item: HTTP ${rowResponse.status}.` };
+  }
+  const [item] = await rowResponse.json();
+  if (!item) return { ok: false, status: 404, error: 'That media item is no longer in the library.' };
+
+  const permission = await rpc(auth.baseUrl, auth.headers, 'rwp_can_manage_media', { p_uploaded_by: item.uploaded_by });
+  // Before the 20260920 migration there is no ownership rule, and the delete policy lets any
+  // uploader delete any row, so this matches what the database allows.
+  if (!functionMissing(permission)) {
+    if (!permission.ok) {
+      return { ok: false, status: 502, error: `Could not check permission to delete this item: rwp_can_manage_media returned HTTP ${permission.status}.` };
+    }
+    if (await permission.json() !== true) {
+      return { ok: false, status: 403, error: 'You can only delete media you uploaded yourself. Media is limited to its uploader under App Settings → General.' };
+    }
+  }
+  return { ok: true, item };
+}
+
+/** ImageKit signs uploads on the server, so the disk quota can be checked before signing. */
+export async function authorizeImageKitUpload(supabaseUrl, supabaseKey, accessToken, bytes) {
+  const auth = await authorizeUploader(supabaseUrl, supabaseKey, accessToken);
+  if (!auth.ok) return auth;
+  const size = Number(bytes);
+  if (!Number.isFinite(size) || size < 0) return { ok: true };
+
+  const response = await rpc(auth.baseUrl, auth.headers, 'rwp_upload_allowance', {});
+  if (functionMissing(response)) return { ok: true };
+  if (!response.ok) {
+    return { ok: false, status: 502, error: `Could not check your disk quota: rwp_upload_allowance returned HTTP ${response.status}.` };
+  }
+  const allowance = await response.json();
+  if (allowance?.quota_bytes !== null && allowance?.quota_bytes !== undefined) {
+    const remaining = Number(allowance.quota_bytes) - Number(allowance.used_bytes || 0);
+    if (size > remaining) {
+      const mb = (value) => (Math.max(value, 0) / 1048576).toFixed(2);
+      return { ok: false, status: 403, error: `This file needs ${mb(size)} MB, but you have ${mb(remaining)} MB left of your ${mb(Number(allowance.quota_bytes))} MB disk quota.` };
+    }
+  }
+  return { ok: true };
 }
 
 async function readOption(supabaseUrl, supabaseKey, name) {

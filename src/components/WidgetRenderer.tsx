@@ -5,11 +5,10 @@ import type { Widget } from '../lib/widgets';
 import LoginButton from './LoginButton';
 import ContentRenderer from './ContentRenderer';
 import styles from './PublicHome.module.css';
+import { useAppSettings } from '../lib/appSettings';
+import { MenuLabel, resolveMenuLinks, useMenuViewer, type DynamicMenuLink } from '../lib/dynamicMenu';
 
-interface MenuItemRow {
-  label: string;
-  url: string;
-}
+type MenuItemRow = DynamicMenuLink;
 
 function SearchWidget({ widget }: { widget: Widget }) {
   const [term, setTerm] = useState('');
@@ -77,6 +76,8 @@ function CategoriesWidget({ widget }: { widget: Widget }) {
 
 function MenuWidget({ widget }: { widget: Widget }) {
   const [items, setItems] = useState<MenuItemRow[]>([]);
+  const viewer = useMenuViewer();
+  const { settings: appSettings } = useAppSettings();
   useEffect(() => {
     const menuId = String(widget.settings.menuId || '');
     if (!menuId) return;
@@ -91,8 +92,10 @@ function MenuWidget({ widget }: { widget: Widget }) {
   if (items.length === 0) return <p className={styles.muted}>No menu selected.</p>;
   return (
     <ul>
-      {items.map((item) => (
-        <li key={`${item.label}-${item.url}`}><a href={item.url}>{item.label}</a></li>
+      {resolveMenuLinks(items, viewer, appSettings.menu.profile_url).map((item) => (
+        <li key={`${item.name}-${item.url}`}>
+          <a href={item.url} aria-label={item.label ? undefined : item.name}><MenuLabel link={item} size={20} /></a>
+        </li>
       ))}
     </ul>
   );

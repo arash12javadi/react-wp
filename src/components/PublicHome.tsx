@@ -8,6 +8,7 @@ import type { Post } from '../lib/types';
 import PublicLayout from './PublicLayout';
 import PublicSidebar from './PublicSidebar';
 import { applyMeta, buildMeta } from '../lib/seo';
+import { useAppSettings } from '../lib/appSettings';
 import styles from './PublicHome.module.css';
 import { rwp } from '../lib/rwp';
 
@@ -43,6 +44,7 @@ export default function PublicHome({ onReconfigure }: { onReconfigure?: () => vo
   const [menuLinks, setMenuLinks] = useState(defaultMenuLinks);
   const [settings, setSettings] = useState<SiteSettings>(defaultSettings);
   const [excerptLength, setExcerptLength] = useState(55);
+  const { settings: appSettings } = useAppSettings();
 
   useEffect(() => {
     let mounted = true;
@@ -151,9 +153,9 @@ export default function PublicHome({ onReconfigure }: { onReconfigure?: () => vo
             )}
             {visiblePosts.length ? visiblePosts.map((post) => (
               <article className={styles.postCard} key={post.id}>
-                <p className={styles.postMeta}>{formatDate(post.created_at)} · {post.status}</p>
-                <h3>{rwp.filters.apply('rwp_post_title', post.title, post)}</h3>
-                <p>{rwp.filters.apply('rwp_post_excerpt', resolveExcerpt(post, excerptLength), post)}</p>
+                {appSettings.general.show_post_dates && <p className={styles.postMeta}>{formatDate(post.created_at)} · {post.status}</p>}
+                <h3 className={appSettings.general.show_post_titles ? undefined : styles.srOnly}>{rwp.filters.apply('rwp_post_title', post.title, post)}</h3>
+                <p>{rwp.filters.apply('rwp_post_excerpt', resolveExcerpt(post, excerptLength, settings.excerpt_unit), post)}</p>
                 <a href={`/${post.slug}`}>Read More <span aria-hidden="true">→</span></a>
               </article>
             )) : <p className={styles.muted}>No posts match your search.</p>}

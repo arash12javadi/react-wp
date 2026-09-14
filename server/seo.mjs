@@ -3,6 +3,8 @@
  * never execute JavaScript, so tags set by React alone would leave link previews blank.
  */
 
+import { sanitizeTrackingHtml } from '../src/lib/scriptSanitizer.js';
+
 const escapeHtml = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
   .replace(/</g, '&lt;')
@@ -29,23 +31,54 @@ const get = async (baseUrl, key, path) => {
 };
 
 const optionsMap = async (baseUrl, key) => {
-  const rows = await get(baseUrl, key, 'options?select=option_name,option_value&option_name=in.(site_title,site_tagline,site_description,site_icon,home_page_id)');
+  const rows = await get(baseUrl, key, 'options?select=option_name,option_value&option_name=in.(site_title,site_tagline,site_description,site_icon,home_page_id,rwp_app_settings)');
   return (rows || []).reduce((result, row) => {
     result[row.option_name] = row.option_value;
     return result;
   }, {});
 };
 
+const readAppSettings = (value) => {
+  try {
+    const parsed = JSON.parse(value || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
 /**
- * Builds the <head> block for a request path. Returns an empty string on any failure so a
+ * Everything written into the HTML response for a public path: SEO tags for <head>, and the
+ * tracking snippets from App Settings → SEO. Scripts are written here rather than by React so
+ * tag managers load before the app, and the <meta name="rwp-scripts"> marker tells the browser
+ * not to inject them a second time. Any failure degrades to an unadorned page, never a 500.
+ */
+export async function renderDocumentInjections(pathname, origin, config) {
+  const empty = { head: '', bodyStart: '' };
+  if (!config?.supabaseUrl || !config?.supabasePublishableKey) return empty;
+  try {
+    const options = await optionsMap(config.supabaseUrl, config.supabasePublishableKey);
+    const app = readAppSettings(options.rwp_app_settings);
+    const seoTags = await renderSeoTags(pathname, origin, config, options, app);
+    const headScripts = sanitizeTrackingHtml(app.seo?.header_script || '').html;
+    const bodyScripts = sanitizeTrackingHtml(app.seo?.body_script || '').html;
+    return {
+      head: [seoTags, '<meta name="rwp-scripts" content="server">', headScripts].filter(Boolean).join('\n    '),
+      bodyStart: bodyScripts,
+    };
+  } catch {
+    return empty;
+  }
+}
+
+/**
+ * Builds the SEO block for a request path. Returns an empty string on any failure so a
  * slow or unreachable database degrades to an unadorned page rather than a 500.
  */
-export async function renderSeoTags(pathname, origin, config) {
-  if (!config?.supabaseUrl || !config?.supabasePublishableKey) return '';
+async function renderSeoTags(pathname, origin, config, options, app) {
   const { supabaseUrl: baseUrl, supabasePublishableKey: key } = config;
 
   try {
-    const options = await optionsMap(baseUrl, key);
     const siteTitle = options.site_title || 'React-WP';
     const tagline = options.site_tagline || options.site_description || '';
 
@@ -68,10 +101,12 @@ export async function renderSeoTags(pathname, origin, config) {
     const canonical = page?.canonical_url?.trim()
       || (slug ? `${cleanOrigin}/${slug}` : cleanOrigin);
     const image = page?.og_image?.trim() || options.site_icon || '';
+    const keywords = app.seo?.meta_keywords_enabled === true ? page?.meta_keywords?.trim() || '' : '';
 
     const tags = [
       `<title>${escapeHtml(title)}</title>`,
       description && `<meta name="description" content="${escapeHtml(description)}">`,
+      keywords && `<meta name="keywords" content="${escapeHtml(keywords)}">`,
       page?.noindex && '<meta name="robots" content="noindex, nofollow">',
       `<link rel="canonical" href="${escapeHtml(canonical)}">`,
       `<meta property="og:site_name" content="${escapeHtml(siteTitle)}">`,

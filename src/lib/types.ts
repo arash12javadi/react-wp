@@ -44,6 +44,7 @@ export interface Page {
   og_image?: string | null;
   twitter_card?: string | null;
   comments_open?: boolean;
+  meta_keywords?: string | null;
   author_id?: string | null;
   created_at: string;
   updated_at: string;

@@ -10,15 +10,27 @@ const stripHtml = (html: string): string => {
 
 export const defaultExcerptLength = 55;
 
-/** Plain-text excerpt of at most `words` words. Slicing raw HTML instead would cut mid-tag. */
-export const makeExcerpt = (html: string, words: number = defaultExcerptLength): string => {
+export type ExcerptUnit = 'words' | 'characters';
+
+/**
+ * Plain-text excerpt of at most `length` words or characters. Slicing raw HTML instead would
+ * cut mid-tag. A character excerpt backs off to the last whole word when there is one.
+ */
+export const makeExcerpt = (html: string, length: number = defaultExcerptLength, unit: ExcerptUnit = 'words'): string => {
   const text = stripHtml(html);
   if (!text) return '';
+  if (unit === 'characters') {
+    if (text.length <= length) return text;
+    const cut = text.slice(0, length);
+    const lastSpace = cut.lastIndexOf(' ');
+    return `${(lastSpace > 0 ? cut.slice(0, lastSpace) : cut).replace(/[\s,;:.–—-]+$/, '')}…`;
+  }
   const parts = text.split(' ');
-  return parts.length <= words ? text : `${parts.slice(0, words).join(' ')}…`;
+  return parts.length <= length ? text : `${parts.slice(0, length).join(' ')}…`;
 };
 
 export const resolveExcerpt = (
   page: { excerpt?: string | null; content?: string | null },
-  words: number = defaultExcerptLength,
-): string => page.excerpt?.trim() || makeExcerpt(page.content || '', words);
+  length: number = defaultExcerptLength,
+  unit: ExcerptUnit = 'words',
+): string => page.excerpt?.trim() || makeExcerpt(page.content || '', length, unit);

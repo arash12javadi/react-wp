@@ -3,8 +3,9 @@ import { getSupabaseClient, updateOption } from '../lib/db';
 import type { Page } from '../lib/types';
 import styles from './MenuManager.module.css';
 import { rwp } from '../lib/rwp';
+import { hasProfilePlaceholder, menuPlaceholders, type DynamicMenuLink, type LoggedOutRule, type MenuItemRules } from '../lib/dynamicMenu';
 
-interface MenuItem {
+interface MenuItem extends MenuItemRules {
   id: string;
   label: string;
   url: string;
@@ -15,9 +16,17 @@ interface MenuItem {
 
 /** Flat list with depth markers becomes the nested shape the public navbar renders. */
 const toNestedLinks = (items: MenuItem[]) => {
-  const links: Array<{ label: string; url: string; children?: Array<{ label: string; url: string }> }> = [];
+  const links: DynamicMenuLink[] = [];
   items.forEach((item) => {
-    const link = { label: item.label, url: item.url };
+    const link: DynamicMenuLink = { label: item.label, url: item.url };
+    // Only stored when set, so menus without rules keep their existing shape.
+    if (item.logged_out && item.logged_out !== 'show') {
+      link.logged_out = item.logged_out;
+      if (item.logged_out === 'replace') {
+        link.logged_out_label = item.logged_out_label?.trim() || '';
+        link.logged_out_url = item.logged_out_url?.trim() || '';
+      }
+    }
     if ((item.depth || 0) > 0 && links.length > 0) {
       const parent = links[links.length - 1];
       parent.children = [...(parent.children || []), link];
@@ -177,6 +186,14 @@ export default function MenuManager() {
             <label>Navigation Label<input value={label} onChange={(event) => setLabel(event.target.value)} /></label>
             <label>URL<input value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://example.com" /></label>
             <button type="button" onClick={() => { if (label.trim() && url.trim()) { addItem({ id: `custom-${Date.now()}`, label: label.trim(), url: url.trim(), type: 'custom' }); setLabel(''); setUrl(''); } }}>Add to Menu</button>
+            <p className={styles.muted}>
+              Placeholders for signed-in visitors:{' '}
+              {menuPlaceholders.map((placeholder, index) => (
+                <span key={placeholder.token} title={placeholder.description}>
+                  {index > 0 && ', '}<code>{placeholder.token}</code> ({placeholder.where})
+                </span>
+              ))}. Items using them are hidden from logged-out visitors unless you give them another label.
+            </p>
           </details>
           <details open><summary>Published Pages &amp; Posts</summary>
             <input
@@ -211,6 +228,10 @@ export default function MenuManager() {
             const setDepth = (nextDepth: number) => updateActiveItems(
               activeMenu.items.map((current) => current.id === item.id ? { ...current, depth: nextDepth } : current),
             );
+            const patch = (changes: Partial<MenuItem>) => updateActiveItems(
+              activeMenu.items.map((current) => current.id === item.id ? { ...current, ...changes } : current),
+            );
+            const rule = item.logged_out || 'show';
             return (
               <div
                 className={styles.item}
@@ -227,13 +248,36 @@ export default function MenuManager() {
                   <span>
                     {item.type === 'post' ? 'Post' : item.type === 'page' ? 'Page' : 'Custom Link'} · {item.url}
                     {depth > 0 && ' · submenu item'}
+                    {rule === 'hide' && ' · hidden when logged out'}
+                    {rule === 'replace' && ` · logged out: ${item.logged_out_label || item.label}`}
                   </span>
                 </div>
                 <button type="button" title="Make a submenu item" aria-label="Indent" disabled={!canIndent} onClick={() => setDepth(1)}>⇥</button>
                 <button type="button" title="Move to top level" aria-label="Outdent" disabled={depth === 0} onClick={() => setDepth(0)}>⇤</button>
                 <button type="button" onClick={() => setExpanded(expanded === item.id ? null : item.id)} aria-expanded={expanded === item.id}>Edit</button>
                 <button type="button" onClick={() => updateActiveItems(activeMenu.items.filter((current) => current.id !== item.id))}>Remove</button>
-                {expanded === item.id && <div className={styles.inlineEdit}><label>Label<input value={item.label} onChange={(event) => updateActiveItems(activeMenu.items.map((current) => current.id === item.id ? { ...current, label: event.target.value } : current))} /></label><label>URL<input value={item.url} onChange={(event) => updateActiveItems(activeMenu.items.map((current) => current.id === item.id ? { ...current, url: event.target.value } : current))} /></label></div>}
+                {expanded === item.id && (
+                  <div className={styles.inlineEdit}>
+                    <label>Label<input value={item.label} onChange={(event) => patch({ label: event.target.value })} /></label>
+                    <label>URL<input value={item.url} onChange={(event) => patch({ url: event.target.value })} /></label>
+                    <label>When logged out
+                      <select value={rule} onChange={(event) => patch({ logged_out: event.target.value as LoggedOutRule })}>
+                        <option value="show">Show this item</option>
+                        <option value="hide">Hide this item</option>
+                        <option value="replace">Show a different label or link</option>
+                      </select>
+                    </label>
+                    {rule === 'replace' && (
+                      <>
+                        <label>Logged-out label<input value={item.logged_out_label || ''} placeholder={item.label} onChange={(event) => patch({ logged_out_label: event.target.value })} /></label>
+                        <label>Logged-out URL<input value={item.logged_out_url || ''} placeholder={item.url} onChange={(event) => patch({ logged_out_url: event.target.value })} /></label>
+                      </>
+                    )}
+                    {rule === 'show' && hasProfilePlaceholder(item) && (
+                      <p className={styles.muted}>This item uses a profile placeholder, so logged-out visitors will not see it.</p>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}

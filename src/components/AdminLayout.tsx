@@ -4,7 +4,7 @@ import { canManageComments, canManageSettings, canManageUsers, canUploadMedia, h
 import AdminToolbar from './AdminToolbar';
 import { rwp } from '../lib/rwp';
 
-export type AdminSection = 'content' | 'media' | 'comments' | 'menus' | 'settings' | 'categories' | 'plugins' | 'users' | 'profile';
+export type AdminSection = 'content' | 'media' | 'comments' | 'menus' | 'settings' | 'app-settings' | 'categories' | 'plugins' | 'users' | 'profile';
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -26,6 +26,7 @@ const baseNavigation: Array<{ id: AdminSection; label: string; icon: string }> =
   { id: 'users', label: 'Users', icon: '◍' },
   { id: 'plugins', label: 'Plugins', icon: '◈' },
   { id: 'settings', label: 'Settings', icon: '⚙' },
+  { id: 'app-settings', label: 'App Settings', icon: '⚒' },
   { id: 'profile', label: 'Profile', icon: '◉' },
 ];
 
@@ -53,6 +54,8 @@ export default function AdminLayout({
     'rwp_admin_navigation',
     [...baseNavigation, ...pluginNavigation],
   ).filter((item) =>
+    (item.id !== 'content' || hasCapability(role, 'edit_posts')) &&
+    (item.id !== 'app-settings' || canManageSettings(role)) &&
     (item.id !== 'comments' || canManageComments(role)) &&
     (item.id !== 'media' || canUploadMedia(role)) &&
     (item.id !== 'users' || canManageUsers(role)) &&

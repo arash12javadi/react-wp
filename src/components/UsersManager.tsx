@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getSupabaseClient } from '../lib/db';
 import { fetchProfiles, missingProfilesTable, type Profile } from '../lib/profiles';
-import { capabilityLabels, roleCapabilities, roleLabels, roles, type UserRole } from '../lib/roles';
+import { capabilitiesFor, capabilityLabels, roleLabels, roles, type UserRole } from '../lib/roles';
 import styles from './UsersManager.module.css';
 
 export default function UsersManager({ role: currentRole }: { role: UserRole }) {
@@ -76,7 +76,7 @@ export default function UsersManager({ role: currentRole }: { role: UserRole }) 
             <tbody>
               {profiles.map((profile) => {
                 const isSelf = profile.id === currentUserId;
-                const granted = roleCapabilities[profile.role] || [];
+                const granted = capabilitiesFor(profile.role);
                 const open = expanded === profile.id;
                 return (
                   <tr key={profile.id}>

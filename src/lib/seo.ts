@@ -14,6 +14,8 @@ export interface PageMeta {
   ogImage: string;
   ogType: string;
   twitterCard: string;
+  /** Empty unless meta keywords are enabled under App Settings → SEO. */
+  keywords: string;
 }
 
 interface MetaSource {
@@ -21,6 +23,7 @@ interface MetaSource {
   siteTagline?: string;
   siteIcon?: string;
   origin: string;
+  keywordsEnabled?: boolean;
 }
 
 /**
@@ -46,6 +49,7 @@ export const buildMeta = (page: Partial<Page> | null, source: MetaSource): PageM
     ogImage: page?.og_image?.trim() || source.siteIcon || '',
     ogType: page?.is_post ? 'article' : 'website',
     twitterCard: page?.twitter_card || 'summary_large_image',
+    keywords: source.keywordsEnabled ? page?.meta_keywords?.trim() || '' : '',
   };
 };
 
@@ -188,6 +192,7 @@ export const applyMeta = (meta: PageMeta) => {
   };
 
   setTag('meta[name="description"]', meta_('description'), meta.description);
+  setTag('meta[name="keywords"]', meta_('keywords'), meta.keywords);
   setTag('meta[name="robots"]', meta_('robots'), meta.noindex ? 'noindex, nofollow' : '');
   setTag('meta[property="og:title"]', meta_('og:title', 'property'), meta.ogTitle);
   setTag('meta[property="og:description"]', meta_('og:description', 'property'), meta.ogDescription);

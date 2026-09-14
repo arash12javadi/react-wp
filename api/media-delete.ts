@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 // @ts-expect-error -- shared .mjs helper, also used by server.mjs
-import { authorizeUploader, deleteFromProvider } from '../server/media.mjs';
+import { authorizeMediaDelete, deleteFromProvider } from '../server/media.mjs';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -14,12 +14,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  const auth = await authorizeUploader(supabaseUrl, supabaseKey, token);
+  // The provider id is read from the stored row, not the request body.
+  const auth = await authorizeMediaDelete(supabaseUrl, supabaseKey, token, req.body?.id);
   if (!auth.ok) {
     return res.status(auth.status).json({ error: auth.error });
   }
 
-  const { provider, providerFileId, url } = req.body || {};
+  const { provider, provider_file_id: providerFileId, url } = auth.item;
   const result = await deleteFromProvider(provider, providerFileId, url, supabaseUrl, supabaseKey);
   if (!result.ok) {
     return res.status(result.status).json({ error: result.error });

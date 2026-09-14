@@ -9,6 +9,8 @@ import { useRenderContext } from '../context';
 import { fetchMenus, type MenuRecord } from '../data';
 import { EditorPlaceholder, useLinkProps, useMediaUrl, useText } from './shared';
 import { resolveText } from '../../lib/dynamic';
+import { useAppSettings } from '../../../../src/lib/appSettings';
+import { MenuLabel, resolveMenuLinks, useMenuViewer, type DynamicMenuLink } from '../../../../src/lib/dynamicMenu';
 
 const str = (value: unknown, fallback = '') => (typeof value === 'string' ? value : fallback);
 const prefersReducedMotion = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -291,12 +293,15 @@ export const accordion: WidgetDefinition = {
 
 // Nav menu ----------------------------------------------------------------------------------------
 
-type MenuLink = { label: string; url: string; children: Array<{ label: string; url: string }> };
+type MenuLink = DynamicMenuLink & { children: DynamicMenuLink[] };
 
 const nestMenu = (menu: MenuRecord | undefined): MenuLink[] => {
   const links: MenuLink[] = [];
   (menu?.items || []).forEach((item) => {
-    const link = { label: item.label, url: item.url };
+    const link: DynamicMenuLink = {
+      label: item.label, url: item.url,
+      logged_out: item.logged_out, logged_out_label: item.logged_out_label, logged_out_url: item.logged_out_url,
+    };
     if ((item.depth || 0) > 0 && links.length) links[links.length - 1].children.push(link);
     else links.push({ ...link, children: [] });
   });
@@ -348,6 +353,8 @@ export const navMenu: WidgetDefinition = {
     const [open, setOpen] = useState(false);
     const [submenu, setSubmenu] = useState<number | null>(null);
     const navRef = useRef<HTMLElement>(null);
+    const viewer = useMenuViewer();
+    const { settings: appSettings } = useAppSettings();
 
     useEffect(() => {
       let active = true;
@@ -368,7 +375,7 @@ export const navMenu: WidgetDefinition = {
     if (!menus) return null;
     const menu = menus.find((item) => String(item.id) === String(node.settings.menuId)) || (node.settings.menuId ? undefined : menus[0]);
     if (!menu) return <EditorPlaceholder>{menus.length ? 'The chosen menu no longer exists. Pick another in the Content tab.' : 'Create a menu under Menus first.'}</EditorPlaceholder>;
-    const links = nestMenu(menu);
+    const links = resolveMenuLinks(nestMenu(menu), viewer, appSettings.menu.profile_url);
     const here = typeof window !== 'undefined' ? window.location.pathname.replace(/\/+$/, '') || '/' : '';
     const vertical = node.settings.layout === 'vertical';
     return (
@@ -380,21 +387,22 @@ export const navMenu: WidgetDefinition = {
           {links.map((link, index) => {
             const href = safeUrl(link.url);
             const current = href.replace(/\/+$/, '') === here || (href === '/' && here === '/');
-            if (!link.children.length) {
-              return <li key={`${link.label}-${index}`}><a href={href} aria-current={current ? 'page' : undefined}>{link.label}</a></li>;
+            const labelProps = { 'aria-label': link.label ? undefined : link.name };
+            if (!link.children?.length) {
+              return <li key={`${link.name}-${index}`}><a href={href} aria-current={current ? 'page' : undefined} {...labelProps}><MenuLabel link={link} /></a></li>;
             }
             const expanded = submenu === index;
             return (
-              <li key={`${link.label}-${index}`} className={`rwpb-nav-parent${expanded ? ' is-expanded' : ''}`}
+              <li key={`${link.name}-${index}`} className={`rwpb-nav-parent${expanded ? ' is-expanded' : ''}`}
                 onMouseEnter={() => setSubmenu(index)} onMouseLeave={() => setSubmenu((value) => (value === index ? null : value))}>
                 <span className="rwpb-nav-parent-row">
-                  <a href={href} aria-current={current ? 'page' : undefined}>{link.label}</a>
-                  <button type="button" className="rwpb-nav-caret" aria-expanded={expanded} aria-label={`${link.label} submenu`} onClick={() => setSubmenu(expanded ? null : index)}>
+                  <a href={href} aria-current={current ? 'page' : undefined} {...labelProps}><MenuLabel link={link} /></a>
+                  <button type="button" className="rwpb-nav-caret" aria-expanded={expanded} aria-label={`${link.name} submenu`} onClick={() => setSubmenu(expanded ? null : index)}>
                     <Icon name="chevron-down" size={16} />
                   </button>
                 </span>
                 <ul className="rwpb-nav-sub">
-                  {link.children.map((child, childIndex) => <li key={`${child.label}-${childIndex}`}><a href={safeUrl(child.url)}>{child.label}</a></li>)}
+                  {link.children.map((child, childIndex) => <li key={`${child.name}-${childIndex}`}><a href={safeUrl(child.url)} aria-label={child.label ? undefined : child.name}><MenuLabel link={child} /></a></li>)}
                 </ul>
               </li>
             );

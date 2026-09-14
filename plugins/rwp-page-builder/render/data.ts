@@ -1,5 +1,6 @@
 import { describeDbError, getSupabaseClient } from '../../../src/lib/db';
 import { resolveExcerpt } from '../../../src/lib/excerpt';
+import type { MenuItemRules } from '../../../src/lib/dynamicMenu';
 import type { DynamicPost } from '../lib/dynamic';
 
 export interface PostQuery {
@@ -84,7 +85,7 @@ export async function fetchDynamicPage(id: number): Promise<DynamicPost | null> 
 export interface MenuRecord {
   id: number;
   name: string;
-  items: Array<{ id: string; label: string; url: string; depth?: number }>;
+  items: Array<MenuItemRules & { id: string; label: string; url: string; depth?: number }>;
 }
 
 let menusPromise: Promise<MenuRecord[]> | null = null;

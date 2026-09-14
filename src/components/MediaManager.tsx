@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type
 import { describeDbError, getSupabaseClient } from '../lib/db';
 import { loadSettings, type SiteSettings, defaultSettings } from '../lib/settings';
 import { describeDimensions, formatBytes, uploadToCloudinary, uploadToImageKit } from '../lib/uploads';
+import { checkUploadRules, describeAllowance, fetchUploadAllowance, useAppSettings, type UploadAllowance } from '../lib/appSettings';
+import { fetchProfile } from '../lib/profiles';
+import { hasCapability } from '../lib/roles';
 import type { MediaItem, MediaProvider } from '../lib/types';
 import styles from './MediaManager.module.css';
 
@@ -37,7 +40,7 @@ const explainMediaError = (error: unknown): string => {
     return `Your media table predates the provider_file_id column, which is needed to delete files at the provider. ${migrationHint}`;
   }
   if (/row-level security|violates row-level/i.test(message)) {
-    return 'The database rejected this write under row level security. Your role needs the upload_files capability (Author or above), and the profiles table must exist.';
+    return 'The database rejected this write under row level security. Your role needs the upload_files capability (Author or above, or granted under App Settings → Roles), and when media is limited to its uploader you can only change your own files.';
   }
   return message;
 };
@@ -62,6 +65,10 @@ export default function MediaManager({ onSelect, onClose, heading = 'Media Libra
   const [savingUrl, setSavingUrl] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteSupport, setDeleteSupport] = useState<{ cloudinary: boolean; imagekit: boolean } | null>(null);
+  const { settings: appSettings } = useAppSettings();
+  const [allowance, setAllowance] = useState<UploadAllowance | null>(null);
+  // Set when the library is limited to the viewer's own uploads (App Settings → General).
+  const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
 
   useEffect(() => {
     // Surfaced up front rather than only when a delete fails, so orphaned files at the
@@ -76,13 +83,20 @@ export default function MediaManager({ onSelect, onClose, heading = 'Media Libra
     setLoading(true);
     setError('');
     try {
-      const [{ data, error: queryError }, loadedSettings] = await Promise.all([
+      const [{ data, error: queryError }, loadedSettings, { data: userData }, loadedAllowance] = await Promise.all([
         getSupabaseClient().from('media').select('*').order('created_at', { ascending: false }),
         loadSettings().catch(() => defaultSettings),
+        getSupabaseClient().auth.getUser(),
+        fetchUploadAllowance().catch(() => null),
       ]);
       if (queryError) throw queryError;
       setItems((data || []) as MediaItem[]);
       setSettings(loadedSettings);
+      setAllowance(loadedAllowance);
+      const user = userData.user;
+      const profile = user ? await fetchProfile(user.id).catch(() => null) : null;
+      // Media rows are public, so this is a view filter; the database enforces who may change them.
+      setOwnerFilter(user && !(profile && hasCapability(profile.role, 'edit_others_posts')) ? user.id : null);
     } catch (loadError: unknown) {
       setError(explainMediaError(loadError));
     } finally {
@@ -94,10 +108,12 @@ export default function MediaManager({ onSelect, onClose, heading = 'Media Libra
 
   const visible = useMemo(() => {
     const term = search.trim().toLowerCase();
+    const ownOnly = appSettings.general.scope_media_to_owner && ownerFilter;
     return items.filter((item) =>
+      (!ownOnly || item.uploaded_by === ownerFilter) &&
       (providerFilter === 'all' || item.provider === providerFilter) &&
       (!term || `${item.title || ''} ${item.file_name || ''} ${item.alt_text || ''}`.toLowerCase().includes(term)));
-  }, [items, providerFilter, search]);
+  }, [appSettings.general.scope_media_to_owner, items, ownerFilter, providerFilter, search]);
 
   const insertRecord = async (record: Partial<MediaItem>) => {
     const { data: userData } = await getSupabaseClient().auth.getUser();
@@ -117,8 +133,23 @@ export default function MediaManager({ onSelect, onClose, heading = 'Media Libra
     if (!files?.length) return;
     setError('');
     setFeedback('');
-    setProgress(0);
     try {
+      // Everything is checked before anything is sent: a file rejected after upload would be
+      // left behind at the provider with no library record.
+      const current = await fetchUploadAllowance().catch(() => allowance);
+      const problems: string[] = [];
+      let pendingBytes = 0;
+      for (const file of Array.from(files)) {
+        const fileProblems = await checkUploadRules(file, appSettings.uploads, current, pendingBytes);
+        if (fileProblems.length) problems.push(`"${file.name}" was not uploaded: ${fileProblems.join('; ')}.`);
+        pendingBytes += file.size;
+      }
+      if (problems.length) {
+        setError(problems.join(' '));
+        return;
+      }
+
+      setProgress(0);
       for (const file of Array.from(files)) {
         const upload = uploadProvider === 'imagekit'
           ? await uploadToImageKit(file, settings, setProgress)
@@ -142,6 +173,7 @@ export default function MediaManager({ onSelect, onClose, heading = 'Media Libra
       setError(explainMediaError(uploadError));
     } finally {
       setProgress(null);
+      void fetchUploadAllowance().then(setAllowance).catch(() => {});
     }
   };
 
@@ -200,13 +232,9 @@ export default function MediaManager({ onSelect, onClose, heading = 'Media Libra
             'Content-Type': 'application/json',
             Authorization: `Bearer ${sessionData.session?.access_token || ''}`,
           },
-          body: JSON.stringify({
-            provider: selected.provider,
-            providerFileId: selected.provider_file_id,
-            // Lets the server recover a Cloudinary public id for rows saved before that
-            // column existed.
-            url: selected.url,
-          }),
+          // The server reads the provider, file id and URL from the stored row and checks that
+          // this user may delete it; nothing else from the browser is trusted.
+          body: JSON.stringify({ id: selected.id }),
         });
         if (!response.ok) {
           const payload = await response.json().catch(() => ({}));
@@ -226,6 +254,7 @@ export default function MediaManager({ onSelect, onClose, heading = 'Media Libra
       setItems((current) => current.filter((item) => item.id !== selected.id));
       setSelected(null);
       setFeedback('Media deleted.');
+      void fetchUploadAllowance().then(setAllowance).catch(() => {});
     } catch (removeError: unknown) {
       setError(explainMediaError(removeError));
     } finally {
@@ -373,6 +402,7 @@ export default function MediaManager({ onSelect, onClose, heading = 'Media Libra
               <span>{progress}%</span>
             </div>
           )}
+          {allowance && <p className={styles.muted} role="status">{describeAllowance(allowance)}</p>}
           <p className={styles.muted}>
             {uploadProvider === 'cloudinary'
               ? 'Cloudinary uses the unsigned upload preset configured under Upload settings. No API secret is needed to upload.'

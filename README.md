@@ -272,6 +272,31 @@ Everything happens in the browser and in Supabase, so this also works on Vercel.
 
 **Size limits.** The whole backup is held in browser memory, which is fine for hundreds of megabytes of media, not tens of gigabytes. Supabase cancels statements from signed-in users after 8 seconds by default; a very large restore can hit that and is rolled back. The error says so and gives the fix: `alter role authenticated set statement_timeout = '60s'; notify pgrst, 'reload config';`.
 
+### App Settings
+
+Run [`supabase/migrations/20260920_app_settings.sql`](./supabase/migrations/20260920_app_settings.sql) for an existing installation. Safe to re-run. Then open **App Settings** in the admin (administrators only).
+
+- **General** — show or hide titles on pages and posts and publish dates on posts (a hidden title stays in the page for screen readers); limit Authors, Contributors and Subscribers to media they uploaded; excerpt length in words or characters (moved here from Settings → Site); and the target of the `#profile_url#` menu placeholder.
+- **Uploads** — maximum file size, minimum and maximum image dimensions, a disk quota per role, and per-person overrides by email address.
+- **SEO** — a Meta keywords field in the page editor, and header and body tracking scripts such as Google Tag Manager.
+- **Roles** — let Subscribers upload or write draft posts, and let Contributors upload or publish.
+
+Menus gained two things under **Menus → Edit** on each item: labels and URLs can use `#profile_name#`, `#profile_avatar#`, `#profile_both#` and `#profile_url#`, and each item chooses what logged-out visitors see (the item, nothing, or another label and link). Items with a profile placeholder are hidden from logged-out visitors unless given a replacement. This is presentation only: the menu is public data, so hiding a link does not protect the page behind it.
+
+**What the database enforces, and what it cannot.** The settings are one JSON document in the `rwp_app_settings` option. Three parts of it are enforced in SQL, not just in the UI:
+
+- **Role grants** are read by `public.user_has_cap()`, so every existing policy honours them. Only those four grants exist; nothing above Author can be handed out from settings.
+- **Media scoping** goes through `rwp_can_manage_media()`, used by both the media update/delete policies and `/api/media-delete`. That endpoint used to delete whatever provider file id the browser sent, so any uploader could delete anyone's file; it now takes only the library row id and reads the provider id from the database.
+- **Upload rules and quotas** are checked by the `media_enforce_upload_rules` trigger when a file is added to the library. It also sets `uploaded_by` to the caller, so an upload cannot be attributed to someone else to dodge their quota, and it stops size and owner fields being edited afterwards.
+
+The upload limit is not a hard limit on what reaches Cloudinary. Files go straight from the browser to the provider, so the size and dimensions the trigger checks are the ones the browser reports, and the unsigned preset accepts uploads from anyone who has it. The browser checks every file before sending it, which is what stops normal use and avoids leaving rejected files behind at the provider. For a hard limit, restrict the Cloudinary upload preset as well. ImageKit is stricter: `/api/imagekit-auth` now requires a signed-in uploader with room in their quota before it signs anything. Before this change it signed uploads for anyone.
+
+**Quota overrides are private.** `options` is publicly readable, and overrides are keyed by email, so they live in their own `rwp_quota_overrides` table that only administrators can read. Keying by email lets you set an allowance before the person signs up. An override applies to Administrators too; without one they are unlimited.
+
+**Tracking scripts** are written into the HTML by `server/seo.mjs` on `npm start`, so tag managers load before the app. The server also adds `<meta name="rwp-scripts">`, and the browser only injects the scripts itself when that marker is missing (Vercel, `npm run dev`), so pageviews are not counted twice. Neither path runs on `/admin` or `/builder/…`. Pasted code passes through [`src/lib/scriptSanitizer.js`](./src/lib/scriptSanitizer.js), which keeps only `<script>`, `<noscript>` with an iframe or image, `<link>` and `<meta>`, with https URLs, and lists anything it removed before you save. That keeps a snippet from breaking the page markup; it cannot make the JavaScript itself safe, which is why only administrators can save it.
+
+Deliberately not included from the legacy theme: a toggle for like/follow buttons (React-WP has no like or follow system), a switch for thumbnail generation (Cloudinary and ImageKit generate sizes on request, so nothing is generated at upload), and a comments scoping toggle (comments were already limited: only Editors and above can open the Comments screen, and everyone else sees only approved comments and their own).
+
 ### The editor
 
 The content editor is built on [TipTap](https://tiptap.dev) (ProseMirror). It replaced a hand-rolled `contentEditable` implementation that reassigned `innerHTML` from a React effect on every keystroke, which moved the caret back to the start of the document mid-sentence. TipTap owns its DOM, and external values are only applied while the editor is unfocused, so that class of bug cannot recur.

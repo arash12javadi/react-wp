@@ -20,6 +20,8 @@ import { canAccessAdmin, canManageComments, canManageSettings, canManageUsers, c
 import { useCurrentProfile } from './lib/profiles';
 import { resolveSupabaseConfig, tryGetSupabaseClient } from './lib/db';
 import { applySiteIcon, loadSettings } from './lib/settings';
+import { defaultAppSettings, injectTrackingScripts, loadAppSettings } from './lib/appSettings';
+import AppSettings from './components/AppSettings';
 import { rwp } from './lib/rwp';
 import styles from './Dashboard.module.css';
 
@@ -124,7 +126,7 @@ function SimpleSection({ title, description }: { title: string; description: str
   );
 }
 
-const adminSections: AdminSection[] = ['content', 'media', 'comments', 'categories', 'menus', 'users', 'plugins', 'settings', 'profile'];
+const adminSections: AdminSection[] = ['content', 'media', 'comments', 'categories', 'menus', 'users', 'plugins', 'settings', 'app-settings', 'profile'];
 
 /** Supports the public site's "Edit page" link, e.g. /admin?section=content&edit=12 */
 const initialSection = (): AdminSection => {
@@ -227,6 +229,8 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
     setEditingPage(null);
     setCreatingPost(null);
   };
+  // Roles admitted only for uploads (App Settings → Roles) have no Pages & Posts screen.
+  const section: AdminSection = activeSection === 'content' && !hasCapability(role, 'edit_posts') ? 'media' : activeSection;
 
   const logout = async () => {
     await supabase.auth.signOut();
@@ -235,13 +239,13 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
   };
 
   let content;
-  const pluginPage = rwp.getAdminPages().find((page) => page.id === activeSection);
+  const pluginPage = rwp.getAdminPages().find((page) => page.id === section);
   if (pluginPage && (!pluginPage.capability || hasCapability(role, pluginPage.capability as Capability))) {
     const PluginPage = pluginPage.component;
     content = <PluginPage />;
   } else if (pluginPage) {
     content = <SimpleSection title="Not available" description="Your role does not have access to this section." />;
-  } else if (activeSection === 'content') {
+  } else if (section === 'content') {
     content = creatingPost !== null ? (
       <PageEditor
         role={role}
@@ -260,21 +264,23 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
         }} />
       </>
     );
-  } else if (activeSection === 'media' && canUploadMedia(role)) {
+  } else if (section === 'media' && canUploadMedia(role)) {
     content = <MediaLibrary role={role} />;
-  } else if (activeSection === 'users' && canManageUsers(role)) {
+  } else if (section === 'users' && canManageUsers(role)) {
     content = <UsersManager role={role} />;
-  } else if (activeSection === 'menus' && canManageSettings(role)) {
+  } else if (section === 'menus' && canManageSettings(role)) {
     content = <MenusScreen />;
-  } else if (activeSection === 'settings' && canManageSettings(role)) {
+  } else if (section === 'settings' && canManageSettings(role)) {
     content = <SiteSettings onSiteTitleChange={setSiteTitle} />;
-  } else if (activeSection === 'plugins' && canManageSettings(role)) {
+  } else if (section === 'app-settings' && canManageSettings(role)) {
+    content = <AppSettings />;
+  } else if (section === 'plugins' && canManageSettings(role)) {
     content = <PluginsManager />;
-  } else if (activeSection === 'categories' && canManageSettings(role)) {
+  } else if (section === 'categories' && canManageSettings(role)) {
     content = <CategoriesManager />;
-  } else if (activeSection === 'comments' && canManageComments(role)) {
+  } else if (section === 'comments' && canManageComments(role)) {
     content = <CommentsManager />;
-  } else if (activeSection === 'profile') {
+  } else if (section === 'profile') {
     content = <ProfileManager role={role} />;
   } else {
     content = <SimpleSection title="Not available" description="Your role does not have access to this section." />;
@@ -282,7 +288,7 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
 
   return (
     <AdminLayout
-      activeSection={activeSection}
+      activeSection={section}
       onNavigate={navigate}
       onLogout={() => void logout()}
       userEmail={session.user.email}
@@ -317,6 +323,10 @@ export default function App() {
       }
       try {
         await initializePlugins(client);
+        // Before anything renders: capability checks depend on the role grants in here.
+        const appSettings = await loadAppSettings().catch(() => defaultAppSettings);
+        const path = window.location.pathname;
+        if (!isAdminRoute && !path.startsWith('/builder/')) injectTrackingScripts(appSettings.seo);
         const publicRouting = await loadPublicRouting(client).catch(() => ({ homePageId: '', postsPageSlug: '' }));
         if (mounted) {
           setRouting(publicRouting);

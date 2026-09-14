@@ -6,12 +6,10 @@ import WidgetRenderer from './WidgetRenderer';
 import { loadWidgetAreas, type Widget } from '../lib/widgets';
 import type { UserRole } from '../lib/roles';
 import { rwp } from '../lib/rwp';
+import { useAppSettings } from '../lib/appSettings';
+import { MenuLabel, resolveMenuLinks, useMenuViewer, type DynamicMenuLink, type ResolvedMenuLink } from '../lib/dynamicMenu';
 
-export interface MenuLink {
-  label: string;
-  url: string;
-  children?: Array<{ label: string; url: string }>;
-}
+export type MenuLink = DynamicMenuLink;
 
 interface PublicLayoutProps {
   siteTitle: string;
@@ -37,11 +35,12 @@ const defaultLinks: MenuLink[] = [
   { label: 'Admin Dashboard', url: '/admin' },
 ];
 
-function NavItem({ link, onNavigate }: { link: MenuLink; onNavigate: () => void }) {
+function NavItem({ link, onNavigate }: { link: ResolvedMenuLink; onNavigate: () => void }) {
   const [open, setOpen] = useState(false);
+  const accessibleName = link.label ? undefined : link.name;
 
   if (!link.children?.length) {
-    return <a href={link.url} onClick={onNavigate}>{link.label}</a>;
+    return <a href={link.url} onClick={onNavigate} aria-label={accessibleName}><MenuLabel link={link} /></a>;
   }
 
   return (
@@ -55,12 +54,14 @@ function NavItem({ link, onNavigate }: { link: MenuLink; onNavigate: () => void 
         if (!event.currentTarget.contains(event.relatedTarget as Node)) setOpen(false);
       }}
     >
-      <a href={link.url} aria-haspopup="true" aria-expanded={open} onClick={onNavigate}>
-        {link.label} <span aria-hidden="true">▾</span>
+      <a href={link.url} aria-haspopup="true" aria-expanded={open} onClick={onNavigate} aria-label={accessibleName}>
+        <MenuLabel link={link} /> <span aria-hidden="true">▾</span>
       </a>
       <div className={`${styles.submenu} ${open ? styles.submenuOpen : ''}`}>
         {link.children.map((child) => (
-          <a key={`${child.label}-${child.url}`} href={child.url} onClick={onNavigate}>{child.label}</a>
+          <a key={`${child.name}-${child.url}`} href={child.url} onClick={onNavigate} aria-label={child.label ? undefined : child.name}>
+            <MenuLabel link={child} />
+          </a>
         ))}
       </div>
     </div>
@@ -85,7 +86,9 @@ export default function PublicLayout({
   const [, refresh] = useState(0);
   useEffect(() => rwp.subscribe(() => refresh((value) => value + 1)), []);
   const headerItems = rwp.getHeaderItems();
-  const links = menuLinks?.length ? menuLinks : defaultLinks;
+  const viewer = useMenuViewer();
+  const { settings: appSettings } = useAppSettings();
+  const links = resolveMenuLinks(menuLinks?.length ? menuLinks : defaultLinks, viewer, appSettings.menu.profile_url);
   const headerClass = widthClass(layout, styles.header, styles.headerWide, styles.headerFull);
   const footerClass = widthClass(layout, styles.footer, styles.footerWide, styles.footerFull);
 
@@ -121,7 +124,7 @@ export default function PublicLayout({
         </button>
         <nav className={`${styles.nav} ${menuOpen ? styles.navOpen : ''}`} aria-label="Primary navigation">
           {links.map((link) => (
-            <NavItem key={`${link.label}-${link.url}`} link={link} onNavigate={() => setMenuOpen(false)} />
+            <NavItem key={`${link.name}-${link.url}`} link={link} onNavigate={() => setMenuOpen(false)} />
           ))}
           {headerItems.map(({ id, component: Item }) => <Item key={id} />)}
           {showAuthLinks && (

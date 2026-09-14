@@ -7,8 +7,8 @@ import http from 'node:http';
 import path from 'node:path';
 import { Client } from 'pg';
 import { publicConfig, readConfig, writeConfig } from './server/config.mjs';
-import { authorizeUploader, deleteFromProvider, describeDeleteSupport } from './server/media.mjs';
-import { renderSeoTags } from './server/seo.mjs';
+import { authorizeImageKitUpload, authorizeMediaDelete, deleteFromProvider, describeDeleteSupport } from './server/media.mjs';
+import { renderDocumentInjections } from './server/seo.mjs';
 import { handlePluginRequest, resolveOrigin } from './server/plugins.mjs';
 
 const port = Number(process.env.PORT || 3000);
@@ -93,16 +93,20 @@ const serveFile = async (request, response, pathname, seoPath = pathname) => {
       const html = await readFile(filePath, 'utf8');
       const config = publicConfig(await readConfig());
       const isAdmin = seoPath.replace(/\/+$/, '') === '/admin';
+      // Tracking scripts stay off the admin and the full-screen page builder.
+      const isEditor = isAdmin || seoPath.startsWith('/builder/');
       const origin = `http://${request.headers.host || 'localhost'}`;
-      const seoTags = isAdmin ? '' : await renderSeoTags(seoPath, origin, config);
+      const { head, bodyStart } = isEditor ? { head: '', bodyStart: '' } : await renderDocumentInjections(seoPath, origin, config);
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
       // The injected block carries its own <title>; leaving the placeholder one in place
       // would win, because browsers honour the first title in the document.
-      const withSeo = seoTags
-        ? html.replace(/\s*<title>.*?<\/title>/i, '').replace('<!--rwp-seo-->', seoTags)
-        : html.replace('<!--rwp-seo-->', '');
+      // Function replacements throughout, so "$&" or "$1" in a script or title is not treated
+      // as a replacement pattern.
+      let withSeo = (head.includes('<title>') ? html.replace(/\s*<title>.*?<\/title>/i, '') : html)
+        .replace('<!--rwp-seo-->', () => head);
+      if (bodyStart) withSeo = withSeo.replace(/<body[^>]*>/i, (tag) => `${tag}\n    ${bodyStart}`);
       response.end(
-        withSeo.replace('window.__REACT_WP_CONFIG__=null;', `window.__REACT_WP_CONFIG__=${JSON.stringify(config)};`),
+        withSeo.replace('window.__REACT_WP_CONFIG__=null;', () => `window.__REACT_WP_CONFIG__=${JSON.stringify(config)};`),
       );
     } else {
       response.writeHead(200, {
@@ -132,6 +136,22 @@ const server = http.createServer(async (request, response) => {
         json(response, 501, { error: 'IMAGEKIT_PRIVATE_KEY is not configured on this server.' });
         return;
       }
+      const config = publicConfig(await readConfig());
+      if (!config?.supabaseUrl || !config?.supabasePublishableKey) {
+        json(response, 501, { error: 'This site is not installed, so uploads cannot be authorised.' });
+        return;
+      }
+      // Previously anyone could fetch upload credentials; now only uploaders within quota can.
+      const auth = await authorizeImageKitUpload(
+        config.supabaseUrl,
+        config.supabasePublishableKey,
+        (request.headers.authorization || '').replace(/^Bearer\s+/i, ''),
+        url.searchParams.get('bytes'),
+      );
+      if (!auth.ok) {
+        json(response, auth.status, { error: auth.error });
+        return;
+      }
       const token = randomUUID();
       const expire = Math.floor(Date.now() / 1000) + 600;
       const signature = createHmac('sha1', privateKey).update(token + expire).digest('hex');
@@ -146,16 +166,16 @@ const server = http.createServer(async (request, response) => {
         return;
       }
       const token = (request.headers.authorization || '').replace(/^Bearer\s+/i, '');
-      const auth = await authorizeUploader(config.supabaseUrl, config.supabasePublishableKey, token);
+      const body = await readBody(request);
+      const auth = await authorizeMediaDelete(config.supabaseUrl, config.supabasePublishableKey, token, body.id);
       if (!auth.ok) {
         json(response, auth.status, { error: auth.error });
         return;
       }
-      const body = await readBody(request);
       const result = await deleteFromProvider(
-        body.provider,
-        body.providerFileId,
-        body.url,
+        auth.item.provider,
+        auth.item.provider_file_id,
+        auth.item.url,
         config.supabaseUrl,
         config.supabasePublishableKey,
       );

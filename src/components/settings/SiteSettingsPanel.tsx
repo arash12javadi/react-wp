@@ -56,7 +56,6 @@ export default function SiteSettingsPanel({ onSiteTitleChange }: { onSiteTitleCh
         home_page_id: form.home_page_id,
         posts_page_id: form.posts_page_id,
         posts_per_page: form.posts_per_page,
-        excerpt_length: form.excerpt_length,
         home_layout: form.home_layout,
       });
       applySiteIcon(form.site_icon.trim());
@@ -149,14 +148,6 @@ export default function SiteSettingsPanel({ onSiteTitleChange }: { onSiteTitleCh
             onChange={(event) => field('posts_per_page', Number(event.target.value))} />
         </label>
 
-        <label>
-          Excerpt length (words)
-          <input type="number" min={5} max={300} value={form.excerpt_length}
-            onChange={(event) => field('excerpt_length', Number(event.target.value))} />
-          <span className={styles.help}>
-            Used when a post has no excerpt of its own. WordPress defaults to 55 words.
-          </span>
-        </label>
 
         <div className={styles.actions}>
           <button type="submit" className={styles.saveButton} disabled={saving}>
