@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import SiteSettingsPanel from './settings/SiteSettingsPanel';
 import AccountsPanel from './settings/AccountsPanel';
+import BackupPanel from './settings/BackupPanel';
 import styles from './SiteSettings.module.css';
 
-type SettingsTab = 'site' | 'accounts';
+type SettingsTab = 'site' | 'accounts' | 'backup';
 
 const tabs: Array<[SettingsTab, string, string]> = [
   ['site', 'Site', 'Configure the basic information shown across your site.'],
   ['accounts', 'Accounts', 'Control who can register, what they become, and how they sign in.'],
+  ['backup', 'Backup', 'Download the whole site as one file, or restore a backup onto this site.'],
 ];
 
 export default function SiteSettings({ onSiteTitleChange }: { onSiteTitleChange?: (title: string) => void }) {
@@ -38,6 +40,7 @@ export default function SiteSettings({ onSiteTitleChange }: { onSiteTitleChange?
 
       {tab === 'site' && <SiteSettingsPanel onSiteTitleChange={onSiteTitleChange} />}
       {tab === 'accounts' && <AccountsPanel />}
+      {tab === 'backup' && <BackupPanel />}
     </section>
   );
 }

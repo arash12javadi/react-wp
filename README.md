@@ -251,6 +251,27 @@ Three rules are enforced by the database, not the editor:
 
 **Author names** in Post Meta come from `builder_author_names()`, which returns only the display names of people with published content: `profiles` itself is readable only when signed in, because it holds emails.
 
+### Backup and restore
+
+Run [`supabase/migrations/20260919_backup_restore.sql`](./supabase/migrations/20260919_backup_restore.sql) for an existing installation. Safe to re-run.
+
+**Settings → Backup** has two buttons. **Export backup** downloads one `.zip` file; **Restore backup** puts its contents onto this site, or onto a fresh installation somewhere else. Administrators only (`manage_options`), enforced by the database functions, not the screen.
+
+**What's in the file.** `backup.json` holds every row of every table in `public` except `profiles`: pages, posts, menus, widgets and all other options, comments, the media library, plugin state, shop products, orders and coupons, builder layouts, revisions, templates and form entries. Tables added later by migrations or plugins are included automatically. It also lists each user's email, display name, bio, avatar and role. It never contains passwords, `auth.users`, or anything from `.env.local`. It does contain customer emails, addresses and form entries, so store it like a database dump.
+
+**Why the restore runs in SQL.** `rwp_backup_import()` truncates and refills every table inside one transaction, so a failure (a bad row, a timeout) leaves the site exactly as it was. The browser could not do that with one request per table. The function also turns off user triggers while it inserts, so restored rows keep their timestamps, and the stock guard, review bookkeeping and builder revision triggers don't run a second time. It restores ids as they were, then moves each identity sequence past the highest id.
+
+**Accounts are matched by email, not copied.** A Supabase account can't be recreated from a backup without its password hash, and that hash must not leave the database. So every user reference (any column with a foreign key to `profiles` or `auth.users`) is re-pointed to the account on the target site with the same email. Unmatched references are cleared, and rows that can't exist without their account (`shop_customers`) are skipped. The report names the unmatched emails. The importing administrator's own role is never changed, and only a super admin can restore `super_admin`. The target's `installed` option is kept.
+
+**Media.** Cloudinary and ImageKit files are not in Supabase, so there are two levels of backup:
+
+- **Links only** (untick *Include media files*): the backup keeps the URLs. They keep working anywhere as long as the files stay in the original account. The file is small.
+- **Files included** (the default): the browser downloads every Cloudinary/ImageKit file into `media/` inside the ZIP. Both providers send `Access-Control-Allow-Origin: *`, so no server or secret is needed. Any file that fails to download is listed, and only its link is kept. External image links are always kept as links. On restore, tick *Upload the media files to this site's media account* when the original account won't stay available. Each file is uploaded with this site's upload settings, and every copy of its old URL is replaced across the whole backup (page HTML, builder JSON, product galleries, avatars, options) before the database restore runs. The target also keeps its own Cloudinary/ImageKit settings. Only exact URLs are rewritten. A hand-edited Cloudinary transformation URL (`/upload/w_300/…`) keeps pointing at the old account.
+
+Everything happens in the browser and in Supabase, so this also works on Vercel.
+
+**Size limits.** The whole backup is held in browser memory, which is fine for hundreds of megabytes of media, not tens of gigabytes. Supabase cancels statements from signed-in users after 8 seconds by default; a very large restore can hit that and is rolled back. The error says so and gives the fix: `alter role authenticated set statement_timeout = '60s'; notify pgrst, 'reload config';`.
+
 ### The editor
 
 The content editor is built on [TipTap](https://tiptap.dev) (ProseMirror). It replaced a hand-rolled `contentEditable` implementation that reassigned `innerHTML` from a React effect on every keystroke, which moved the caret back to the start of the document mid-sentence. TipTap owns its DOM, and external values are only applied while the editor is unfocused, so that class of bug cannot recur.
