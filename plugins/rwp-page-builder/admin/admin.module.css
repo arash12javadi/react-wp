@@ -1,0 +1,66 @@
+.wrap { display: grid; gap: 16px; color: #1e293b; }
+.intro h2 { margin: 0 0 4px; color: #0f172a; font-size: 1.35rem; }
+.intro p { margin: 0; color: #64748b; }
+
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid #e2e8f0; }
+.tab, .tabActive { padding: 9px 14px; border: 0; border-bottom: 2px solid transparent; color: #64748b; background: none; font: inherit; font-size: .9rem; font-weight: 700; cursor: pointer; }
+.tabActive { color: #6d28d9; border-bottom-color: #6d28d9; }
+
+.panel { display: grid; gap: 14px; padding: 18px; border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; }
+.panel h3 { margin: 6px 0 0; color: #0f172a; font-size: 1rem; }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.toolbar p { flex: 1; min-width: 220px; margin: 0; color: #64748b; }
+.toolbar select { padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; font: inherit; }
+
+.tableWrap { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.table th { padding: 9px 10px; border-bottom: 1px solid #e2e8f0; color: #64748b; font-size: .78rem; letter-spacing: .04em; text-align: left; text-transform: uppercase; }
+.table td { padding: 10px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+.table td strong { display: block; color: #0f172a; }
+.table td .muted { display: block; font-size: .82rem; }
+.unread td { background: #faf5ff; }
+.unread td strong, .unread .link { font-weight: 700; }
+.detailRow td { background: #f8fafc; }
+
+.actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.primary, .secondary, .danger { display: inline-flex; align-items: center; padding: 6px 11px; border-radius: 6px; font: inherit; font-size: .84rem; font-weight: 600; text-decoration: none; white-space: nowrap; cursor: pointer; }
+.primary { border: 1px solid #6d28d9; color: #fff; background: #6d28d9; }
+.primary:hover { background: #5b21b6; }
+.secondary { border: 1px solid #cbd5e1; color: #334155; background: #fff; }
+.secondary:hover:not(:disabled) { border-color: #6d28d9; color: #6d28d9; }
+.secondary:disabled { opacity: .5; cursor: default; }
+.danger { border: 1px solid #fecaca; color: #b91c1c; background: #fff; }
+.danger:hover { background: #fef2f2; }
+.link { padding: 0; border: 0; color: #4f46e5; background: none; font: inherit; text-align: left; cursor: pointer; }
+.link:hover { text-decoration: underline; }
+
+.muted { color: #64748b; }
+.error { margin: 0; padding: 10px 12px; border-radius: 8px; color: #991b1b; background: #fef2f2; }
+.success { margin: 0; padding: 10px 12px; border-radius: 8px; color: #065f46; background: #ecfdf5; }
+
+.badgeGreen, .badgeGrey, .badgeBlue, .badgeRed { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .75rem; font-weight: 700; text-transform: capitalize; }
+.badgeGreen { color: #166534; background: #dcfce7; }
+.badgeGrey { color: #475569; background: #f1f5f9; }
+.badgeBlue { color: #5b21b6; background: #ede9fe; }
+.badgeRed { color: #991b1b; background: #fee2e2; }
+
+.fields { display: grid; gap: 8px; margin: 0; }
+.fields div { display: grid; grid-template-columns: minmax(120px, 200px) 1fr; gap: 12px; }
+.fields dt { color: #64748b; font-weight: 600; }
+.fields dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.pager { display: flex; align-items: center; justify-content: center; gap: 12px; }
+
+.checklist, .plainList { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.checklist li { display: grid; gap: 2px; padding: 10px 12px; border-radius: 8px; }
+.ok { color: #166534; background: #f0fdf4; }
+.bad { color: #991b1b; background: #fef2f2; }
+.bad span { color: #7f1d1d; font-size: .88rem; }
+.plainList li { padding-left: 16px; color: #475569; position: relative; }
+.plainList li::before { content: '•'; position: absolute; left: 2px; color: #6d28d9; }
+.plainList code { padding: 1px 5px; border-radius: 4px; background: #f1f5f9; font-size: .85em; }
+
+@media (max-width: 640px) {
+  .fields div { grid-template-columns: 1fr; gap: 2px; }
+  .actions { justify-content: flex-start; }
+}

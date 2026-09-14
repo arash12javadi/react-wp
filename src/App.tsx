@@ -129,7 +129,9 @@ const adminSections: AdminSection[] = ['content', 'media', 'comments', 'categori
 /** Supports the public site's "Edit page" link, e.g. /admin?section=content&edit=12 */
 const initialSection = (): AdminSection => {
   const requested = new URLSearchParams(window.location.search).get('section');
-  return adminSections.includes(requested as AdminSection) ? requested as AdminSection : 'content';
+  // Plugin admin pages are addressable too, e.g. /admin?section=rwp-page-builder.
+  const known = adminSections.includes(requested as AdminSection) || rwp.getAdminPages().some((page) => page.id === requested);
+  return known ? requested as AdminSection : 'content';
 };
 
 function ConnectionError({ onReconfigure }: { onReconfigure: () => void }) {

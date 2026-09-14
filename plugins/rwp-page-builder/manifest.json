@@ -1,0 +1,8 @@
+{
+  "id": "rwp-page-builder",
+  "name": "RWP Page Builder",
+  "version": "1.0.0",
+  "author": "React-WP",
+  "description": "A visual drag-and-drop page builder: sections, columns and widgets, responsive styling, dynamic data tags, posts grids, forms, sliders, global colours and fonts, templates and revisions.",
+  "entry": "./index.tsx"
+}

@@ -43,6 +43,8 @@ Inside `defineRwpPlugin(manifest, (context) => { ... })`:
 | `shortcodes.register({ name, render })` | `[name attr="value"]` in page content. |
 | `routes.register({ path, component, chrome })` | A public URL. `:param` segments and a trailing `*` are captured into `params`. Plugin routes win over page slugs. `chrome: false` renders without the site header and footer. |
 | `header.register({ id, component })` | Something in the public header next to the login links, such as a cart link. |
+| `content.registerRenderer({ id, match, component, editHref })` | Takes over the body of pages where `match(page)` is true. The component gets `{ page, comments }`; `editHref` redirects the toolbar's "Edit page" link. The page builder uses this. |
+| `content.registerAction({ id, label, href, show })` | A link on each row of Pages & Posts and at the top of the content editor, e.g. "Edit with Builder". |
 
 Components rendered inside a route can read site settings and the signed-in user with
 `usePublicChrome()` from `src/components/PublicChrome.tsx`.
@@ -88,3 +90,13 @@ build and only changes after `npm run build` and a server restart.
 ## Shop plugin
 
 `rwp-shop` is a full store. See the "Shop" section of the root README for setup.
+
+## Page builder plugin
+
+`rwp-page-builder` is a visual page builder. See the "Page builder" section of the root README.
+
+Other plugins can add builder widgets with `registerWidget` from
+`plugins/rwp-page-builder/lib/registry.ts`: a definition is `{ type, label, icon, category,
+defaults, controls, View, css }`. `controls` is plain data (the editor renders it), `View`
+renders for visitors and on the canvas, and `css(bag, node, device)` returns style rules for
+one device, which the builder turns into media queries.

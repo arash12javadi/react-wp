@@ -11,6 +11,9 @@ export {
   type RwpRoute,
   type RwpRouteProps,
   type RwpHeaderItem,
+  type RwpContentRenderer,
+  type RwpContentRendererProps,
+  type RwpContentAction,
 } from './rwp';
 
 import { rwp, type RwpPluginManifest, type RwpPluginContext } from './rwp';

@@ -1,4 +1,5 @@
 import type { ComponentType, ReactNode } from 'react';
+import type { Page } from './types';
 
 export type RwpActionName =
   | 'rwp_init'
@@ -70,6 +71,30 @@ export interface RwpHeaderItem {
   component: ComponentType;
 }
 
+export interface RwpContentRendererProps {
+  page: Page;
+  /** The comment section PublicContent would have shown, or null when comments are off. */
+  comments: ReactNode;
+}
+
+export interface RwpContentRenderer {
+  id: string;
+  /** Receives the full pages row (select *), including columns added by plugin migrations. */
+  match: (page: Page) => boolean;
+  /** Replaces the title, excerpt and content of a page on the public site. */
+  component: ComponentType<RwpContentRendererProps>;
+  /** Where the toolbar's "Edit page" link should point for matching pages. */
+  editHref?: (page: Page) => string;
+}
+
+export interface RwpContentAction {
+  id: string;
+  label: string;
+  href: (page: Page) => string;
+  /** Hide the action for some rows, e.g. posts. Shown for every row when omitted. */
+  show?: (page: Page) => boolean;
+}
+
 export interface RwpPluginContext {
   actions: {
     add: (name: RwpActionName, callback: (...args: unknown[]) => void) => () => void;
@@ -92,6 +117,12 @@ export interface RwpPluginContext {
   header: {
     /** Renders next to the login links in the public site header (e.g. a cart link). */
     register: (item: RwpHeaderItem) => () => void;
+  };
+  content: {
+    /** Takes over rendering of matching pages. The first registered match wins. */
+    registerRenderer: (renderer: RwpContentRenderer) => () => void;
+    /** Adds a link to each row in Pages & Posts and to the content editor. */
+    registerAction: (action: RwpContentAction) => () => void;
   };
 }
 
@@ -152,6 +183,8 @@ const dashboardWidgets = new Map<string, RwpDashboardWidget>();
 const shortcodes = new Map<string, RwpShortcode>();
 const routes = new Map<string, RwpRoute>();
 const headerItems = new Map<string, RwpHeaderItem>();
+const contentRenderers = new Map<string, RwpContentRenderer>();
+const contentActions = new Map<string, RwpContentAction>();
 interface PluginRecord {
   plugin: RwpPlugin;
   cleanup?: () => void;
@@ -181,6 +214,8 @@ export const rwp: RwpPluginContext & {
   getRoutes: () => RwpRoute[];
   matchRoute: (pathname: string) => { route: RwpRoute; params: Record<string, string> } | null;
   getHeaderItems: () => RwpHeaderItem[];
+  getContentRenderer: (page: Page) => RwpContentRenderer | null;
+  getContentActions: (page: Page) => RwpContentAction[];
   getPlugins: () => RwpInstalledPlugin[];
 } = {
   actions: {
@@ -246,6 +281,24 @@ export const rwp: RwpPluginContext & {
       };
     },
   },
+  content: {
+    registerRenderer: (renderer) => {
+      contentRenderers.set(renderer.id, renderer);
+      notifySubscribers();
+      return () => {
+        contentRenderers.delete(renderer.id);
+        notifySubscribers();
+      };
+    },
+    registerAction: (action) => {
+      contentActions.set(action.id, action);
+      notifySubscribers();
+      return () => {
+        contentActions.delete(action.id);
+        notifySubscribers();
+      };
+    },
+  },
   registerPlugin: (plugin) => {
     if (plugins.has(plugin.id)) throw new Error(`RWP plugin "${plugin.id}" is already registered.`);
     const record: PluginRecord = { plugin, active: false };
@@ -291,6 +344,8 @@ export const rwp: RwpPluginContext & {
     return null;
   },
   getHeaderItems: () => [...headerItems.values()],
+  getContentRenderer: (page) => [...contentRenderers.values()].find((renderer) => renderer.match(page)) || null,
+  getContentActions: (page) => [...contentActions.values()].filter((action) => !action.show || action.show(page)),
   getPlugins: () => [...plugins.values()].map(({ plugin, active }) => ({ ...plugin, active })),
   subscribe: (listener) => {
     subscribers.add(listener);

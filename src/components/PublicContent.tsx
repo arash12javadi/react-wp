@@ -96,8 +96,21 @@ export default function PublicContent({ slug, pageId, onReconfigure }: PublicCon
     ? styles.containerFull
     : page?.layout === 'wide' ? styles.containerWide : styles.container;
   const withSidebar = Boolean(page?.show_sidebar);
+  // A plugin (e.g. the page builder) can take over how a page's body is rendered.
+  const renderer = page ? rwp.getContentRenderer(page) : null;
 
-  const article = page && (
+  const comments = page && settings.comments_enabled ? (
+    <CommentSection
+      pageId={page.id}
+      commentsOpen={page.comments_open !== false}
+      moderated={settings.comment_moderation}
+      maxDepth={settings.comment_max_depth}
+    />
+  ) : null;
+
+  const article = page && (renderer ? (
+    <renderer.component page={page} comments={comments} />
+  ) : (
     <article className={styles.feed} aria-labelledby="content-heading">
       <p className={styles.kicker}>{page.is_post ? 'From the blog' : 'Page'}</p>
       <h1 id="content-heading">{rwp.filters.apply('rwp_post_title', page.title, page)}</h1>
@@ -106,16 +119,9 @@ export default function PublicContent({ slug, pageId, onReconfigure }: PublicCon
         className={styles.content}
         html={rwp.filters.apply('rwp_page_content', page.content, page)}
       />
-      {settings.comments_enabled && (
-        <CommentSection
-          pageId={page.id}
-          commentsOpen={page.comments_open !== false}
-          moderated={settings.comment_moderation}
-          maxDepth={settings.comment_max_depth}
-        />
-      )}
+      {comments}
     </article>
-  );
+  ));
 
   return (
     <PublicLayout
@@ -126,7 +132,7 @@ export default function PublicContent({ slug, pageId, onReconfigure }: PublicCon
       layout={page?.layout}
       showAuthLinks={settings.show_auth_links}
       canRegister={settings.users_can_register}
-      editLink={page && canEdit ? `/admin?section=content&edit=${page.id}` : undefined}
+      editLink={page && canEdit ? (renderer?.editHref?.(page) || `/admin?section=content&edit=${page.id}`) : undefined}
       onViewAdmin={() => { window.location.href = '/admin'; }}
       onLogout={async () => { await getSupabaseClient().auth.signOut(); setAdminEmail(undefined); setRole('subscriber'); }}
     >

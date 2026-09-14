@@ -105,7 +105,7 @@ export default function PageEditor({ page, initialIsPost = false, onSaved, onCan
   return (
     <section className={styles.container} aria-labelledby="page-editor-heading">
       <button type="button" className={styles.backButton} onClick={onCancel}>← Back to content</button>
-      <div className={styles.pageIntro}><h2 id="page-editor-heading">{page ? 'Edit content' : 'New content'}</h2><p>Create a static page or blog post from the same editor.</p></div>
+      <div className={styles.pageIntro}><h2 id="page-editor-heading">{page ? 'Edit content' : 'New content'}</h2><p>Create a static page or blog post from the same editor.</p>{page && rwp.getContentActions(page).map((action) => <a key={action.id} className={styles.secondaryButton} href={action.href(page)}>{action.label}</a>)}</div>
       {error && <div className={styles.error} role="alert">{error}</div>}
       <form className={styles.form} onSubmit={submit}>
         <div className={styles.formMain}>

@@ -12,8 +12,9 @@
  * or { status, text, headers }.
  */
 import shop from '../plugins/rwp-shop/server.mjs';
+import pageBuilder from '../plugins/rwp-page-builder/server.mjs';
 
-const serverPlugins = [shop];
+const serverPlugins = [shop, pageBuilder];
 
 const activeCache = { at: 0, ids: null };
 

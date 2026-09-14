@@ -1,7 +1,11 @@
+/**
+ * DOMParser documents are inert. Assigning to innerHTML on a createElement('div') is not:
+ * the browser starts loading <img> elements immediately, so <img src=x onerror=...> in post
+ * content would run script while an excerpt was being generated.
+ */
 const stripHtml = (html: string): string => {
-  const element = document.createElement('div');
-  element.innerHTML = html;
-  return (element.textContent || '').replace(/\s+/g, ' ').trim();
+  const parsed = new DOMParser().parseFromString(html, 'text/html');
+  return (parsed.body.textContent || '').replace(/\s+/g, ' ').trim();
 };
 
 export const defaultExcerptLength = 55;
