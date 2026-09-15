@@ -16,6 +16,7 @@
   flex: 0 0 248px;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
   background: #111827;
   color: #cbd5e1;
   padding: 24px 14px;
@@ -29,10 +30,91 @@
   color: #fff;
   font-size: 1.1rem;
   font-weight: 700;
-  padding: 0 12px 32px;
+  padding: 0 12px 28px;
   overflow: hidden;
   white-space: nowrap;
+  text-decoration: none;
+}
+
+.brand > span:last-child {
+  overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.brandImage {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  object-fit: contain;
+  background: #fff;
+}
+
+.navList,
+.submenu {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.navText {
+  flex: 1;
+  min-width: 0;
+}
+
+.badge {
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: #fff;
+  background: #dc2626;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.submenu {
+  margin: -2px 0 8px;
+  padding: 6px 0 6px 0;
+  border-radius: 0 0 8px 8px;
+  background: #0b1220;
+}
+
+.subItem {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  padding: 7px 12px 7px 22px;
+  color: #94a3b8;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.86rem;
+  text-align: left;
+}
+
+.subItem:hover,
+.subItem:focus-visible {
+  color: #fff;
+}
+
+.subItemActive {
+  color: #fff;
+  font-weight: 700;
+}
+
+.subIcon {
+  width: 18px;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.headerIcon {
+  margin-right: 8px;
 }
 
 .brandMark,
@@ -89,9 +171,16 @@
   background: #1e293b;
 }
 
-.navItemActive {
+.navItemActive,
+.navItemActive:hover,
+.navItemActive:focus-visible {
   color: #fff;
   background: #4f46e5;
+}
+
+.navItemActive[aria-expanded="true"] {
+  margin-bottom: 0;
+  border-radius: 8px 8px 0 0;
 }
 
 .navIcon {

@@ -3262,4 +3262,195 @@ revoke execute on function public.rwp_backup_import(jsonb) from public, anon;
 grant execute on function public.rwp_backup_export() to authenticated;
 grant execute on function public.rwp_backup_import(jsonb) to authenticated;
 
+-- Optional profile details (Admin → Profile → More about you) --------------------------------------
+-- Kept identical to supabase/migrations/20260921_profile_details.sql.
+--
+-- A separate table, not more columns on profiles, for two reasons:
+--   * profiles is readable by every signed-in user (it drives author names and the Users
+--     screen), and a phone number or birth date must not be. This table is readable only by
+--     the person themselves and by roles with list_users.
+--   * rwp_backup_export() skips profiles but backs up every other public table, and its
+--     restore re-points id (a foreign key to profiles) by email. So these rows are backed up
+--     and restored with no change to the backup functions.
+--
+-- Everything is optional. The Dashboard's setup checklist only suggests filling it in.
+
+create table if not exists public.profile_details (
+  id uuid primary key references public.profiles(id) on delete cascade,
+  updated_at timestamptz default timezone('utc'::text, now()) not null
+);
+
+alter table public.profile_details add column if not exists first_name text;
+alter table public.profile_details add column if not exists last_name text;
+alter table public.profile_details add column if not exists pronouns text;
+alter table public.profile_details add column if not exists job_title text;
+alter table public.profile_details add column if not exists company text;
+alter table public.profile_details add column if not exists website text;
+alter table public.profile_details add column if not exists location text;
+alter table public.profile_details add column if not exists timezone text;
+alter table public.profile_details add column if not exists phone text;
+alter table public.profile_details add column if not exists birth_date date;
+alter table public.profile_details add column if not exists social_links jsonb not null default '{}'::jsonb;
+
+-- Dropped first so a re-run replaces them instead of failing on "already exists".
+alter table public.profile_details drop constraint if exists profile_details_lengths_check;
+alter table public.profile_details add constraint profile_details_lengths_check check (
+  char_length(coalesce(first_name, '')) <= 100
+  and char_length(coalesce(last_name, '')) <= 100
+  and char_length(coalesce(pronouns, '')) <= 40
+  and char_length(coalesce(job_title, '')) <= 120
+  and char_length(coalesce(company, '')) <= 120
+  and char_length(coalesce(website, '')) <= 300
+  and char_length(coalesce(location, '')) <= 120
+  and char_length(coalesce(timezone, '')) <= 60
+  and char_length(coalesce(phone, '')) <= 40
+);
+
+-- Websites are rendered as links, so only http(s) URLs: no javascript: URLs.
+alter table public.profile_details drop constraint if exists profile_details_website_check;
+alter table public.profile_details add constraint profile_details_website_check
+  check (website is null or website ~* '^https?://[^\s]+$');
+
+alter table public.profile_details drop constraint if exists profile_details_social_links_check;
+alter table public.profile_details add constraint profile_details_social_links_check
+  check (jsonb_typeof(social_links) = 'object' and pg_column_size(social_links) <= 4000);
+
+alter table public.profile_details drop constraint if exists profile_details_birth_date_check;
+alter table public.profile_details add constraint profile_details_birth_date_check
+  check (birth_date is null or birth_date >= date '1900-01-01');
+
+alter table public.profile_details enable row level security;
+
+drop policy if exists "People read their own details, user managers read all" on public.profile_details;
+create policy "People read their own details, user managers read all"
+  on public.profile_details for select to authenticated
+  using (id = auth.uid() or public.user_has_cap('list_users'));
+
+drop policy if exists "People add their own details" on public.profile_details;
+create policy "People add their own details"
+  on public.profile_details for insert to authenticated
+  with check (id = auth.uid() or public.user_has_cap('edit_users'));
+
+drop policy if exists "People update their own details" on public.profile_details;
+create policy "People update their own details"
+  on public.profile_details for update to authenticated
+  using (id = auth.uid() or public.user_has_cap('edit_users'))
+  with check (id = auth.uid() or public.user_has_cap('edit_users'));
+
+drop policy if exists "People delete their own details" on public.profile_details;
+create policy "People delete their own details"
+  on public.profile_details for delete to authenticated
+  using (id = auth.uid() or public.user_has_cap('edit_users'));
+
+-- Anon has no policy, so RLS already returns nothing; this makes it explicit.
+revoke all on table public.profile_details from anon;
+
+notify pgrst, 'reload schema';
+
+-- Appearance → Theme Editor ----------------------------------------------------------------------
+-- Kept identical to supabase/migrations/20260922_theme_editor.sql.
+--
+-- One row holds the whole theme: the block layout of the header, footer, sidebar, comments and
+-- home/archive index (layout_structure), plus the raw code from each area's Code mode.
+--
+-- Everything here is rendered into public pages, so anyone may read it. Only manage_options
+-- (administrators) may write it, because the code fields run in every visitor's browser,
+-- including an administrator's: a lower role able to save a <script> could take over an
+-- admin session.
+--
+-- Columns beyond the original spec, because each needs different sanitising:
+--   custom_header_code   <head> tags only (script, noscript, link, meta), via scriptSanitizer.js
+--   custom_header_html   markup shown in the header, via ContentRenderer's sanitizer
+--   custom_footer_code   scripts added at the end of <body> (same allowlist as the <head> code)
+--   custom_footer_html   markup shown in the footer
+--   custom_sidebar_code  markup shown in the sidebar
+--   custom_comments_css  CSS for the comments area, appended after custom_css
+
+create table if not exists public.theme_settings (
+  id uuid primary key default gen_random_uuid(),
+  active_theme text not null default 'default',
+  layout_structure jsonb not null default '{}'::jsonb,
+  custom_header_code text not null default '',
+  custom_footer_code text not null default '',
+  custom_sidebar_code text not null default '',
+  custom_css text not null default '',
+  updated_at timestamptz not null default now()
+);
+
+alter table public.theme_settings add column if not exists singleton boolean not null default true;
+alter table public.theme_settings add column if not exists custom_header_html text not null default '';
+alter table public.theme_settings add column if not exists custom_footer_html text not null default '';
+alter table public.theme_settings add column if not exists custom_comments_css text not null default '';
+
+-- Exactly one row: the theme is site-wide, and the app reads "the" row with limit 1.
+alter table public.theme_settings drop constraint if exists theme_settings_singleton_check;
+alter table public.theme_settings add constraint theme_settings_singleton_check check (singleton);
+create unique index if not exists theme_settings_singleton_idx on public.theme_settings (singleton);
+
+alter table public.theme_settings drop constraint if exists theme_settings_active_theme_check;
+alter table public.theme_settings add constraint theme_settings_active_theme_check
+  check (active_theme ~ '^[a-z0-9-]{1,64}$');
+
+alter table public.theme_settings drop constraint if exists theme_settings_layout_check;
+alter table public.theme_settings add constraint theme_settings_layout_check
+  check (jsonb_typeof(layout_structure) = 'object' and pg_column_size(layout_structure) <= 512000);
+
+-- Limits the size of every page response, since all of this is sent to every visitor.
+alter table public.theme_settings drop constraint if exists theme_settings_code_length_check;
+alter table public.theme_settings add constraint theme_settings_code_length_check check (
+  char_length(custom_header_code) <= 100000
+  and char_length(custom_header_html) <= 100000
+  and char_length(custom_footer_code) <= 100000
+  and char_length(custom_footer_html) <= 100000
+  and char_length(custom_sidebar_code) <= 100000
+  and char_length(custom_comments_css) <= 100000
+  and char_length(custom_css) <= 200000
+);
+
+-- The editor saves with "where updated_at = <what I loaded>", so two administrators editing at
+-- once get a conflict instead of silently overwriting each other. That needs the database, not
+-- the browser, to set the timestamp.
+create or replace function public.theme_settings_touch()
+returns trigger language plpgsql set search_path = public as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+drop trigger if exists theme_settings_touch on public.theme_settings;
+create trigger theme_settings_touch
+  before update on public.theme_settings
+  for each row execute function public.theme_settings_touch();
+
+insert into public.theme_settings (singleton) values (true) on conflict (singleton) do nothing;
+
+alter table public.theme_settings enable row level security;
+
+drop policy if exists "Anyone can read the theme" on public.theme_settings;
+create policy "Anyone can read the theme"
+  on public.theme_settings for select to anon, authenticated
+  using (true);
+
+drop policy if exists "Settings managers can add the theme" on public.theme_settings;
+create policy "Settings managers can add the theme"
+  on public.theme_settings for insert to authenticated
+  with check (public.user_has_cap('manage_options'));
+
+drop policy if exists "Settings managers can update the theme" on public.theme_settings;
+create policy "Settings managers can update the theme"
+  on public.theme_settings for update to authenticated
+  using (public.user_has_cap('manage_options'))
+  with check (public.user_has_cap('manage_options'));
+
+drop policy if exists "Settings managers can delete the theme" on public.theme_settings;
+create policy "Settings managers can delete the theme"
+  on public.theme_settings for delete to authenticated
+  using (public.user_has_cap('manage_options'));
+
+-- RLS already refuses anon writes; this makes it explicit.
+revoke insert, update, delete on table public.theme_settings from anon;
+grant select on table public.theme_settings to anon, authenticated;
+grant insert, update, delete on table public.theme_settings to authenticated;
+
 notify pgrst, 'reload schema';

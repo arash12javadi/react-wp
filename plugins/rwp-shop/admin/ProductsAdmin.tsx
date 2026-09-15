@@ -137,6 +137,11 @@ function ProductList({ onEdit }: { onEdit: (id: string | null) => void }) {
                     <button type="button" className={styles.buttonLink} onClick={() => onEdit(row.id)}>Edit</button>
                     <button type="button" className={styles.buttonLink} onClick={() => void duplicate(row)}>Duplicate</button>
                     <a className={styles.buttonLink} href={`/product/${row.slug}`} target="_blank" rel="noreferrer">View</a>
+                    <button type="button" className={styles.buttonLink} title={`[rwp_add_to_cart id="${row.id}"]`}
+                      onClick={() => {
+                        const code = `[rwp_add_to_cart id="${row.id}"]`;
+                        void navigator.clipboard?.writeText(code).then(() => window.alert(`Copied ${code}`), () => window.prompt('Copy this shortcode', code));
+                      }}>Copy shortcode</button>
                     <button type="button" className={styles.buttonLink} style={{ color: '#b91c1c' }} onClick={() => void remove(row)}>Delete</button>
                   </div>
                 </td>

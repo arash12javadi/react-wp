@@ -7,6 +7,11 @@
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+.loadingScreenInline {
+  padding: 30px 0;
+  color: #64748b;
+}
+
 .authShell {
   min-height: 100vh;
   display: grid;

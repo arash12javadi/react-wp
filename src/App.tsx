@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { type Session, type SupabaseClient } from '@supabase/supabase-js';
 import SetupWizard from './components/SetupWizard';
-import AdminLayout, { type AdminSection } from './components/AdminLayout';
+import AdminLayout from './components/AdminLayout';
 import SiteSettings from './components/SiteSettings';
 import MenusScreen from './components/MenusScreen';
 import CommentsManager from './components/CommentsManager';
@@ -16,14 +16,24 @@ import PublicHome from './components/PublicHome';
 import PublicContent from './components/PublicContent';
 import AuthPage from './components/AuthPage';
 import PublicChrome from './components/PublicChrome';
-import { canAccessAdmin, canManageComments, canManageSettings, canManageUsers, canUploadMedia, hasCapability, type Capability } from './lib/roles';
+import { canAccessAdmin } from './lib/roles';
 import { useCurrentProfile } from './lib/profiles';
-import { resolveSupabaseConfig, tryGetSupabaseClient } from './lib/db';
-import { applySiteIcon, loadSettings } from './lib/settings';
+import { describeDbError, resolveSupabaseConfig, tryGetSupabaseClient } from './lib/db';
+import {
+  applyDocumentTitle, applySiteIcon, brandingFrom, defaultSettings, loadSettings, placeholderTitle, type SiteBranding,
+} from './lib/settings';
 import { defaultAppSettings, injectTrackingScripts, loadAppSettings } from './lib/appSettings';
-import AppSettings from './components/AppSettings';
+import { buildAdminNavigation, resolveAdminLocation } from './lib/adminNavigation';
+import { initThemePreview, loadTheme } from './lib/theme';
+import { applyThemeDocument } from './components/theme/ThemeLayoutRenderer';
+import { useAdminStatus } from './lib/adminStatus';
 import { rwp } from './lib/rwp';
 import styles from './Dashboard.module.css';
+
+// Its own chunk: the Overview, Updates and Guide are only ever needed inside the admin.
+const Dashboard = lazy(() => import('./components/dashboard/Dashboard'));
+// Its own chunk too: dnd-kit and the code editor never reach the public bundle.
+const ThemeEditor = lazy(() => import('./components/theme/ThemeEditor'));
 
 const readPluginIds = (value: string | null | undefined): string[] => {
   if (!value) return [];
@@ -89,6 +99,10 @@ interface PublicRouting {
 const loadPublicRouting = async (supabase: SupabaseClient): Promise<PublicRouting> => {
   const settings = await loadSettings();
   applySiteIcon(settings.site_icon);
+  // Screens that are not page rows (login, register, plugin routes) never set a title, so
+  // without this the tab kept index.html's placeholder. Pages and the admin replace it later;
+  // a title the server already wrote is left alone.
+  if (document.title === placeholderTitle) applyDocumentTitle(settings.site_title);
   let postsPageSlug = '';
   if (settings.home_page_id && settings.posts_page_id) {
     const { data } = await supabase.from('pages').select('slug').eq('id', settings.posts_page_id).maybeSingle();
@@ -96,22 +110,6 @@ const loadPublicRouting = async (supabase: SupabaseClient): Promise<PublicRoutin
   }
   return { homePageId: settings.home_page_id, postsPageSlug };
 };
-
-/** Plugin widgets used to live on the Dashboard. That screen is gone, so they render here. */
-function PluginWidgets() {
-  const widgets = rwp.getDashboardWidgets();
-  if (widgets.length === 0) return null;
-  return (
-    <>
-      {widgets.map(({ id, title, component: Widget }) => (
-        <section key={id} className={styles.overview} aria-labelledby={`${id}-heading`}>
-          <h2 id={`${id}-heading`}>{title}</h2>
-          <Widget />
-        </section>
-      ))}
-    </>
-  );
-}
 
 function SimpleSection({ title, description }: { title: string; description: string }) {
   return (
@@ -126,22 +124,27 @@ function SimpleSection({ title, description }: { title: string; description: str
   );
 }
 
-const adminSections: AdminSection[] = ['content', 'media', 'comments', 'categories', 'menus', 'users', 'plugins', 'settings', 'app-settings', 'profile'];
-
-/** Supports the public site's "Edit page" link, e.g. /admin?section=content&edit=12 */
-const initialSection = (): AdminSection => {
-  const requested = new URLSearchParams(window.location.search).get('section');
-  // Plugin admin pages are addressable too, e.g. /admin?section=rwp-page-builder.
-  const known = adminSections.includes(requested as AdminSection) || rwp.getAdminPages().some((page) => page.id === requested);
-  return known ? requested as AdminSection : 'content';
+/**
+ * The admin location lives in the URL (/admin?section=settings&tab=seo), so a reload or a
+ * bookmark returns to the same screen. The public site's "Edit page" link adds &edit=12.
+ * Plugin pages are addressable by id too, e.g. /admin?section=rwp-page-builder.
+ */
+const requestedLocation = () => {
+  const params = new URLSearchParams(window.location.search);
+  // ?shop= is the old Shop tab parameter.
+  return { section: params.get('section') || 'dashboard', subsection: params.get('tab') || params.get('shop') || '' };
 };
 
-function ConnectionError({ onReconfigure }: { onReconfigure: () => void }) {
+/** Only shown when Supabase itself failed; the real error is printed, so it is not mistaken for a paused project. */
+function ConnectionError({ detail, onReconfigure }: { detail: string; onReconfigure: () => void }) {
   return (
     <div className={styles.loadingScreen} role="alert">
       <div className={styles.loginCard}>
         <h1>Supabase connection failed</h1>
-        <p>The saved Supabase project could not be reached. This usually means the project was deleted, paused, or its URL has changed.</p>
+        <p>The admin could not load your session from Supabase. The error was:</p>
+        <p><code>{detail}</code></p>
+        <p>If the project was deleted, paused or moved, reconfigure it. Otherwise reload the page, or sign in again.</p>
+        <button type="button" onClick={() => { window.location.href = '/login?redirect=%2Fadmin'; }}>Sign in again</button>
         <button type="button" onClick={onReconfigure}>Reconfigure Supabase</button>
       </div>
     </div>
@@ -150,27 +153,44 @@ function ConnectionError({ onReconfigure }: { onReconfigure: () => void }) {
 
 function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseClient; onReconfigure: () => void }) {
   const [session, setSession] = useState<Session | null>(null);
-  const [activeSection, setActiveSection] = useState<AdminSection>(initialSection());
+  const [requested, setRequested] = useState(requestedLocation);
   const [editingPage, setEditingPage] = useState<import('./lib/types').Page | null>(null);
-  const [creatingPost, setCreatingPost] = useState<boolean | null>(null);
-  const [siteTitle, setSiteTitle] = useState('React-WP');
+  const [branding, setBranding] = useState<SiteBranding>(() => brandingFrom(defaultSettings));
   const [authLoading, setAuthLoading] = useState(true);
-  const [connectionError, setConnectionError] = useState(false);
+  const [connectionError, setConnectionError] = useState('');
+  const [, refreshRegistry] = useState(0);
   const { role, loading: roleLoading } = useCurrentProfile(session?.user);
+  const ready = Boolean(session) && !authLoading && !roleLoading;
+  const status = useAdminStatus(role, ready ? session?.user.id : undefined);
+
+  // Plugins can register or remove admin pages at any time (activation, HMR).
+  useEffect(() => rwp.subscribe(() => refreshRegistry((value) => value + 1)), []);
 
   useEffect(() => {
     rwp.actions.do('rwp_admin_loaded');
     let mounted = true;
     supabase.auth.getSession()
-      .then(({ data, error }) => {
+      .then(async ({ data, error }) => {
         if (!mounted) return;
-        if (error) setConnectionError(true);
+        if (error) {
+          // A stored session Supabase no longer accepts (expired or revoked refresh token) is not
+          // a connection problem: clear it locally and send the person to sign in again.
+          if (/refresh token|jwt|session/i.test(error.message)) {
+            await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
+            if (mounted) {
+              setSession(null);
+              setAuthLoading(false);
+            }
+            return;
+          }
+          setConnectionError(`${error.name}: ${error.message}`);
+        }
         setSession(data.session);
         setAuthLoading(false);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (mounted) {
-          setConnectionError(true);
+          setConnectionError(describeDbError(error));
           setAuthLoading(false);
         }
       });
@@ -196,19 +216,26 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
   }, [session, supabase]);
 
   useEffect(() => {
-    supabase
-      .from('options')
-      .select('option_value')
-      .eq('option_name', 'site_title')
-      .maybeSingle()
-      .then(({ data, error }) => {
-        if (data?.option_value) setSiteTitle(data.option_value);
-        if (error && error.code !== 'PGRST116') setConnectionError(true);
-      });
+    // The database was already reached before the admin rendered, so a failure here only costs
+    // the site title and logo in the sidebar; it must not lock the whole admin behind an error.
+    loadSettings()
+      .then((settings) => setBranding(brandingFrom(settings)))
+      .catch((error: unknown) => console.warn(`Site settings could not be loaded for the admin sidebar: ${describeDbError(error)}`));
   }, [supabase]);
 
+  const navigation = ready ? buildAdminNavigation(role) : [];
+  const { section, subsection } = resolveAdminLocation(navigation, requested.section, requested.subsection);
+  const activeItem = navigation.find((item) => item.id === section);
+  const activeSubLabel = activeItem?.submenu?.find((sub) => sub.id === subsection)?.label;
+  const screenTitle = editingPage ? `Edit “${editingPage.title}”` : activeSubLabel && activeItem ? `${activeSubLabel} ‹ ${activeItem.label}` : activeItem?.label;
+
+  useEffect(() => {
+    if (!ready) return;
+    applyDocumentTitle(branding.site_title, screenTitle);
+  }, [branding.site_title, ready, screenTitle]);
+
   if (connectionError) {
-    return <ConnectionError onReconfigure={onReconfigure} />;
+    return <ConnectionError detail={connectionError} onReconfigure={onReconfigure} />;
   }
 
   if (authLoading || roleLoading) {
@@ -224,13 +251,15 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
     return <PublicHome onReconfigure={onReconfigure} />;
   }
 
-  const navigate = (section: AdminSection) => {
-    setActiveSection(section);
+  const navigate = (nextSection: string, nextSubsection?: string) => {
+    setRequested({ section: nextSection, subsection: nextSubsection || '' });
     setEditingPage(null);
-    setCreatingPost(null);
+    const resolved = resolveAdminLocation(navigation, nextSection, nextSubsection);
+    const query = new URLSearchParams({ section: resolved.section });
+    if (resolved.subsection) query.set('tab', resolved.subsection);
+    window.history.replaceState({}, '', `/admin?${query.toString()}`);
+    window.scrollTo(0, 0);
   };
-  // Roles admitted only for uploads (App Settings → Roles) have no Pages & Posts screen.
-  const section: AdminSection = activeSection === 'content' && !hasCapability(role, 'edit_posts') ? 'media' : activeSection;
 
   const logout = async () => {
     await supabase.auth.signOut();
@@ -240,45 +269,45 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
 
   let content;
   const pluginPage = rwp.getAdminPages().find((page) => page.id === section);
-  if (pluginPage && (!pluginPage.capability || hasCapability(role, pluginPage.capability as Capability))) {
+  if (pluginPage) {
+    // Visible in the navigation means the capability check has already passed.
     const PluginPage = pluginPage.component;
-    content = <PluginPage />;
-  } else if (pluginPage) {
-    content = <SimpleSection title="Not available" description="Your role does not have access to this section." />;
-  } else if (section === 'content') {
-    content = creatingPost !== null ? (
-      <PageEditor
-        role={role}
-        initialIsPost={creatingPost}
-        onSaved={() => setCreatingPost(null)}
-        onCancel={() => setCreatingPost(null)}
-      />
-    ) : editingPage ? (
-      <PageEditor role={role} page={editingPage} onSaved={() => setEditingPage(null)} onCancel={() => setEditingPage(null)} />
-    ) : (
-      <>
-        <PluginWidgets />
-        <PagesList role={role} onCreate={(isPost) => setCreatingPost(isPost)} onEdit={(page) => {
-          setEditingPage(page);
-          setCreatingPost(null);
-        }} />
-      </>
+    content = <PluginPage subsection={subsection} navigate={navigate} />;
+  } else if (section === 'dashboard') {
+    content = (
+      <Suspense fallback={<div className={styles.loadingScreenInline} role="status">Loading…</div>}>
+        <Dashboard subsection={subsection} navigate={navigate} role={role} status={status} siteTitle={branding.site_title} />
+      </Suspense>
     );
-  } else if (section === 'media' && canUploadMedia(role)) {
-    content = <MediaLibrary role={role} />;
-  } else if (section === 'users' && canManageUsers(role)) {
+  } else if (section === 'content') {
+    const backToList = () => navigate('content', 'all');
+    content = editingPage ? (
+      <PageEditor role={role} page={editingPage} onSaved={() => setEditingPage(null)} onCancel={() => setEditingPage(null)} />
+    ) : subsection === 'new-post' || subsection === 'new-page' ? (
+      // Keyed so switching between Add post and Add page starts a fresh editor.
+      <PageEditor key={subsection} role={role} initialIsPost={subsection === 'new-post'} onSaved={backToList} onCancel={backToList} />
+    ) : subsection === 'categories' ? (
+      <CategoriesManager />
+    ) : (
+      <PagesList role={role} onCreate={(isPost) => navigate('content', isPost ? 'new-post' : 'new-page')} onEdit={setEditingPage} />
+    );
+  } else if (section === 'media') {
+    content = <MediaLibrary role={role} view={subsection} />;
+  } else if (section === 'users') {
     content = <UsersManager role={role} />;
-  } else if (section === 'menus' && canManageSettings(role)) {
-    content = <MenusScreen />;
-  } else if (section === 'settings' && canManageSettings(role)) {
-    content = <SiteSettings onSiteTitleChange={setSiteTitle} />;
-  } else if (section === 'app-settings' && canManageSettings(role)) {
-    content = <AppSettings />;
-  } else if (section === 'plugins' && canManageSettings(role)) {
+  } else if (section === 'menus') {
+    content = <MenusScreen tab={subsection} />;
+  } else if (section === 'settings') {
+    content = <SiteSettings tab={subsection} onBrandingChange={setBranding} />;
+  } else if (section === 'appearance') {
+    content = (
+      <Suspense fallback={<div className={styles.loadingScreenInline} role="status">Loading…</div>}>
+        <ThemeEditor />
+      </Suspense>
+    );
+  } else if (section === 'plugins') {
     content = <PluginsManager />;
-  } else if (section === 'categories' && canManageSettings(role)) {
-    content = <CategoriesManager />;
-  } else if (section === 'comments' && canManageComments(role)) {
+  } else if (section === 'comments') {
     content = <CommentsManager />;
   } else if (section === 'profile') {
     content = <ProfileManager role={role} />;
@@ -288,12 +317,15 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
 
   return (
     <AdminLayout
+      navigation={navigation}
       activeSection={section}
+      activeSubsection={editingPage ? '' : subsection}
       onNavigate={navigate}
       onLogout={() => void logout()}
       userEmail={session.user.email}
-      siteTitle={siteTitle}
+      branding={branding}
       role={role}
+      dashboardBadge={status.badge}
       onViewSite={() => { window.location.href = '/'; }}
     >
       {content}
@@ -326,7 +358,12 @@ export default function App() {
         // Before anything renders: capability checks depend on the role grants in here.
         const appSettings = await loadAppSettings().catch(() => defaultAppSettings);
         const path = window.location.pathname;
-        if (!isAdminRoute && !path.startsWith('/builder/')) injectTrackingScripts(appSettings.seo);
+        if (!isAdminRoute && !path.startsWith('/builder/')) {
+          injectTrackingScripts(appSettings.seo);
+          // Loaded before the first render so the saved layout does not flash in after the default one.
+          initThemePreview();
+          applyThemeDocument(await loadTheme());
+        }
         const publicRouting = await loadPublicRouting(client).catch(() => ({ homePageId: '', postsPageSlug: '' }));
         if (mounted) {
           setRouting(publicRouting);

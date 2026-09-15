@@ -7,6 +7,7 @@ import { resolveExcerpt } from '../lib/excerpt';
 import { defaultSettings, loadSettings, type SiteSettings } from '../lib/settings';
 import { applyMeta, buildMeta } from '../lib/seo';
 import { defaultAppSettings, loadAppSettings, useAppSettings } from '../lib/appSettings';
+import { useTheme } from '../lib/theme';
 import PublicLayout from './PublicLayout';
 import PublicSidebar from './PublicSidebar';
 import ContentRenderer from './ContentRenderer';
@@ -27,7 +28,7 @@ interface PublicContentProps {
 
 export default function PublicContent({ slug, pageId, onReconfigure }: PublicContentProps) {
   const [page, setPage] = useState<Page | null>(null);
-  const [siteTitle, setSiteTitle] = useState('Just another React-WP site');
+  const [siteTitle, setSiteTitle] = useState('');
   const [settings, setSettings] = useState<SiteSettings>(defaultSettings);
   const [excerptLength, setExcerptLength] = useState(55);
   const [menuLinks, setMenuLinks] = useState(defaultMenuLinks);
@@ -37,6 +38,7 @@ export default function PublicContent({ slug, pageId, onReconfigure }: PublicCon
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const { settings: appSettings } = useAppSettings();
+  const { theme } = useTheme();
 
   useEffect(() => {
     let mounted = true;
@@ -137,6 +139,7 @@ export default function PublicContent({ slug, pageId, onReconfigure }: PublicCon
   return (
     <PublicLayout
       siteTitle={siteTitle}
+      branding={settings}
       menuLinks={menuLinks}
       adminEmail={adminEmail}
       role={role}
@@ -152,7 +155,8 @@ export default function PublicContent({ slug, pageId, onReconfigure }: PublicCon
         {error && <div className={styles.error} role="alert"><p>{error}</p>{onReconfigure && <button type="button" onClick={onReconfigure}>Reconfigure Supabase</button>}</div>}
         {!loading && !error && !page && <section className={styles.hero}><h1>Page not found</h1><p>This page does not exist or is not published.</p><a className={styles.heroLink} href="/">Return home</a></section>}
         {page && (withSidebar ? (
-          <div className={styles.grid}>
+          // The page decides whether it has a sidebar; the theme decides which side. "Hidden" is for the index only.
+          <div className={`${styles.grid} rwpt-grid rwpt-sidebar-${theme.layout.index.options.sidebar_position === 'left' ? 'left' : 'right'}`}>
             {article}
             <PublicSidebar />
           </div>

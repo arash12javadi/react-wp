@@ -53,6 +53,65 @@
   object-fit: contain;
 }
 
+.logoPreview {
+  height: 40px;
+  max-width: 140px;
+  border: 1px solid #e5e7eb;
+  border-radius: 7px;
+  padding: 3px;
+  background: #f8fafc;
+  object-fit: contain;
+}
+
+.unitRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400;
+}
+
+.unitRow input {
+  max-width: 140px;
+}
+
+.brandPreview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.brandPreview > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  overflow: hidden;
+  border: 1px dashed #dbe1ea;
+  border-radius: 8px;
+  padding: 10px 16px;
+  background: #fff;
+}
+
+.brandPreview img {
+  width: auto;
+  max-width: 240px;
+  object-fit: contain;
+}
+
+.brandPreview span {
+  display: grid;
+  gap: 2px;
+}
+
+.brandPreview strong {
+  color: #111827;
+  font-size: 1.15rem;
+}
+
+.brandPreview small {
+  color: #6b7280;
+}
+
 .secondaryButton {
   border: 1px solid #dbe1ea;
   border-radius: 6px;

@@ -4,9 +4,10 @@ import { canManageSettings, type UserRole } from '../lib/roles';
 import MediaManager from './MediaManager';
 import styles from './SiteSettings.module.css';
 
-export default function MediaLibrary({ role }: { role: UserRole }) {
+/** Media → Library, or Media → Upload providers (administrators), chosen from the sidebar. */
+export default function MediaLibrary({ role, view }: { role: UserRole; view: string }) {
   const [form, setForm] = useState<SiteSettings>(defaultSettings);
-  const [showConfig, setShowConfig] = useState(false);
+  const showConfig = view === 'upload-settings' && canManageSettings(role);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
@@ -43,22 +44,18 @@ export default function MediaLibrary({ role }: { role: UserRole }) {
   return (
     <section className={styles.container} aria-labelledby="media-heading">
       <div className={styles.pageIntro}>
-        <h2 id="media-heading">Media</h2>
-        <p>Upload images to Cloudinary or ImageKit, or add them by URL, then reuse them anywhere.</p>
+        <h2 id="media-heading">{showConfig ? 'Upload providers' : 'Media'}</h2>
+        <p>
+          {showConfig
+            ? 'Connect Cloudinary or ImageKit so files can be uploaded. You need at least one of them; images added by URL work without either.'
+            : 'Upload images to Cloudinary or ImageKit, or add them by URL, then reuse them anywhere.'}
+        </p>
       </div>
 
       {error && <div className={styles.error} role="alert"><span>{error}</span></div>}
       {feedback && <div className={styles.success} role="status">{feedback}</div>}
 
-      {canManageSettings(role) && (
-        <div className={styles.configToggleRow}>
-          <button type="button" className={styles.secondaryButton} onClick={() => setShowConfig((open) => !open)}>
-            {showConfig ? 'Hide upload settings' : 'Upload settings (Cloudinary & ImageKit)'}
-          </button>
-        </div>
-      )}
-
-      {showConfig && canManageSettings(role) && (
+      {showConfig && (
         <form className={styles.form} onSubmit={submit}>
           <label>
             Cloudinary cloud name
@@ -98,7 +95,7 @@ export default function MediaLibrary({ role }: { role: UserRole }) {
         </form>
       )}
 
-      <MediaManager heading="Media Library" />
+      {!showConfig && <MediaManager heading="Media Library" />}
     </section>
   );
 }

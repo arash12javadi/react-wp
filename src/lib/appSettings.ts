@@ -133,7 +133,7 @@ export const loadAppSettings = (force = false): Promise<AppSettings> => {
     cached = Promise.resolve(
       getSupabaseClient().from('options').select('option_value').eq('option_name', appSettingsOption).maybeSingle(),
     ).then(({ data, error }) => {
-      if (error) throw new Error(`Could not load App Settings: ${describeDbError(error)}`);
+      if (error) throw new Error(`Could not load settings: ${describeDbError(error)}`);
       const settings = parseAppSettings(data?.option_value);
       current = settings;
       applyCapabilityGrants(settings.roles);
@@ -167,11 +167,11 @@ export const saveAppSettings = async (settings: AppSettings): Promise<AppSetting
     .select('option_name');
   if (error) {
     throw new Error(/row-level security/i.test(describeDbError(error))
-      ? 'The database refused to save App Settings: your role needs the manage_options capability (Administrator).'
-      : `Could not save App Settings: ${describeDbError(error)}`);
+      ? 'The database refused to save these settings: your role needs the manage_options capability (Administrator).'
+      : `Could not save settings: ${describeDbError(error)}`);
   }
   if (!data?.length) {
-    throw new Error('App Settings were not saved: the database accepted the request but changed no rows, which means row level security blocked it. Your role needs the manage_options capability.');
+    throw new Error('Settings were not saved: the database accepted the request but changed no rows, which means row level security blocked it. Your role needs the manage_options capability.');
   }
   current = clean;
   cached = Promise.resolve(clean);
@@ -189,33 +189,39 @@ export const saveAppSettings = async (settings: AppSettings): Promise<AppSetting
  */
 export const injectTrackingScripts = (seo: AppSettings['seo']) => {
   if (document.querySelector('meta[name="rwp-scripts"]')) return;
-  const inject = (source: string, target: 'head' | 'body') => {
-    const { html } = sanitizeTrackingHtml(source);
-    if (!html) return;
-    const parsed = new DOMParser().parseFromString(`<!doctype html><body>${html}</body>`, 'text/html');
-    const nodes: Node[] = [];
-    Array.from(parsed.body.children).forEach((element) => {
-      const tag = element.tagName.toLowerCase();
-      // With JavaScript running, a <noscript> fallback has nothing to do.
-      if (tag === 'noscript') return;
-      if (tag === 'script') {
-        // Scripts created by DOMParser never execute; a fresh element does.
-        const script = document.createElement('script');
-        Array.from(element.attributes).forEach((attribute) => script.setAttribute(attribute.name, attribute.value));
-        script.text = element.textContent || '';
-        script.dataset.rwpInjected = target;
-        nodes.push(script);
-      } else {
-        const clone = document.importNode(element, true) as HTMLElement;
-        clone.dataset.rwpInjected = target;
-        nodes.push(clone);
-      }
-    });
-    if (target === 'head') nodes.forEach((node) => document.head.appendChild(node));
-    else document.body.prepend(...nodes);
-  };
-  inject(seo.header_script, 'head');
-  inject(seo.body_script, 'body');
+  injectSnippet(seo.header_script, 'head');
+  injectSnippet(seo.body_script, 'body');
+};
+
+/**
+ * Adds a snippet after passing it through the tracking-script allowlist. Also used for the Theme
+ * Editor's <head> code ('head') and footer scripts ('body-end').
+ */
+export const injectSnippet = (source: string, target: 'head' | 'body' | 'body-end') => {
+  const { html } = sanitizeTrackingHtml(source);
+  if (!html) return;
+  const parsed = new DOMParser().parseFromString(`<!doctype html><body>${html}</body>`, 'text/html');
+  const nodes: Node[] = [];
+  Array.from(parsed.body.children).forEach((element) => {
+    const tag = element.tagName.toLowerCase();
+    // With JavaScript running, a <noscript> fallback has nothing to do.
+    if (tag === 'noscript') return;
+    if (tag === 'script') {
+      // Scripts created by DOMParser never execute; a fresh element does.
+      const script = document.createElement('script');
+      Array.from(element.attributes).forEach((attribute) => script.setAttribute(attribute.name, attribute.value));
+      script.text = element.textContent || '';
+      script.dataset.rwpInjected = target;
+      nodes.push(script);
+    } else {
+      const clone = document.importNode(element, true) as HTMLElement;
+      clone.dataset.rwpInjected = target;
+      nodes.push(clone);
+    }
+  });
+  if (target === 'head') nodes.forEach((node) => document.head.appendChild(node));
+  else if (target === 'body-end') nodes.forEach((node) => document.body.appendChild(node));
+  else document.body.prepend(...nodes);
 };
 
 // Uploads ----------------------------------------------------------------------------------

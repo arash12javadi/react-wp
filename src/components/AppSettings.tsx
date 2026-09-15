@@ -15,12 +15,7 @@ import styles from './AppSettings.module.css';
 
 type Tab = 'general' | 'uploads' | 'seo' | 'roles';
 
-const tabs: Array<[Tab, string, string]> = [
-  ['general', 'General', 'What the public site shows, whose media each role sees, excerpts, and menu profile links.'],
-  ['uploads', 'Uploads', 'File size and image dimension rules, and how much storage each role or person may use.'],
-  ['seo', 'SEO', 'Meta keywords in the page editor, and tracking scripts such as Google Tag Manager.'],
-  ['roles', 'Roles', 'Extra capabilities for Subscribers and Contributors.'],
-];
+export const isAppSettingsTab = (value: string): value is Tab => ['general', 'uploads', 'seo', 'roles'].includes(value);
 
 const grantHelp: Record<keyof CapabilityGrants, string> = {
   subscriber_upload_files: 'Subscribers can open the admin Media screen and upload, within their disk quota.',
@@ -189,8 +184,8 @@ function QuotaOverrides() {
   );
 }
 
-export default function AppSettings() {
-  const [tab, setTab] = useState<Tab>('general');
+/** Settings → General, Uploads, SEO and Roles. The sidebar picks the section; one Save covers all four. */
+export default function AppSettings({ tab }: { tab: Tab }) {
   const [form, setForm] = useState<AppSettingsValue>(defaultAppSettings);
   const [excerpt, setExcerpt] = useState<Pick<SiteSettings, 'excerpt_length' | 'excerpt_unit'>>({
     excerpt_length: defaultSettings.excerpt_length, excerpt_unit: defaultSettings.excerpt_unit,
@@ -199,7 +194,6 @@ export default function AppSettings() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
-  const active = tabs.find(([id]) => id === tab) || tabs[0];
 
   const load = async () => {
     setLoading(true);
@@ -209,7 +203,7 @@ export default function AppSettings() {
       setForm(app);
       setExcerpt({ excerpt_length: site.excerpt_length, excerpt_unit: site.excerpt_unit });
     } catch (loadError: unknown) {
-      setError(loadError instanceof Error ? loadError.message : 'Could not load App Settings.');
+      setError(loadError instanceof Error ? loadError.message : 'Could not load settings.');
     } finally {
       setLoading(false);
     }
@@ -247,30 +241,16 @@ export default function AppSettings() {
       await saveSettings({ excerpt_length: excerpt.excerpt_length, excerpt_unit: excerpt.excerpt_unit });
       setForm(saved);
       rwp.actions.do('rwp_settings_saved', { app_settings: saved, ...excerpt });
-      setFeedback('App Settings saved.');
+      setFeedback('Settings saved (General, Uploads, SEO and Roles are saved together).');
     } catch (saveError: unknown) {
-      setError(saveError instanceof Error ? saveError.message : 'Could not save App Settings.');
+      setError(saveError instanceof Error ? saveError.message : 'Could not save settings.');
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <section className={settingsStyles.container} aria-labelledby="app-settings-heading">
-      <div className={settingsStyles.pageIntro}>
-        <h2 id="app-settings-heading">App Settings</h2>
-        <p>{active[2]}</p>
-      </div>
-
-      <div className={settingsStyles.tabs} role="tablist" aria-label="App Settings sections">
-        {tabs.map(([id, label]) => (
-          <button key={id} type="button" role="tab" aria-selected={tab === id}
-            className={tab === id ? settingsStyles.tabActive : settingsStyles.tab} onClick={() => setTab(id)}>
-            {label}
-          </button>
-        ))}
-      </div>
-
+    <div className={settingsStyles.container}>
       {error && (
         <div className={settingsStyles.error} role="alert">
           <span>{error}</span>
@@ -279,7 +259,7 @@ export default function AppSettings() {
       )}
       {feedback && <div className={settingsStyles.success} role="status">{feedback}</div>}
 
-      {loading ? <div className={settingsStyles.loading} role="status">Loading App Settings…</div> : (
+      {loading ? <div className={settingsStyles.loading} role="status">Loading settings…</div> : (
         <>
           <form className={settingsStyles.form} onSubmit={submit}>
             {tab === 'general' && (
@@ -466,7 +446,7 @@ export default function AppSettings() {
 
             <div className={settingsStyles.actions}>
               <button type="submit" className={settingsStyles.saveButton} disabled={saving}>
-                {saving ? 'Saving…' : 'Save App Settings'}
+                {saving ? 'Saving…' : 'Save settings'}
               </button>
             </div>
           </form>
@@ -474,6 +454,6 @@ export default function AppSettings() {
           {tab === 'uploads' && <div className={styles.overrides}><QuotaOverrides /></div>}
         </>
       )}
-    </section>
+    </div>
   );
 }

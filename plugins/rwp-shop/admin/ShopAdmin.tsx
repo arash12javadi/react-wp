@@ -1,33 +1,23 @@
-import { useState } from 'react';
-import { Tabs } from './common';
+import type { RwpAdminPageProps } from '../../../src/lib/plugin-api';
 import CouponsAdmin from './CouponsAdmin';
 import { CustomersAdmin, ReviewsAdmin } from './CustomersReviewsAdmin';
 import OrdersAdmin from './OrdersAdmin';
+import ProductsAdmin from './ProductsAdmin';
 import ReportsAdmin from './ReportsAdmin';
 import SettingsAdmin from './SettingsAdmin';
 import styles from './admin.module.css';
 
-type Section = 'orders' | 'reports' | 'customers' | 'coupons' | 'reviews' | 'settings';
-
-export default function ShopAdmin() {
-  const [section, setSection] = useState<Section>(() => {
-    const requested = new URLSearchParams(window.location.search).get('shop') as Section | null;
-    return requested && ['orders', 'reports', 'customers', 'coupons', 'reviews', 'settings'].includes(requested) ? requested : 'orders';
-  });
-
+/** Shop, with its section chosen from the admin sidebar's submenu (see index.tsx). */
+export default function ShopAdmin({ subsection }: RwpAdminPageProps) {
   return (
     <div className={styles.wrap}>
-      <Tabs<Section>
-        tabs={[['orders', 'Orders'], ['reports', 'Reports'], ['customers', 'Customers'], ['coupons', 'Coupons'], ['reviews', 'Reviews'], ['settings', 'Settings']]}
-        active={section}
-        onChange={setSection}
-      />
-      {section === 'orders' && <OrdersAdmin />}
-      {section === 'reports' && <ReportsAdmin />}
-      {section === 'customers' && <CustomersAdmin />}
-      {section === 'coupons' && <CouponsAdmin />}
-      {section === 'reviews' && <ReviewsAdmin />}
-      {section === 'settings' && <SettingsAdmin />}
+      {subsection === 'products' ? <ProductsAdmin />
+        : subsection === 'reports' ? <ReportsAdmin />
+          : subsection === 'customers' ? <CustomersAdmin />
+            : subsection === 'coupons' ? <CouponsAdmin />
+              : subsection === 'reviews' ? <ReviewsAdmin />
+                : subsection === 'settings' ? <SettingsAdmin />
+                  : <OrdersAdmin />}
     </div>
   );
 }

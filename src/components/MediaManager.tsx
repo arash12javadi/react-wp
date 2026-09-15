@@ -27,7 +27,8 @@ const migrationHint =
 
 /** Turns the common Postgres/PostgREST failures on this table into something actionable. */
 const explainMediaError = (error: unknown): string => {
-  const message = describeDbError(error);
+  // The upload-rules trigger still names the screen by its old title; it now lives under Settings.
+  const message = describeDbError(error).replace(/App Settings →/g, 'Settings →');
   // PGRST205: the table may well exist, but PostgREST has not reloaded its schema cache.
   if (/schema cache/i.test(message) || message.includes('PGRST205')) {
     return 'Supabase cannot see the media table yet. If you have already run the migration, its schema cache is stale — run "notify pgrst, \'reload schema\';" in the SQL Editor, or wait a minute and reload. ' +
@@ -40,7 +41,7 @@ const explainMediaError = (error: unknown): string => {
     return `Your media table predates the provider_file_id column, which is needed to delete files at the provider. ${migrationHint}`;
   }
   if (/row-level security|violates row-level/i.test(message)) {
-    return 'The database rejected this write under row level security. Your role needs the upload_files capability (Author or above, or granted under App Settings → Roles), and when media is limited to its uploader you can only change your own files.';
+    return 'The database rejected this write under row level security. Your role needs the upload_files capability (Author or above, or granted under Settings → Roles), and when media is limited to its uploader you can only change your own files.';
   }
   return message;
 };
@@ -67,7 +68,7 @@ export default function MediaManager({ onSelect, onClose, heading = 'Media Libra
   const [deleteSupport, setDeleteSupport] = useState<{ cloudinary: boolean; imagekit: boolean } | null>(null);
   const { settings: appSettings } = useAppSettings();
   const [allowance, setAllowance] = useState<UploadAllowance | null>(null);
-  // Set when the library is limited to the viewer's own uploads (App Settings → General).
+  // Set when the library is limited to the viewer's own uploads (Settings → General).
   const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
 
   useEffect(() => {

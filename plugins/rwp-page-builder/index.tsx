@@ -1,7 +1,8 @@
 import { lazy, Suspense } from 'react';
-import { defineRwpPlugin, type RwpRouteProps } from '../../src/lib/plugin-api';
+import { defineRwpPlugin, type RwpAdminPageProps, type RwpRouteProps } from '../../src/lib/plugin-api';
 import manifest from './manifest.json';
 import { BuilderPageContent } from './render/BuilderRenderer';
+import { fetchServerStatus } from './lib/api';
 
 /**
  * The editor (dnd-kit, the inspector, every control) is a separate chunk, loaded only on
@@ -21,8 +22,8 @@ function PreviewRoute(props: RwpRouteProps) {
   return <Suspense fallback={loading}><PreviewPage {...props} /></Suspense>;
 }
 
-function AdminScreen() {
-  return <Suspense fallback={loading}><BuilderAdmin /></Suspense>;
+function AdminScreen(props: RwpAdminPageProps) {
+  return <Suspense fallback={loading}><BuilderAdmin {...props} /></Suspense>;
 }
 
 const hasLayout = (page: object) => {
@@ -32,7 +33,35 @@ const hasLayout = (page: object) => {
 
 export const pageBuilderCleanup = defineRwpPlugin(manifest, ({ admin, routes, content }) => {
   const cleanups = [
-    admin.registerPage({ id: 'rwp-page-builder', label: 'Page Builder', icon: '▣', capability: 'edit_posts', component: AdminScreen }),
+    admin.registerPage({
+      id: 'rwp-page-builder', label: 'Page Builder', icon: '🧱', capability: 'edit_posts', component: AdminScreen,
+      submenu: [
+        { id: 'pages', label: 'Pages', icon: '📄' },
+        { id: 'templates', label: 'Templates', icon: '🗂️' },
+        { id: 'submissions', label: 'Form submissions', icon: '📥', capability: 'edit_pages' },
+        { id: 'status', label: 'Status', icon: '🩺', capability: 'edit_pages' },
+      ],
+    }),
+    admin.registerSetupCheck({
+      id: 'rwp-page-builder',
+      capability: 'edit_pages',
+      run: async () => {
+        const status = await fetchServerStatus();
+        if (!status || (status.smtp && status.secretKey)) return [];
+        return [{
+          id: 'builder-form-email',
+          level: 'optional',
+          title: 'Page builder forms cannot send notification emails yet',
+          description: `Form entries are stored either way (Page Builder → Form submissions). To be emailed about them, the server needs ${[!status.smtp && 'SMTP settings', !status.secretKey && 'SUPABASE_SECRET_KEY'].filter(Boolean).join(' and ')}.`,
+          steps: [
+            ...(!status.smtp ? ['Add SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS and SMTP_FROM to .env.local.'] : []),
+            ...(!status.secretKey ? ['Add SUPABASE_SECRET_KEY (Supabase → Project Settings → API Keys → secret key) to .env.local.'] : []),
+            'Restart the server with npm start.',
+          ],
+          action: { label: 'Open Page Builder → Status', section: 'rwp-page-builder', subsection: 'status' },
+        }];
+      },
+    }),
     routes.register({ path: '/builder/:id', component: EditorRoute, chrome: false }),
     routes.register({ path: '/builder/:id/preview', component: PreviewRoute }),
     content.registerRenderer({

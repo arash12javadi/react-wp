@@ -1,10 +1,25 @@
 import { getSupabaseClient, updateOption } from './db';
 import { defaultExcerptLength, type ExcerptUnit } from './excerpt';
 
+/** What the public header shows in its brand area (Settings → Site). */
+export type HeaderDisplay = 'text' | 'title' | 'logo' | 'logo_title' | 'logo_text';
+
+export const headerDisplayLabels: Record<HeaderDisplay, string> = {
+  text: 'Site title and tagline',
+  title: 'Site title only',
+  logo: 'Logo only',
+  logo_title: 'Logo and site title',
+  logo_text: 'Logo, site title and tagline',
+};
+
 export interface SiteSettings {
   site_title: string;
   site_tagline: string;
   site_icon: string;
+  site_logo: string;
+  header_display: HeaderDisplay;
+  /** Logo height in the public header, in pixels. */
+  logo_height: number;
   home_page_id: string;
   posts_page_id: string;
   posts_per_page: number;
@@ -29,6 +44,9 @@ export const defaultSettings: SiteSettings = {
   site_title: 'My React-WP Site',
   site_tagline: 'Just another React-WP site',
   site_icon: '',
+  site_logo: '',
+  header_display: 'text',
+  logo_height: 44,
   home_page_id: '',
   posts_page_id: '',
   posts_per_page: 6,
@@ -79,6 +97,11 @@ export const loadSettings = async (): Promise<SiteSettings> => {
     site_title: values.site_title || defaultSettings.site_title,
     site_tagline: values.site_tagline || values.site_description || defaultSettings.site_tagline,
     site_icon: values.site_icon || '',
+    site_logo: values.site_logo || '',
+    header_display: values.header_display && values.header_display in headerDisplayLabels
+      ? values.header_display as HeaderDisplay
+      : defaultSettings.header_display,
+    logo_height: Math.min(200, toNumber(values.logo_height, defaultSettings.logo_height)),
     home_page_id: values.home_page_id || '',
     posts_page_id: values.posts_page_id || '',
     posts_per_page: toNumber(values.posts_per_page, defaultSettings.posts_per_page),
@@ -106,6 +129,41 @@ export const saveSettings = async (settings: Partial<SiteSettings>): Promise<voi
   if (results.some((saved) => !saved)) {
     throw new Error('Some settings could not be saved. Check that your role can manage settings.');
   }
+};
+
+export type SiteBranding = Pick<SiteSettings, 'site_title' | 'site_tagline' | 'site_icon' | 'site_logo' | 'header_display' | 'logo_height'>;
+
+export const brandingFrom = (settings: SiteSettings): SiteBranding => ({
+  site_title: settings.site_title,
+  site_tagline: settings.site_tagline,
+  site_icon: settings.site_icon,
+  site_logo: settings.site_logo,
+  header_display: settings.header_display,
+  logo_height: settings.logo_height,
+});
+
+/**
+ * The browser tab title for screens that are not a page row (admin, login, plugin routes).
+ * index.html ships a placeholder title, and nothing replaced it on those screens, so the tab
+ * kept saying "react-wp" whatever the site title was set to.
+ */
+/** Which parts of the brand the public header shows. A logo choice with no logo falls back to text. */
+export const brandParts = (branding: Partial<SiteBranding>) => {
+  const display = branding.header_display || 'text';
+  const logo = Boolean(branding.site_logo) && display.startsWith('logo');
+  return {
+    logo,
+    title: !logo || display === 'logo_title' || display === 'logo_text',
+    tagline: Boolean(branding.site_tagline) && (logo ? display === 'logo_text' : display !== 'title'),
+  };
+};
+
+/** Must match <title> in index.html. */
+export const placeholderTitle = 'React-WP';
+
+export const applyDocumentTitle = (siteTitle: string, screen?: string) => {
+  const site = siteTitle.trim() || defaultSettings.site_title;
+  document.title = screen ? `${screen} ‹ ${site}` : site;
 };
 
 export const applySiteIcon = (iconUrl: string) => {

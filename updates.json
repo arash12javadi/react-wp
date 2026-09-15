@@ -1,0 +1,21 @@
+{
+  "format": "rwp-update-feed",
+  "version": 1,
+  "app": {
+    "version": "1.0.0",
+    "released": "2026-09-15",
+    "notes": [
+      "New Dashboard with a setup checklist, update checks and a guide for new users.",
+      "WordPress-style submenus in the admin sidebar; App Settings merged into Settings; Products moved under Shop.",
+      "Optional header logo, and optional extra profile details.",
+      "Fixed: the browser tab showed \"react-wp\" instead of the site title."
+    ],
+    "migrations": ["supabase/migrations/20260921_profile_details.sql"],
+    "download_url": "https://github.com/arash12javadi/react-wp/archive/refs/heads/main.zip",
+    "changelog_url": "https://github.com/arash12javadi/react-wp/commits/main"
+  },
+  "plugins": {
+    "rwp-shop": { "version": "1.0.0" },
+    "rwp-page-builder": { "version": "1.0.0" }
+  }
+}

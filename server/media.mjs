@@ -13,7 +13,7 @@ const functionMissing = (response) => response.status === 404;
  * Confirms the caller is a signed-in user who may upload files, using only the publishable key
  * and the caller's own access token. No service-role key is involved. The capability is asked
  * of public.user_has_cap() rather than decided from a role list here, so roles granted uploads
- * under App Settings → Roles are recognised.
+ * under Settings → Roles are recognised.
  */
 export async function authorizeUploader(supabaseUrl, supabaseKey, accessToken) {
   if (!accessToken) return { ok: false, status: 401, error: 'Sign in required.' };
@@ -64,7 +64,7 @@ export async function authorizeMediaDelete(supabaseUrl, supabaseKey, accessToken
       return { ok: false, status: 502, error: `Could not check permission to delete this item: rwp_can_manage_media returned HTTP ${permission.status}.` };
     }
     if (await permission.json() !== true) {
-      return { ok: false, status: 403, error: 'You can only delete media you uploaded yourself. Media is limited to its uploader under App Settings → General.' };
+      return { ok: false, status: 403, error: 'You can only delete media you uploaded yourself. Media is limited to its uploader under Settings → General.' };
     }
   }
   return { ok: true, item };

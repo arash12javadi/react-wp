@@ -1,74 +1,48 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import styles from './AdminLayout.module.css';
-import { canManageComments, canManageSettings, canManageUsers, canUploadMedia, hasCapability, type Capability, type UserRole, roleLabels } from '../lib/roles';
+import { type UserRole, roleLabels } from '../lib/roles';
+import type { AdminNavItem } from '../lib/adminNavigation';
+import type { SiteBranding } from '../lib/settings';
 import AdminToolbar from './AdminToolbar';
-import { rwp } from '../lib/rwp';
-
-export type AdminSection = 'content' | 'media' | 'comments' | 'menus' | 'settings' | 'app-settings' | 'categories' | 'plugins' | 'users' | 'profile';
 
 interface AdminLayoutProps {
   children: ReactNode;
-  activeSection: AdminSection;
-  onNavigate: (section: AdminSection) => void;
+  navigation: AdminNavItem[];
+  activeSection: string;
+  activeSubsection: string;
+  onNavigate: (section: string, subsection?: string) => void;
   onLogout: () => void;
   userEmail?: string;
-  siteTitle?: string;
+  branding: SiteBranding;
   role: UserRole;
   onViewSite: () => void;
+  /** Shown as a count bubble next to Dashboard, like WordPress's update counts. */
+  dashboardBadge?: number;
 }
-
-const baseNavigation: Array<{ id: AdminSection; label: string; icon: string }> = [
-  { id: 'content', label: 'Pages & Posts', icon: '▤' },
-  { id: 'media', label: 'Media', icon: '▧' },
-  { id: 'comments', label: 'Comments', icon: '◌' },
-  { id: 'categories', label: 'Categories', icon: '▦' },
-  { id: 'menus', label: 'Menus', icon: '☷' },
-  { id: 'users', label: 'Users', icon: '◍' },
-  { id: 'plugins', label: 'Plugins', icon: '◈' },
-  { id: 'settings', label: 'Settings', icon: '⚙' },
-  { id: 'app-settings', label: 'App Settings', icon: '⚒' },
-  { id: 'profile', label: 'Profile', icon: '◉' },
-];
 
 export default function AdminLayout({
   children,
+  navigation,
   activeSection,
+  activeSubsection,
   onNavigate,
   onLogout,
   userEmail,
-  siteTitle = 'React-WP',
+  branding,
   role,
   onViewSite,
+  dashboardBadge = 0,
 }: AdminLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [, refresh] = useState(0);
-  useEffect(() => rwp.subscribe(() => refresh((value) => value + 1)), []);
-  const pluginNavigation = rwp.getAdminPages()
-    .filter((page) => !page.capability || hasCapability(role, page.capability as Capability))
-    .map((page) => ({
-    id: page.id as AdminSection,
-    label: page.label,
-    icon: page.icon || '◈',
-  }));
-  const navigation = rwp.filters.apply(
-    'rwp_admin_navigation',
-    [...baseNavigation, ...pluginNavigation],
-  ).filter((item) =>
-    (item.id !== 'content' || hasCapability(role, 'edit_posts')) &&
-    (item.id !== 'app-settings' || canManageSettings(role)) &&
-    (item.id !== 'comments' || canManageComments(role)) &&
-    (item.id !== 'media' || canUploadMedia(role)) &&
-    (item.id !== 'users' || canManageUsers(role)) &&
-    (item.id !== 'settings' || canManageSettings(role)) &&
-    (item.id !== 'menus' || canManageSettings(role)) &&
-    (item.id !== 'categories' || canManageSettings(role)) &&
-    (item.id !== 'plugins' || canManageSettings(role)),
-  );
+  const active = navigation.find((item) => item.id === activeSection);
+  const activeSub = active?.submenu?.find((sub) => sub.id === activeSubsection);
 
-  const navigate = (section: AdminSection) => {
-    onNavigate(section);
+  const navigate = (section: string, subsection?: string) => {
+    onNavigate(section, subsection);
     setSidebarOpen(false);
   };
+
+  const mark = branding.site_icon || branding.site_logo;
 
   return (
     <div className={styles.shell}>
@@ -90,28 +64,58 @@ export default function AdminLayout({
           />
         )}
         <aside className={`${styles.sidebar} ${sidebarOpen ? styles.sidebarOpen : ''}`} aria-label="Admin navigation">
-          <div className={styles.brand}>
-            <span className={styles.brandMark} aria-hidden="true">R</span>
-            <span>{siteTitle}</span>
-          </div>
+          <a className={styles.brand} href="/" title="View site">
+            {mark
+              ? <img className={styles.brandImage} src={mark} alt="" />
+              : <span className={styles.brandMark} aria-hidden="true">{(branding.site_title || 'R').charAt(0).toUpperCase()}</span>}
+            <span>{branding.site_title}</span>
+          </a>
           <nav>
             <p className={styles.navLabel}>Manage</p>
-            {navigation.map((item) => (
-              <button
-                type="button"
-                key={item.id}
-                className={`${styles.navItem} ${activeSection === item.id ? styles.navItemActive : ''}`}
-                aria-current={activeSection === item.id ? 'page' : undefined}
-                onClick={() => navigate(item.id)}
-              >
-                <span className={styles.navIcon} aria-hidden="true">{item.icon}</span>
-                {item.label}
-              </button>
-            ))}
+            <ul className={styles.navList}>
+              {navigation.map((item) => {
+                const isActive = item.id === activeSection;
+                const submenu = item.submenu || [];
+                return (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      className={`${styles.navItem} ${isActive ? styles.navItemActive : ''}`}
+                      aria-current={isActive && !submenu.length ? 'page' : undefined}
+                      aria-expanded={submenu.length ? isActive : undefined}
+                      onClick={() => navigate(item.id)}
+                    >
+                      <span className={styles.navIcon} aria-hidden="true">{item.icon}</span>
+                      <span className={styles.navText}>{item.label}</span>
+                      {item.id === 'dashboard' && dashboardBadge > 0 && (
+                        <span className={styles.badge} title={`${dashboardBadge} setup item(s) need attention`}>{dashboardBadge}</span>
+                      )}
+                    </button>
+                    {isActive && submenu.length > 0 && (
+                      <ul className={styles.submenu}>
+                        {submenu.map((sub) => (
+                          <li key={sub.id}>
+                            <button
+                              type="button"
+                              className={`${styles.subItem} ${sub.id === activeSubsection ? styles.subItemActive : ''}`}
+                              aria-current={sub.id === activeSubsection ? 'page' : undefined}
+                              onClick={() => navigate(item.id, sub.id)}
+                            >
+                              {sub.icon && <span className={styles.subIcon} aria-hidden="true">{sub.icon}</span>}
+                              {sub.label}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
           </nav>
           <div className={styles.sidebarFooter}>
             <button type="button" className={styles.logoutButton} onClick={onLogout}>
-              <span aria-hidden="true">↪</span>
+              <span className={styles.navIcon} aria-hidden="true">🚪</span>
               Log out
             </button>
           </div>
@@ -129,8 +133,11 @@ export default function AdminLayout({
               <span aria-hidden="true">☰</span>
             </button>
             <div className={styles.headerTitle}>
-              <span className={styles.eyebrow}>Admin</span>
-              <h1>{navigation.find((item) => item.id === activeSection)?.label}</h1>
+              <span className={styles.eyebrow}>{activeSub ? active?.label : 'Admin'}</span>
+              <h1>
+                {(activeSub || active)?.icon && <span className={styles.headerIcon} aria-hidden="true">{(activeSub || active)?.icon}</span>}
+                {activeSub ? activeSub.label : active?.label}
+              </h1>
             </div>
             <div className={styles.account}>
               <button type="button" className={styles.viewSiteButton} onClick={onViewSite}>View site</button>

@@ -1,9 +1,21 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { describeDbError, getSupabaseClient } from '../lib/db';
-import { fetchProfile, type Profile } from '../lib/profiles';
+import {
+  emptyProfileDetails, explainProfileDetailsError, fetchProfile, fetchProfileDetails, saveProfileDetails, socialNetworks,
+  type Profile, type ProfileDetails,
+} from '../lib/profiles';
 import { roleLabels, type UserRole } from '../lib/roles';
 import MediaManager from './MediaManager';
 import styles from './ProfileManager.module.css';
+
+const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Europe/London';
+const timezones: string[] = (() => {
+  try {
+    return (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.('timeZone') || [browserTimezone];
+  } catch {
+    return [browserTimezone];
+  }
+})();
 
 export default function ProfileManager({ role }: { role: UserRole }) {
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -20,6 +32,11 @@ export default function ProfileManager({ role }: { role: UserRole }) {
   const [savingAccount, setSavingAccount] = useState(false);
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
+  const [details, setDetails] = useState<ProfileDetails>(emptyProfileDetails);
+  const [detailsAvailable, setDetailsAvailable] = useState(true);
+  const [savingDetails, setSavingDetails] = useState(false);
+  const [detailsError, setDetailsError] = useState('');
+  const [detailsFeedback, setDetailsFeedback] = useState('');
 
   useEffect(() => {
     const load = async () => {
@@ -34,6 +51,13 @@ export default function ProfileManager({ role }: { role: UserRole }) {
           setDisplayName(result.display_name || '');
           setBio(result.bio || '');
           setAvatarUrl(result.avatar_url || '');
+        }
+        // Loaded separately so a missing migration only disables this card, not the whole screen.
+        try {
+          setDetails(await fetchProfileDetails(data.user.id));
+        } catch (detailsLoadError: unknown) {
+          setDetailsAvailable(false);
+          setDetailsError(explainProfileDetailsError(detailsLoadError));
         }
       } catch (loadError: unknown) {
         setError(describeDbError(loadError));
@@ -90,6 +114,26 @@ export default function ProfileManager({ role }: { role: UserRole }) {
         : message);
     } finally {
       setSavingProfile(false);
+    }
+  };
+
+  const setDetail = (key: Exclude<keyof ProfileDetails, 'social_links'>, value: string) =>
+    setDetails((current) => ({ ...current, [key]: value }));
+
+  const saveDetails = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSavingDetails(true);
+    setDetailsError('');
+    setDetailsFeedback('');
+    try {
+      const { data } = await getSupabaseClient().auth.getUser();
+      if (!data.user) throw new Error('You are not signed in.');
+      setDetails(await saveProfileDetails(data.user.id, details));
+      setDetailsFeedback('Details saved.');
+    } catch (saveError: unknown) {
+      setDetailsError(explainProfileDetailsError(saveError));
+    } finally {
+      setSavingDetails(false);
     }
   };
 
@@ -224,6 +268,59 @@ export default function ProfileManager({ role }: { role: UserRole }) {
           </div>
         </div>
       </div>
+
+      <form className={`${styles.card} ${styles.detailsCard}`} onSubmit={saveDetails}>
+        <div>
+          <h3>More about you <span className={styles.optional}>optional</span></h3>
+          <p className={styles.help}>
+            Only you and people who can manage users (Administrators and Shop Managers) can see these. They are not shown
+            on the public site.
+          </p>
+        </div>
+        {detailsError && <div className={styles.error} role="alert">{detailsError}</div>}
+        {detailsFeedback && <div className={styles.feedback} role="status">{detailsFeedback}</div>}
+
+        {detailsAvailable && (
+          <>
+            <div className={styles.detailsGrid}>
+              <label>First name<input value={details.first_name} maxLength={100} autoComplete="given-name" onChange={(event) => setDetail('first_name', event.target.value)} /></label>
+              <label>Last name<input value={details.last_name} maxLength={100} autoComplete="family-name" onChange={(event) => setDetail('last_name', event.target.value)} /></label>
+              <label>Pronouns<input value={details.pronouns} maxLength={40} placeholder="e.g. she/her, they/them" onChange={(event) => setDetail('pronouns', event.target.value)} /></label>
+              <label>Job title<input value={details.job_title} maxLength={120} autoComplete="organization-title" onChange={(event) => setDetail('job_title', event.target.value)} /></label>
+              <label>Company<input value={details.company} maxLength={120} autoComplete="organization" onChange={(event) => setDetail('company', event.target.value)} /></label>
+              <label>Website<input type="url" value={details.website} maxLength={300} placeholder="https://example.com" autoComplete="url" onChange={(event) => setDetail('website', event.target.value)} /></label>
+              <label>Location<input value={details.location} maxLength={120} placeholder="City, country" onChange={(event) => setDetail('location', event.target.value)} /></label>
+              <label>
+                Time zone
+                <input value={details.timezone} maxLength={60} list="rwp-timezones" placeholder={browserTimezone}
+                  onChange={(event) => setDetail('timezone', event.target.value)} />
+                <datalist id="rwp-timezones">{timezones.map((zone) => <option key={zone} value={zone} />)}</datalist>
+              </label>
+              <label>Phone<input type="tel" value={details.phone} maxLength={40} autoComplete="tel" onChange={(event) => setDetail('phone', event.target.value)} /></label>
+              <label>Birth date<input type="date" value={details.birth_date} min="1900-01-01" max={new Date().toISOString().slice(0, 10)} onChange={(event) => setDetail('birth_date', event.target.value)} /></label>
+            </div>
+
+            <fieldset className={styles.socialFieldset}>
+              <legend>Social profiles</legend>
+              <div className={styles.detailsGrid}>
+                {socialNetworks.map((network) => (
+                  <label key={network.id}>
+                    {network.label}
+                    <input type="url" value={details.social_links[network.id] || ''} placeholder={network.placeholder}
+                      onChange={(event) => setDetails((current) => ({ ...current, social_links: { ...current.social_links, [network.id]: event.target.value } }))} />
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            <div className={styles.actions}>
+              <button type="submit" className={styles.primary} disabled={savingDetails}>
+                {savingDetails ? 'Saving…' : 'Save details'}
+              </button>
+            </div>
+          </>
+        )}
+      </form>
 
       {pickingAvatar && (
         <MediaManager

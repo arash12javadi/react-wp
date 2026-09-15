@@ -8,7 +8,7 @@ import path from 'node:path';
 import { Client } from 'pg';
 import { publicConfig, readConfig, writeConfig } from './server/config.mjs';
 import { authorizeImageKitUpload, authorizeMediaDelete, deleteFromProvider, describeDeleteSupport } from './server/media.mjs';
-import { renderDocumentInjections } from './server/seo.mjs';
+import { renderDocumentInjections, renderEditorInjections } from './server/seo.mjs';
 import { handlePluginRequest, resolveOrigin } from './server/plugins.mjs';
 
 const port = Number(process.env.PORT || 3000);
@@ -96,15 +96,22 @@ const serveFile = async (request, response, pathname, seoPath = pathname) => {
       // Tracking scripts stay off the admin and the full-screen page builder.
       const isEditor = isAdmin || seoPath.startsWith('/builder/');
       const origin = `http://${request.headers.host || 'localhost'}`;
-      const { head, bodyStart } = isEditor ? { head: '', bodyStart: '' } : await renderDocumentInjections(seoPath, origin, config);
+      const { head, bodyStart, headEnd = '', bodyEnd = '' } = isEditor ? await renderEditorInjections(config) : await renderDocumentInjections(seoPath, origin, config);
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
       // The injected block carries its own <title>; leaving the placeholder one in place
       // would win, because browsers honour the first title in the document.
       // Function replacements throughout, so "$&" or "$1" in a script or title is not treated
       // as a replacement pattern.
-      let withSeo = (head.includes('<title>') ? html.replace(/\s*<title>.*?<\/title>/i, '') : html)
+      // Theme Editor output goes in first, while index.html still has exactly one </head> and one
+      // </body> (a pasted script can contain those strings): CSS after the app's stylesheet link,
+      // so it wins at equal specificity, and footer scripts last in <body>.
+      const themed = html
+        .replace(/<\/head>/i, () => (headEnd ? `  ${headEnd}\n  </head>` : '</head>'))
+        .replace(/<\/body>/i, () => (bodyEnd ? `  ${bodyEnd}\n  </body>` : '</body>'));
+      let withSeo = (head.includes('<title>') ? themed.replace(/\s*<title>.*?<\/title>/i, '') : themed)
         .replace('<!--rwp-seo-->', () => head);
-      if (bodyStart) withSeo = withSeo.replace(/<body[^>]*>/i, (tag) => `${tag}\n    ${bodyStart}`);
+      // Anchored to </head> so a "<body" inside a <head> script is not mistaken for the real tag.
+      if (bodyStart) withSeo = withSeo.replace(/<\/head>\s*<body[^>]*>/i, (tag) => `${tag}\n    ${bodyStart}`);
       response.end(
         withSeo.replace('window.__REACT_WP_CONFIG__=null;', () => `window.__REACT_WP_CONFIG__=${JSON.stringify(config)};`),
       );

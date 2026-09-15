@@ -4,7 +4,7 @@ import { fetchProfile } from './profiles';
 
 /**
  * Menu items that change with the visitor. Labels may contain #profile_name#, #profile_avatar#
- * or #profile_both#, and URLs may contain #profile_url# (App Settings → General). Each item can
+ * or #profile_both#, and URLs may contain #profile_url# (Settings → General). Each item can
  * also say what logged-out visitors see: the item itself, nothing, or another label and link.
  *
  * This is presentation only. The menu JSON is public, so hiding an item does not protect the
@@ -46,7 +46,7 @@ export const menuPlaceholders = [
   { token: '#profile_name#', where: 'label', description: "The visitor's display name." },
   { token: '#profile_avatar#', where: 'label', description: "The visitor's avatar image." },
   { token: '#profile_both#', where: 'label', description: 'Avatar followed by the display name.' },
-  { token: '#profile_url#', where: 'URL', description: 'The profile page set under App Settings → General.' },
+  { token: '#profile_url#', where: 'URL', description: 'The profile page set under Settings → General.' },
 ] as const;
 
 const placeholderPattern = /#profile_(name|avatar|both|url)#/;

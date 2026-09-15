@@ -31,23 +31,69 @@ export type RwpFilterName =
   | 'rwp_page_content'
   | 'rwp_admin_navigation';
 
+export interface RwpAdminSubmenuItem {
+  id: string;
+  label: string;
+  /** An emoji. Rendered as text, so it costs nothing to load. */
+  icon?: string;
+  /** Hides the item from roles without this capability. */
+  capability?: string;
+}
+
+export interface RwpAdminPageProps {
+  /** The selected submenu item id, or '' for pages without a submenu. */
+  subsection: string;
+  /** Moves to another admin screen, e.g. navigate('settings', 'seo'). */
+  navigate: (section: string, subsection?: string) => void;
+}
+
 export interface RwpAdminPage {
   id: string;
   label: string;
   icon?: string;
   capability?: string;
-  component: ComponentType;
+  /** Shown under the page in the admin sidebar while it is open, like WordPress submenus. */
+  submenu?: RwpAdminSubmenuItem[];
+  component: ComponentType<RwpAdminPageProps>;
 }
 
 export interface RwpDashboardWidget {
   id: string;
   title: string;
+  /** Roles without this capability do not see the widget. */
+  capability?: string;
   component: ComponentType;
+}
+
+export type RwpSetupLevel = 'required' | 'recommended' | 'optional';
+
+/** One item in Dashboard → Overview's setup checklist. */
+export interface RwpSetupNotice {
+  /** Stable across releases: a dismissed notice is remembered by this id. */
+  id: string;
+  level: RwpSetupLevel;
+  title: string;
+  description: string;
+  /** Numbered instructions shown when the notice is expanded. */
+  steps?: string[];
+  /** An admin screen (section/subsection) or an external link (href). */
+  action?: { label: string; section?: string; subsection?: string; href?: string };
+}
+
+export interface RwpSetupCheck {
+  id: string;
+  capability?: string;
+  /** Returns the notices that still apply. Resolve to [] when everything is set up. */
+  run: () => Promise<RwpSetupNotice[]>;
 }
 
 export interface RwpShortcode {
   name: string;
   render: (attributes: Record<string, string>) => ReactNode;
+  /** Documentation for Dashboard → Guide. */
+  description?: string;
+  example?: string;
+  attributes?: Array<{ name: string; description: string }>;
 }
 
 export interface RwpRouteProps {
@@ -107,6 +153,8 @@ export interface RwpPluginContext {
   admin: {
     registerPage: (page: RwpAdminPage) => () => void;
     registerDashboardWidget: (widget: RwpDashboardWidget) => () => void;
+    /** Adds items to the setup checklist on Dashboard → Overview. */
+    registerSetupCheck: (check: RwpSetupCheck) => () => void;
   };
   shortcodes: {
     register: (shortcode: RwpShortcode) => () => void;
@@ -180,6 +228,7 @@ const actions = new Map<RwpActionName, Set<ActionCallback>>();
 const filters = new Map<RwpFilterName, Set<FilterCallback>>();
 const adminPages = new Map<string, RwpAdminPage>();
 const dashboardWidgets = new Map<string, RwpDashboardWidget>();
+const setupChecks = new Map<string, RwpSetupCheck>();
 const shortcodes = new Map<string, RwpShortcode>();
 const routes = new Map<string, RwpRoute>();
 const headerItems = new Map<string, RwpHeaderItem>();
@@ -210,6 +259,7 @@ export const rwp: RwpPluginContext & {
   subscribe: (listener: () => void) => () => void;
   getAdminPages: () => RwpAdminPage[];
   getDashboardWidgets: () => RwpDashboardWidget[];
+  getSetupChecks: () => RwpSetupCheck[];
   getShortcodes: () => RwpShortcode[];
   getRoutes: () => RwpRoute[];
   matchRoute: (pathname: string) => { route: RwpRoute; params: Record<string, string> } | null;
@@ -247,6 +297,14 @@ export const rwp: RwpPluginContext & {
       notifySubscribers();
       return () => {
         dashboardWidgets.delete(widget.id);
+        notifySubscribers();
+      };
+    },
+    registerSetupCheck: (check) => {
+      setupChecks.set(check.id, check);
+      notifySubscribers();
+      return () => {
+        setupChecks.delete(check.id);
         notifySubscribers();
       };
     },
@@ -330,6 +388,7 @@ export const rwp: RwpPluginContext & {
   },
   getAdminPages: () => [...adminPages.values()],
   getDashboardWidgets: () => [...dashboardWidgets.values()],
+  getSetupChecks: () => [...setupChecks.values()],
   getShortcodes: () => [...shortcodes.values()],
   getRoutes: () => [...routes.values()],
   matchRoute: (pathname) => {

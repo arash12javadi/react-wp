@@ -7,6 +7,7 @@ import {
   renameTemplate, setSubmissionStatus, type Submission,
 } from '../lib/api';
 import type { BuilderTemplate, SectionNode, TemplateType } from '../lib/types';
+import type { RwpAdminPageProps } from '../../../src/lib/plugin-api';
 import styles from './admin.module.css';
 
 type Tab = 'pages' | 'templates' | 'submissions' | 'status';
@@ -310,24 +311,16 @@ function StatusTab() {
   );
 }
 
-export default function BuilderAdmin() {
+/** Page Builder, with its section chosen from the admin sidebar's submenu (see index.tsx). */
+export default function BuilderAdmin({ subsection }: RwpAdminPageProps) {
   const role = useRole();
-  const [tab, setTab] = useState<Tab>('pages');
+  const tab: Tab = (['pages', 'templates', 'submissions', 'status'] as Tab[]).includes(subsection as Tab) ? subsection as Tab : 'pages';
   const canSeeSubmissions = role ? hasCapability(role, 'edit_pages') : false;
-  const tabs: Array<[Tab, string]> = [
-    ['pages', 'Pages'], ['templates', 'Templates'],
-    ...(canSeeSubmissions ? [['submissions', 'Form submissions'] as [Tab, string], ['status', 'Status'] as [Tab, string]] : []),
-  ];
   return (
     <div className={styles.wrap}>
       <div className={styles.intro}>
         <h2>Page Builder</h2>
         <p>Design pages visually with sections, columns and widgets.</p>
-      </div>
-      <div className={styles.tabs} role="tablist">
-        {tabs.map(([id, label]) => (
-          <button key={id} type="button" role="tab" aria-selected={tab === id} className={tab === id ? styles.tabActive : styles.tab} onClick={() => setTab(id)}>{label}</button>
-        ))}
       </div>
       {tab === 'pages' && <PagesTab />}
       {tab === 'templates' && <TemplatesTab />}

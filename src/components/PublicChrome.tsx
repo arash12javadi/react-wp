@@ -73,7 +73,8 @@ export default function PublicChrome({ children, layout = 'wide' }: { children: 
   return (
     <PublicChromeContext.Provider value={state}>
       <PublicLayout
-        siteTitle={rwp.filters.apply('rwp_site_title', state.settings.site_title)}
+        siteTitle={state.ready ? rwp.filters.apply('rwp_site_title', state.settings.site_title) : ''}
+        branding={state.settings}
         menuLinks={menuLinks}
         adminEmail={state.email || undefined}
         role={state.role}

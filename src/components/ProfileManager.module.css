@@ -199,6 +199,50 @@
   background: #f0fdf4;
 }
 
+.detailsCard {
+  margin-top: 20px;
+}
+
+.detailsCard p {
+  margin: 4px 0 0;
+}
+
+.detailsCard .error,
+.detailsCard .feedback {
+  margin-bottom: 0;
+}
+
+.optional {
+  margin-left: 6px;
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: #475569;
+  background: #f1f5f9;
+  font-size: 0.7rem;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
+.detailsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px 16px;
+}
+
+.socialFieldset {
+  margin: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 14px 16px 16px;
+}
+
+.socialFieldset legend {
+  padding: 0 6px;
+  color: #334155;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
 @media (max-width: 900px) {
   .grid {
     grid-template-columns: minmax(0, 1fr);

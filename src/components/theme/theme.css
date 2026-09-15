@@ -1,0 +1,222 @@
+/*
+ * Public theme layout. Deliberately global, unhashed class names (rwp-*, rwpt-*): they are what
+ * Appearance → Theme Editor → Custom CSS targets. Two-class selectors where these must beat a
+ * CSS module rule of the same element.
+ */
+
+.rwpt-block {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.rwpt-row > .rwpt-align-left { margin-right: auto; }
+.rwpt-row > .rwpt-align-center { margin-inline: auto; }
+.rwpt-row > .rwpt-align-right { margin-left: auto; }
+
+.rwpt-block.rwpt-align-left { text-align: left; }
+.rwpt-block.rwpt-align-center { text-align: center; }
+.rwpt-block.rwpt-align-right { text-align: right; }
+
+.rwp-header.rwpt-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
+.rwpt-sidebar-sticky {
+  position: sticky;
+  top: 24px;
+  align-self: start;
+}
+
+.rwpt-text {
+  margin: 0;
+  white-space: pre-line;
+}
+
+.rwpt-search input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 180px;
+  padding: 9px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  color: #111827;
+  font: inherit;
+}
+
+.rwpt-social,
+.rwpt-menu-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rwpt-social a,
+.rwpt-menu-links a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.rwpt-social a:hover,
+.rwpt-menu-links a:hover {
+  color: #2271b1;
+}
+
+.rwp-sidebar .rwpt-menu-links {
+  display: grid;
+  gap: 9px;
+}
+
+.rwpt-widget-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 32px;
+}
+
+.rwpt-widget-stack {
+  display: grid;
+  gap: 34px;
+}
+
+.rwpt-footer-column {
+  display: grid;
+  align-content: start;
+  gap: 24px;
+}
+
+.rwpt-footer-grid.rwpt-columns-fixed {
+  grid-template-columns: repeat(var(--rwpt-columns), minmax(0, 1fr));
+}
+
+.rwpt-grid.rwpt-sidebar-left {
+  grid-template-columns: minmax(220px, 3fr) minmax(0, 7fr);
+}
+
+/* DOM order stays content-first for screen readers; only the visual order changes. */
+.rwpt-grid.rwpt-sidebar-left > aside {
+  order: -1;
+}
+
+.rwpt-feed-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--rwpt-columns, 1), minmax(0, 1fr));
+  column-gap: 32px;
+}
+
+.rwpt-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 24px 0;
+}
+
+.rwpt-pagination a,
+.rwpt-pagination button,
+.rwpt-pagination span {
+  min-width: 36px;
+  padding: 8px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fff;
+  color: #374151;
+  font: inherit;
+  font-size: .9rem;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.rwpt-pagination [aria-current="page"] {
+  border-color: #2271b1;
+  background: #2271b1;
+  color: #fff;
+}
+
+.rwpt-pagination button:disabled {
+  cursor: wait;
+  opacity: .6;
+}
+
+.rwpt-rules {
+  margin: 0 0 24px;
+  padding: 14px 16px;
+  border-left: 4px solid #2271b1;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.rwpt-rules h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+
+.rwpt-rules p {
+  margin: 0;
+  white-space: pre-line;
+}
+
+.rwpt-block-error {
+  padding: 8px 10px;
+  border: 1px dashed #dc2626;
+  border-radius: 6px;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: .82rem;
+}
+
+.rwpt-preview-banner {
+  position: fixed;
+  z-index: 1000;
+  right: 16px;
+  bottom: 16px;
+  left: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: #111827;
+  color: #f9fafb;
+  box-shadow: 0 12px 30px rgb(17 24 39 / 30%);
+  font: .85rem/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.rwpt-preview-banner button {
+  border: 0;
+  border-radius: 6px;
+  padding: 8px 12px;
+  background: #fff;
+  color: #111827;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+@media (max-width: 700px) {
+  .rwpt-hide-mobile { display: none !important; }
+
+  .rwp-header.rwpt-row { flex-wrap: wrap; gap: 16px; }
+
+  .rwpt-footer-grid.rwpt-columns-fixed,
+  .rwpt-grid.rwpt-sidebar-left,
+  .rwpt-feed-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rwpt-grid.rwpt-sidebar-left > aside { order: 0; }
+  .rwpt-sidebar-sticky { position: static; }
+}
+
+@media (min-width: 701px) {
+  .rwpt-hide-desktop { display: none !important; }
+}

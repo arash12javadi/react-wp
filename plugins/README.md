@@ -38,9 +38,10 @@ Inside `defineRwpPlugin(manifest, (context) => { ... })`:
 | --- | --- |
 | `actions.add / actions.do` | Hooks such as `rwp_user_logged_in`. Plugins may fire their own, prefixed with the plugin id. |
 | `filters.add / filters.apply` | Filters such as `rwp_site_title` and `rwp_public_menu`. |
-| `admin.registerPage({ id, label, icon, capability, component })` | An admin screen. `capability` hides it from, and blocks it for, roles without that capability. |
-| `admin.registerDashboardWidget` | A widget on the admin content screen. |
-| `shortcodes.register({ name, render })` | `[name attr="value"]` in page content. |
+| `admin.registerPage({ id, label, icon, capability, submenu, component })` | An admin screen. `capability` hides it from, and blocks it for, roles without that capability. `submenu: [{ id, label, icon, capability }]` shows under the page in the sidebar while it is open; the component receives `{ subsection, navigate }`. Use an emoji for `icon`. |
+| `admin.registerDashboardWidget({ id, title, capability, component })` | A panel on Dashboard → Overview. |
+| `admin.registerSetupCheck({ id, capability, run })` | `run()` resolves to the setup notices that still apply (`{ id, level: 'required' \| 'recommended' \| 'optional', title, description, steps, action }`), shown in Dashboard → Overview's checklist. Keep ids stable: hidden notices are remembered by id. |
+| `shortcodes.register({ name, render, description, example, attributes })` | `[name attr="value"]` in page content. The optional fields document it in Dashboard → Guide. |
 | `routes.register({ path, component, chrome })` | A public URL. `:param` segments and a trailing `*` are captured into `params`. Plugin routes win over page slugs. `chrome: false` renders without the site header and footer. |
 | `header.register({ id, component })` | Something in the public header next to the login links, such as a cart link. |
 | `content.registerRenderer({ id, match, component, editHref })` | Takes over the body of pages where `match(page)` is true. The component gets `{ page, comments }`; `editHref` redirects the toolbar's "Edit page" link. The page builder uses this. |

@@ -64,10 +64,24 @@
 }
 
 .brand {
-  display: grid;
-  gap: 3px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
   color: #111827;
   text-decoration: none;
+}
+
+.brandLogo {
+  display: block;
+  width: auto;
+  max-width: min(240px, 50vw);
+  object-fit: contain;
+}
+
+.brandText {
+  display: grid;
+  gap: 3px;
 }
 
 .brand strong {
@@ -75,7 +89,7 @@
   letter-spacing: -0.02em;
 }
 
-.brand span {
+.brandText span {
   color: #6b7280;
   font-size: .82rem;
 }

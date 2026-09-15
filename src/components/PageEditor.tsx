@@ -100,7 +100,7 @@ export default function PageEditor({ page, initialIsPost = false, onSaved, onCan
         : await supabase.from('pages').insert(payload);
       if (result.error) {
         if (result.error.message.includes('meta_keywords')) {
-          throw new Error(`The pages table has no meta_keywords column yet, but meta keywords are enabled under App Settings → SEO. Run ${appSettingsMigration} in the Supabase SQL Editor. (${result.error.message})`);
+          throw new Error(`The pages table has no meta_keywords column yet, but meta keywords are enabled under Settings → SEO. Run ${appSettingsMigration} in the Supabase SQL Editor. (${result.error.message})`);
         }
         if (result.error.message.includes('public.pages') || result.error.message.includes('relation "pages"')) {
           throw new Error('The pages table is missing. Run supabase/migrations/20260911_create_pages_categories.sql in the Supabase SQL Editor, then reload this page.');

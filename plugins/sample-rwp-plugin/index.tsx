@@ -29,7 +29,7 @@ export const samplePluginCleanup = defineRwpPlugin(manifest, ({ admin, filters, 
   const removePage = admin.registerPage({
     id: 'sample-plugin',
     label: manifest.name,
-    icon: '★',
+    icon: '🧪',
     component: SampleAdminPage,
   });
 

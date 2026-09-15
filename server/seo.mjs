@@ -48,16 +48,39 @@ const readAppSettings = (value) => {
 };
 
 /**
+ * The admin and the page builder get no SEO tags or tracking scripts, but they still need the
+ * site title: without it the tab shows index.html's placeholder until the app replaces it.
+ */
+export async function renderEditorInjections(config) {
+  const empty = { head: '', bodyStart: '' };
+  if (!config?.supabaseUrl || !config?.supabasePublishableKey) return empty;
+  try {
+    const rows = await get(config.supabaseUrl, config.supabasePublishableKey, 'options?select=option_value&option_name=eq.site_title');
+    const title = rows?.[0]?.option_value;
+    return title ? { head: `<title>${escapeHtml(title)}</title>`, bodyStart: '' } : empty;
+  } catch {
+    return empty;
+  }
+}
+
+/**
  * Everything written into the HTML response for a public path: SEO tags for <head>, and the
  * tracking snippets from App Settings → SEO. Scripts are written here rather than by React so
  * tag managers load before the app, and the <meta name="rwp-scripts"> marker tells the browser
  * not to inject them a second time. Any failure degrades to an unadorned page, never a 500.
+ *
+ * The Theme Editor's CSS, <head> code and footer scripts go in `headEnd` (just before </head>,
+ * so the CSS comes after the app's stylesheet and wins at equal specificity) and `bodyEnd`.
+ * <meta name="rwp-theme"> tells applyThemeDocument not to inject the scripts again.
  */
 export async function renderDocumentInjections(pathname, origin, config) {
-  const empty = { head: '', bodyStart: '' };
+  const empty = { head: '', bodyStart: '', headEnd: '', bodyEnd: '' };
   if (!config?.supabaseUrl || !config?.supabasePublishableKey) return empty;
   try {
-    const options = await optionsMap(config.supabaseUrl, config.supabasePublishableKey);
+    const [options, theme] = await Promise.all([
+      optionsMap(config.supabaseUrl, config.supabasePublishableKey),
+      readTheme(config.supabaseUrl, config.supabasePublishableKey),
+    ]);
     const app = readAppSettings(options.rwp_app_settings);
     const seoTags = await renderSeoTags(pathname, origin, config, options, app);
     const headScripts = sanitizeTrackingHtml(app.seo?.header_script || '').html;
@@ -65,11 +88,35 @@ export async function renderDocumentInjections(pathname, origin, config) {
     return {
       head: [seoTags, '<meta name="rwp-scripts" content="server">', headScripts].filter(Boolean).join('\n    '),
       bodyStart: bodyScripts,
+      ...renderTheme(theme),
     };
   } catch {
     return empty;
   }
 }
+
+// null when the migration has not run or the request failed; the browser then injects nothing
+// itself either, because there is nothing saved to inject.
+const readTheme = async (baseUrl, key) => {
+  try {
+    const rows = await get(baseUrl, key, 'theme_settings?select=custom_header_code,custom_footer_code,custom_css,custom_comments_css&limit=1');
+    return Array.isArray(rows) ? rows[0] || null : null;
+  } catch {
+    return null;
+  }
+};
+
+/** Mirrors themeStylesheet and applyThemeDocument in the app. */
+const renderTheme = (theme) => {
+  if (!theme) return { headEnd: '', bodyEnd: '' };
+  const css = [theme.custom_css, theme.custom_comments_css].filter((part) => String(part || '').trim()).join('\n\n');
+  // "</style" would end the element early and turn the rest of the CSS into page markup.
+  const style = css ? `<style id="rwp-theme-css">${css.replace(/<\/(style)/gi, '<\\/$1')}</style>` : '';
+  return {
+    headEnd: ['<meta name="rwp-theme" content="server">', style, sanitizeTrackingHtml(theme.custom_header_code || '').html].filter(Boolean).join('\n    '),
+    bodyEnd: sanitizeTrackingHtml(theme.custom_footer_code || '').html,
+  };
+};
 
 /**
  * Builds the SEO block for a request path. Returns an empty string on any failure so a
