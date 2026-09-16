@@ -2935,6 +2935,44 @@ returns table (id uuid, display_name text) language sql stable security definer 
     and exists (select 1 from public.pages pg where pg.author_id = pr.id and pg.status = 'published');
 $$;
 
+-- Widget pack (kept identical to supabase/migrations/20260923_builder_widgets.sql).
+-- Visitors read a template only when a published builder page uses it, directly or through one
+-- template that page uses. (Custom HTML in templates is guarded by builder_guard_html_templates.)
+create or replace function public.builder_template_public(p_id uuid)
+returns jsonb language sql stable security definer set search_path = public as $$
+  select t.builder_data
+  from public.elementor_templates t
+  where t.id = p_id
+    and (
+      public.user_has_cap('edit_posts')
+      or exists (
+        select 1 from public.pages pg
+        where pg.status = 'published' and pg.is_builder_enabled
+          and position(p_id::text in coalesce(pg.builder_data::text, '')) > 0
+      )
+      or exists (
+        select 1
+        from public.elementor_templates parent
+        join public.pages pg
+          on pg.status = 'published' and pg.is_builder_enabled
+          and position(parent.id::text in coalesce(pg.builder_data::text, '')) > 0
+        where parent.id <> p_id
+          and position(p_id::text in parent.builder_data::text) > 0
+      )
+    );
+$$;
+
+-- Author Box: name, avatar and bio of one page's author, for published pages or page editors.
+create or replace function public.builder_author_profile(p_page_id bigint)
+returns table (display_name text, avatar_url text, bio text)
+language sql stable security definer set search_path = public as $$
+  select coalesce(nullif(pr.display_name, ''), 'Author'), pr.avatar_url, pr.bio
+  from public.pages pg
+  join public.profiles pr on pr.id = pg.author_id
+  where pg.id = p_page_id
+    and (pg.status = 'published' or public.builder_can_edit_page(pg.id));
+$$;
+
 -- Row level security --------------------------------------------------------------------
 
 alter table public.elementor_templates enable row level security;
@@ -3003,6 +3041,10 @@ revoke execute on function public.builder_html_fingerprint(jsonb) from public, a
 grant execute on function public.builder_can_edit_page(bigint) to anon, authenticated;
 grant execute on function public.builder_submit_form(bigint, text, jsonb) to anon, authenticated;
 grant execute on function public.builder_author_names(uuid[]) to anon, authenticated;
+revoke execute on function public.builder_template_public(uuid) from public;
+revoke execute on function public.builder_author_profile(bigint) from public;
+grant execute on function public.builder_template_public(uuid) to anon, authenticated;
+grant execute on function public.builder_author_profile(bigint) to anon, authenticated;
 
 -- Backup and restore (Settings -> Backup) ------------------------------------------------
 -- Kept identical to supabase/migrations/20260919_backup_restore.sql.

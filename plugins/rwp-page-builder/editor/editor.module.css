@@ -190,18 +190,50 @@ textarea.input { resize: vertical; }
 .inputWithTag { position: relative; display: flex; gap: 4px; align-items: flex-start; }
 .inputWithTag > .input { flex: 1; }
 
-.popoverAnchor { position: relative; }
-.tagButton { display: grid; place-items: center; width: 30px; height: 32px; border: 1px solid #cbd5e1; border-radius: 6px; color: var(--ed-muted); background: #fff; cursor: pointer; }
-.tagButton:hover, .tagButton[aria-expanded='true'] { color: var(--ed-accent); border-color: #c4b5fd; }
-.popover {
-  position: absolute; top: calc(100% + 4px); right: 0; z-index: 50; display: grid; width: 270px; max-height: 340px; overflow-y: auto; padding: 6px;
-  border: 1px solid var(--ed-border); border-radius: 9px; background: #fff; box-shadow: 0 16px 40px -12px rgb(15 23 42 / 35%);
+.srOnly { position: absolute !important; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+.popoverAnchor { position: relative; flex: none; }
+.tagButton {
+  display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid #cbd5e1; border-radius: 6px;
+  color: var(--ed-muted); background: #fff; cursor: pointer; transition: color .15s, border-color .15s, background-color .15s;
 }
-.popover button { display: flex; justify-content: space-between; gap: 8px; width: 100%; padding: 6px 8px; border: 0; border-radius: 5px; color: var(--ed-text); background: none; text-align: left; cursor: pointer; }
-.popover button:hover { background: var(--ed-bg); }
-.popover code { color: var(--ed-muted); font-size: 10.5px; }
-.popoverGroup { margin: 6px 8px 2px; color: var(--ed-muted); font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
-.popoverNote { margin: 6px 8px 2px; color: var(--ed-muted); font-size: 11px; }
+.tagButton:hover, .tagButton[aria-expanded='true'] { color: var(--ed-accent); border-color: #c4b5fd; background: var(--ed-accent-soft); }
+.tagButton:focus-visible { outline: 2px solid var(--ed-accent); outline-offset: 1px; }
+.tagRow { display: flex; align-items: center; gap: 8px; }
+
+/* Portalled to the shell with fixed coordinates computed from the button (see DynamicTagButton). */
+.popover {
+  position: fixed; z-index: 1000; display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+  border: 1px solid var(--ed-border); border-radius: 10px; color: var(--ed-text); background: #fff;
+  box-shadow: 0 24px 48px -16px rgb(15 23 42 / 40%), 0 2px 6px rgb(15 23 42 / 8%);
+  font: 13px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; animation: popoverIn .12s ease-out;
+}
+@keyframes popoverIn { from { opacity: 0; transform: translateY(-4px); } }
+.popoverHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 10px 6px 12px; }
+.popoverHead strong { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ed-text); }
+.popoverHead strong svg { color: var(--ed-accent); }
+.popoverClose { display: grid; place-items: center; width: 24px; height: 24px; border: 0; border-radius: 5px; color: var(--ed-muted); background: none; font-size: 18px !important; line-height: 1; cursor: pointer; }
+.popoverClose:hover { color: var(--ed-text); background: var(--ed-bg); }
+.popoverSearch { margin: 0 10px 6px; padding: 7px 9px; border: 1px solid #cbd5e1; border-radius: 6px; background: var(--ed-bg); }
+.popoverSearch:focus { border-color: var(--ed-accent); outline: 2px solid rgb(109 40 217 / 18%); background: #fff; }
+.popoverList { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 6px 6px; }
+.popoverItem {
+  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; width: 100%; padding: 6px 8px;
+  border: 0; border-radius: 6px; color: var(--ed-text); background: none; text-align: left; cursor: pointer;
+}
+.popoverItem:hover, .popoverItem:focus-visible { background: var(--ed-accent-soft); outline: 0; }
+.popoverItem code { max-width: 150px; overflow: hidden; padding: 1px 5px; border-radius: 4px; color: #5b21b6; background: #f5f3ff; font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+.popoverGroup { margin: 8px 8px 3px; color: var(--ed-muted); font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.popoverNote { margin: 8px; color: var(--ed-muted); font-size: 12px; }
+.popoverFoot { margin: 0; padding: 8px 12px; border-top: 1px solid var(--ed-border); color: var(--ed-muted); background: #fafafa; font-size: 11px; }
+.popoverFoot code { color: #5b21b6; font-size: 10.5px; }
+
+.galleryGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.galleryThumb { position: relative; aspect-ratio: 1; overflow: hidden; border: 1px solid var(--ed-border); border-radius: 6px; background: var(--ed-bg); }
+.galleryThumb img { width: 100%; height: 100%; object-fit: cover; }
+.galleryThumb div { position: absolute; inset: auto 2px 2px; display: flex; justify-content: space-between; opacity: 0; transition: opacity .15s; }
+.galleryThumb:hover div, .galleryThumb:focus-within div { opacity: 1; }
+.galleryThumb button { display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; color: #fff; background: rgb(15 23 42 / 75%); cursor: pointer; }
 
 .switch, .switchOn { position: relative; width: 36px; height: 20px; padding: 0; border: 0; border-radius: 999px; background: #cbd5e1; cursor: pointer; transition: background .15s; }
 .switch span, .switchOn span { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 25%); transition: transform .15s; }

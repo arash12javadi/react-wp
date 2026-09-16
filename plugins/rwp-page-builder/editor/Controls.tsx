@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlignCenter, AlignJustify, AlignLeft, AlignRight, ArrowDown, ArrowUp, ChevronDown, Copy, Database, Link2, Monitor,
   Plus, RotateCcw, Smartphone, Tablet, Trash2, Unlink,
@@ -50,36 +51,114 @@ export function Row({ label, children, device, inherited, onReset, help, htmlFor
   );
 }
 
-/** Inserts a {{tag}} at the end of a text value. */
+const POPOVER_WIDTH = 300;
+const POPOVER_GAP = 6;
+const VIEWPORT_MARGIN = 8;
+
+/**
+ * Inserts a {{tag}} at the end of a text value.
+ *
+ * The list is portalled into the editor shell with fixed positioning. Rendered in place, it was
+ * clipped by the sidebar's scroll container, and anchored by its right edge it opened off the
+ * left of the screen whenever the button sat at the start of a row (the rich text control).
+ */
 export function DynamicTagButton({ onInsert }: { onInsert: (tag: string) => void }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [query, setQuery] = useState('');
+  const [position, setPosition] = useState<{ top: number; left: number; maxHeight: number } | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const searchId = useId();
+
+  const place = useCallback(() => {
+    const button = buttonRef.current;
+    if (!button) return;
+    const rect = button.getBoundingClientRect();
+    const width = Math.min(POPOVER_WIDTH, window.innerWidth - VIEWPORT_MARGIN * 2);
+    // Start at the button's left edge; slide left only as far as needed to stay on screen.
+    const left = Math.max(VIEWPORT_MARGIN, Math.min(rect.left, window.innerWidth - width - VIEWPORT_MARGIN));
+    const below = window.innerHeight - rect.bottom - POPOVER_GAP - VIEWPORT_MARGIN;
+    const above = rect.top - POPOVER_GAP - VIEWPORT_MARGIN;
+    const openAbove = below < 260 && above > below;
+    const maxHeight = Math.max(160, Math.min(420, openAbove ? above : below));
+    setPosition({ left, maxHeight, top: openAbove ? rect.top - POPOVER_GAP - maxHeight : rect.bottom + POPOVER_GAP });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (open) place();
+  }, [open, place]);
+
   useEffect(() => {
     if (!open) return undefined;
-    const close = (event: MouseEvent) => { if (!ref.current?.contains(event.target as Node)) setOpen(false); };
+    const close = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (!popoverRef.current?.contains(target) && !buttonRef.current?.contains(target)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      setOpen(false);
+      buttonRef.current?.focus();
+    };
     document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
-  }, [open]);
-  const groups = [...new Set(dynamicTags.map((tag) => tag.group))];
+    document.addEventListener('keydown', onKey, true);
+    // Capture: the sidebar scrolls inside its own container, not the window.
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
+    };
+  }, [open, place]);
+
+  const term = query.trim().toLowerCase();
+  const matches = dynamicTags.filter((tag) => !term || tag.label.toLowerCase().includes(term) || tag.tag.includes(term) || tag.group.toLowerCase().includes(term));
+  const groups = [...new Set(matches.map((tag) => tag.group))];
+  const host = typeof document === 'undefined' ? null : buttonRef.current?.closest<HTMLElement>('[data-rwpb-shell]') || document.body;
+
+  const insert = (tag: string) => {
+    onInsert(`{{${tag}}}`);
+    setOpen(false);
+    setQuery('');
+    buttonRef.current?.focus();
+  };
+
   return (
-    <div className={styles.popoverAnchor} ref={ref}>
-      <button type="button" className={styles.tagButton} title="Insert a dynamic tag" aria-label="Insert a dynamic tag" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
-        <Database size={12} />
+    <div className={styles.popoverAnchor}>
+      <button ref={buttonRef} type="button" className={styles.tagButton} title="Insert a dynamic tag" aria-label="Insert a dynamic tag"
+        aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+        <Database size={13} />
       </button>
-      {open && (
-        <div className={styles.popover} role="menu">
-          {groups.map((group) => (
-            <div key={group}>
-              <p className={styles.popoverGroup}>{group}</p>
-              {dynamicTags.filter((tag) => tag.group === group).map((tag) => (
-                <button key={tag.tag} type="button" role="menuitem" onClick={() => { onInsert(`{{${tag.tag}}}`); setOpen(false); }}>
-                  {tag.label} <code>{`{{${tag.tag}}}`}</code>
-                </button>
-              ))}
-            </div>
-          ))}
-          <p className={styles.popoverNote}>Add a fallback after a bar: {'{{user.name|there}}'}</p>
-        </div>
+      {open && position && host && createPortal(
+        <div ref={popoverRef} className={styles.popover} role="dialog" aria-label="Dynamic tags"
+          style={{ top: position.top, left: position.left, maxHeight: position.maxHeight, width: Math.min(POPOVER_WIDTH, window.innerWidth - VIEWPORT_MARGIN * 2) }}>
+          <div className={styles.popoverHead}>
+            <strong><Database size={13} /> Dynamic tags</strong>
+            <button type="button" className={styles.popoverClose} aria-label="Close" onClick={() => setOpen(false)}>×</button>
+          </div>
+          <label className={styles.srOnly} htmlFor={searchId}>Search dynamic tags</label>
+          <input id={searchId} className={styles.popoverSearch} type="search" placeholder="Search tags…" value={query} autoFocus
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => { if (event.key === 'Enter' && matches[0]) { event.preventDefault(); insert(matches[0].tag); } }} />
+          <div className={styles.popoverList}>
+            {groups.map((group) => (
+              <div key={group} role="group" aria-label={group}>
+                <p className={styles.popoverGroup}>{group}</p>
+                {matches.filter((tag) => tag.group === group).map((tag) => (
+                  <button key={tag.tag} type="button" className={styles.popoverItem} onClick={() => insert(tag.tag)}>
+                    <span>{tag.label}</span>
+                    <code>{`{{${tag.tag}}}`}</code>
+                  </button>
+                ))}
+              </div>
+            ))}
+            {!matches.length && <p className={styles.popoverNote}>No tags match “{query}”.</p>}
+          </div>
+          <p className={styles.popoverFoot}>Add a fallback after a bar: <code>{'{{user.name|there}}'}</code>. For url.param, replace NAME with the parameter.</p>
+        </div>,
+        host,
       )}
     </div>
   );
@@ -251,9 +330,9 @@ function RichTextControl({ control, value, onChange }: ControlProps) {
         <ClassicEditor value={asString(value)} onChange={onChange} />
       </div>
       {control.dynamic && (
-        <div className={styles.buttonRow}>
+        <div className={styles.tagRow}>
           <DynamicTagButton onInsert={(tag) => onChange(`${asString(value)}<p>${tag}</p>`)} />
-          <span className={styles.controlHelp}>Insert a dynamic tag</span>
+          <span className={styles.controlHelp}>Insert a dynamic tag (added as a new paragraph at the end)</span>
         </div>
       )}
     </div>
@@ -640,6 +719,68 @@ function FormEmailControl({ settings = {}, onSettingChange }: ControlProps) {
   );
 }
 
+/** A select whose choices come from the database (templates, products, pages). */
+function AsyncSelectControl({ control, value, onChange }: ControlProps) {
+  const [options, setOptions] = useState<ControlOption[] | null>(null);
+  const [error, setError] = useState('');
+  const { loadOptions } = control;
+  useEffect(() => {
+    let active = true;
+    if (!loadOptions) return undefined;
+    loadOptions()
+      .then((loaded) => active && setOptions(loaded))
+      .catch((loadError: unknown) => active && setError(loadError instanceof Error ? loadError.message : String(loadError)));
+    return () => { active = false; };
+  }, [loadOptions]);
+  const current = asString(value);
+  if (error) return <p className={styles.controlError}>{error}</p>;
+  if (!options) return <p className={styles.controlHelp}>Loading…</p>;
+  return (
+    <select className={styles.input} value={current} onChange={(event) => onChange(event.target.value)}>
+      <option value="">{control.placeholder || '— Choose —'}</option>
+      {current && !options.some((option) => option.value === current) && <option value={current}>Not found ({current})</option>}
+      {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+    </select>
+  );
+}
+
+/** A list of image URLs picked one at a time from the media library. */
+function GalleryControl({ value, onChange }: ControlProps) {
+  const images = (Array.isArray(value) ? value : []).filter((item): item is string => typeof item === 'string');
+  const [open, setOpen] = useState(false);
+  const move = (index: number, delta: number) => {
+    const target = index + delta;
+    if (target < 0 || target >= images.length) return;
+    const next = [...images];
+    [next[index], next[target]] = [next[target], next[index]];
+    onChange(next);
+  };
+  return (
+    <div className={styles.stack}>
+      {images.length > 0 && (
+        <div className={styles.galleryGrid}>
+          {images.map((url, index) => (
+            <div key={`${url}-${index}`} className={styles.galleryThumb}>
+              <img src={url} alt="" />
+              <div>
+                <button type="button" aria-label="Move earlier" disabled={index === 0} onClick={() => move(index, -1)}>‹</button>
+                <button type="button" aria-label="Remove image" onClick={() => onChange(images.filter((_, itemIndex) => itemIndex !== index))}>×</button>
+                <button type="button" aria-label="Move later" disabled={index === images.length - 1} onClick={() => move(index, 1)}>›</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className={styles.buttonRow}>
+        <button type="button" className={styles.smallButton} onClick={() => setOpen(true)}><Plus size={13} /> Add image</button>
+        {images.length > 0 && <button type="button" className={styles.smallButtonGhost} onClick={() => onChange([])}>Clear all</button>}
+        <span className={styles.controlHelp}>{images.length} image{images.length === 1 ? '' : 's'}</span>
+      </div>
+      {open && <MediaManager heading="Add to gallery" onClose={() => setOpen(false)} onSelect={(item) => { onChange([...images, item.url]); setOpen(false); }} />}
+    </div>
+  );
+}
+
 export function ControlInput(props: ControlProps) {
   switch (props.control.type) {
     case 'text': case 'textarea': return <TextControl {...props} />;
@@ -665,6 +806,8 @@ export function ControlInput(props: ControlProps) {
     case 'menu': return <MenuControl {...props} />;
     case 'category': return <CategoryControl {...props} />;
     case 'formEmail': return <FormEmailControl {...props} />;
+    case 'asyncSelect': return <AsyncSelectControl {...props} />;
+    case 'gallery': return <GalleryControl {...props} />;
     default: return null;
   }
 }

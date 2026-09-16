@@ -9,6 +9,7 @@ import { border, color, isSet, length, radius, shadow, typography, type Border, 
 import { useRenderContext } from '../context';
 import { fetchPosts } from '../data';
 import { EditorPlaceholder, useText } from './shared';
+import { filterGroupControl, useTaxonomyFilter } from './kit';
 
 const formatDate = (value: string) => new Date(value).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 
@@ -31,6 +32,7 @@ export const posts: WidgetDefinition = {
     { key: 'orderBy', label: 'Order by', type: 'select', options: opts(['created_at', 'Date published'], ['updated_at', 'Date modified'], ['title', 'Title']) },
     { key: 'order', label: 'Order', type: 'select', options: opts(['desc', 'Descending'], ['asc', 'Ascending']) },
     { key: 'excludeCurrent', label: 'Exclude the current post', type: 'toggle' },
+    filterGroupControl(),
     { key: '_layout', label: 'Layout', type: 'heading' },
     { key: 'layout', label: 'Layout', type: 'select', options: opts(['grid', 'Grid'], ['list', 'List'], ['masonry', 'Masonry']) },
     { key: 'columns', label: 'Columns', type: 'slider', store: 'style', responsive: true, min: 1, max: 4, condition: (settings) => settings.layout !== 'list' },
@@ -93,14 +95,16 @@ export const posts: WidgetDefinition = {
     const [page, setPage] = useState(1);
     const [state, setState] = useState<{ posts: DynamicPost[]; total: number; loading: boolean; error: string }>({ posts: [], total: 0, loading: true, error: '' });
     const pagination = String(settings.pagination || 'none');
-    const queryKey = JSON.stringify([settings.categoryId, limit, settings.orderBy, settings.order, settings.excerptLength, settings.excludeCurrent, pageId]);
+    // A Taxonomy Filter widget in the same group overrides the chosen category.
+    const filterCategory = useTaxonomyFilter(settings.filterGroup);
+    const queryKey = JSON.stringify([filterCategory ?? settings.categoryId, limit, settings.orderBy, settings.order, settings.excerptLength, settings.excludeCurrent, pageId, settings.search || '']);
 
     // A new query starts again from page one.
     useEffect(() => { setPage(1); }, [queryKey]);
 
     useEffect(() => {
       let active = true;
-      const [categoryId, , orderBy, order, excerptLength, excludeCurrent] = JSON.parse(queryKey) as [string, number, string, string, number, boolean];
+      const [categoryId, , orderBy, order, excerptLength, excludeCurrent, , search] = JSON.parse(queryKey) as [string, number, string, string, number, boolean, number, string];
       setState((current) => ({ ...current, loading: true, error: '' }));
       fetchPosts({
         categoryId: categoryId || undefined,
@@ -109,6 +113,7 @@ export const posts: WidgetDefinition = {
         orderBy: (['created_at', 'updated_at', 'title'].includes(orderBy) ? orderBy : 'created_at') as 'created_at',
         order: order === 'asc' ? 'asc' : 'desc',
         excludeId: excludeCurrent ? pageId : null,
+        search: typeof search === 'string' && search ? search : undefined,
       }, Number(excerptLength) || 20)
         .then((result) => {
           if (!active) return;

@@ -6,7 +6,8 @@ export type ControlType =
   | 'text' | 'textarea' | 'number' | 'toggle' | 'select' | 'color' | 'slider' | 'size'
   | 'dimensions' | 'image' | 'link' | 'richtext' | 'icon' | 'code' | 'align'
   | 'typography' | 'background' | 'border' | 'shadow' | 'textShadow'
-  | 'repeater' | 'formFields' | 'menu' | 'category' | 'heading' | 'formEmail';
+  | 'repeater' | 'formFields' | 'menu' | 'category' | 'heading' | 'formEmail'
+  | 'asyncSelect' | 'gallery';
 
 export type ControlTab = 'content' | 'style' | 'advanced';
 
@@ -36,6 +37,8 @@ export interface Control {
   itemLabel?: string;
   newItem?: () => Record<string, unknown>;
   language?: 'html' | 'css' | 'js';
+  /** asyncSelect: the choices, loaded when the control opens (templates, products, …). */
+  loadOptions?: () => Promise<ControlOption[]>;
   condition?: (settings: Record<string, unknown>, style: StyleBag) => boolean;
 }
 
@@ -43,7 +46,7 @@ export interface WidgetViewProps {
   node: WidgetNode;
 }
 
-export type WidgetCategory = 'layout' | 'basic' | 'pro' | 'dynamic';
+export type WidgetCategory = 'layout' | 'basic' | 'pro' | 'dynamic' | 'site' | 'shop' | 'wordpress';
 
 export interface WidgetDefinition {
   type: string;
@@ -64,16 +67,39 @@ export const categoryLabels: Record<WidgetCategory, string> = {
   layout: 'Layout',
   basic: 'Basic',
   pro: 'Pro',
-  dynamic: 'Dynamic content',
+  dynamic: 'Post (dynamic content)',
+  site: 'Site',
+  shop: 'Shop',
+  wordpress: 'Site widgets',
 };
 
-const widgets = new Map<string, WidgetDefinition>();
+/** Order of the groups in the widget panel. */
+export const categoryOrder: WidgetCategory[] = ['basic', 'pro', 'dynamic', 'site', 'shop', 'wordpress', 'layout'];
 
-/** Other plugins can add widgets too; register before the builder renders. */
+const widgets = new Map<string, WidgetDefinition>();
+const listeners = new Set<() => void>();
+let version = 0;
+
+const changed = () => {
+  version += 1;
+  listeners.forEach((listener) => listener());
+};
+
+/** Other plugins can add widgets too (see plugins/rwp-shop/builder). The returned function removes it. */
 export function registerWidget(definition: WidgetDefinition): () => void {
   widgets.set(definition.type, definition);
-  return () => { widgets.delete(definition.type); };
+  changed();
+  return () => {
+    if (widgets.get(definition.type) !== definition) return;
+    widgets.delete(definition.type);
+    changed();
+  };
 }
 
 export const getWidget = (type: string) => widgets.get(type);
 export const getWidgets = () => [...widgets.values()];
+export const widgetsVersion = () => version;
+export function subscribeWidgets(listener: () => void) {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}

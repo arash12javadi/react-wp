@@ -214,7 +214,7 @@ export const accordion: WidgetDefinition = {
   type: 'accordion',
   label: 'Accordion',
   icon: 'accordion',
-  category: 'pro',
+  category: 'basic',
   keywords: ['faq', 'toggle', 'collapse'],
   defaults: () => ({
     settings: { items: [{ ...newAccordionItem(), title: 'What is included?' }, { ...newAccordionItem(), title: 'How do I get started?' }], firstOpen: true, multiple: false, icon: 'plus', faqSchema: false, titleTag: 'h3' },
@@ -424,7 +424,7 @@ export const html: WidgetDefinition = {
   type: 'html',
   label: 'Custom HTML',
   icon: 'html',
-  category: 'pro',
+  category: 'basic',
   keywords: ['code', 'embed', 'script', 'iframe'],
   adminOnly: true,
   defaults: () => ({ settings: { html: '<div class="my-embed">Hello from custom HTML</div>', css: '', js: '' } }),

@@ -232,12 +232,20 @@ An Elementor-style visual builder, shipped as a bundled plugin in [`plugins/rwp-
 
 **Setup**
 
-1. Run [`supabase/migrations/20260918_page_builder.sql`](./supabase/migrations/20260918_page_builder.sql) in the Supabase SQL Editor. Safe to re-run. New installations get it from `schema.sql`.
+1. Run [`supabase/migrations/20260918_page_builder.sql`](./supabase/migrations/20260918_page_builder.sql), then [`supabase/migrations/20260923_builder_widgets.sql`](./supabase/migrations/20260923_builder_widgets.sql) (needed by the Template, Loop, Mega Menu, Off-Canvas and Author Box widgets), in the Supabase SQL Editor. Both are safe to re-run. New installations get them from `schema.sql`.
 2. Activate **RWP Page Builder** under **Plugins**.
 3. Open any page from **Page Builder**, or with **Edit with Builder** in Pages & Posts. The builder runs full screen at `/builder/<page id>`.
 4. For form notification emails, set `SMTP_*` and `SUPABASE_SECRET_KEY` on the server. **Page Builder → Status** shows which are set. Entries are stored either way.
 
-**What it does.** Sections → columns → widgets, dragged from the panel or the navigator, with inner sections one level deep. Every element has Content, Style and Advanced tabs; responsive values are set per device (desktop, tablet 768px, mobile 375px) and inherit from larger devices. Widgets: Heading, Text Editor, Image (lightbox), Button, Divider, Spacer, Icon, Icon Box, Video (YouTube/Vimeo/self-hosted, click-to-load), Posts (grid/list/masonry, pagination), Form, Slideshow, Call to Action, Accordion (optional FAQ schema), Nav Menu, Custom HTML, and dynamic Post Title, Excerpt, Content, Featured Image and Post Meta. Also: dynamic tags such as `{{page.title}}` and `{{user.name|there}}`, entrance animations, sticky elements, custom CSS per element (`selector { … }`), global colours and fonts, section and page templates (with JSON import/export), 30 revisions per page, undo/redo, autosave to the browser, a preview of unsaved changes, and a conflict check when two people save the same page.
+**What it does.** Sections → columns → widgets, dragged from the panel or the navigator, with inner sections one level deep. Every element has Content, Style and Advanced tabs; responsive values are set per device (desktop, tablet 768px, mobile 375px) and inherit from larger devices. Widgets, grouped as in the panel:
+
+- **Basic:** Heading, Text Editor, Image (lightbox), Button, Divider, Spacer, Icon, Icon Box, Image Box, Video (YouTube/Vimeo/self-hosted, click-to-load), Google Maps (optional click-to-load), Star Rating, Image Carousel, Basic Gallery, Icon List, Counter, Progress Bar, Testimonial, Tabs, Accordion (optional FAQ schema), Toggle, Social Icons, Alert, SoundCloud, Shortcode, Custom HTML, Menu Anchor, Sidebar, Read More, Text Path.
+- **Pro:** Posts (grid/list/masonry, pagination), Posts Slider, Portfolio, Gallery (filterable grid/masonry/justified), Form, Login, Slideshow, Nav Menu, Menu (Mega Menu), Loop Grid, Loop Carousel, Carousel, Off-Canvas, Search (live results), Taxonomy Filter, Animated Headline, Price List, Price Table, Flip Box, Call to Action, Media Carousel, Testimonial Carousel, Reviews, Table of Contents, Countdown, Share Buttons, Blockquote, Template, Lottie, Code Highlight, Video Playlist, Hotspot, PayPal Button, Stripe Button, Progress Tracker, Facebook Button, Facebook Comments, Facebook Embed, Facebook Page.
+- **Post and Site:** Post Title, Excerpt, Content, Featured Image, Post Meta (Post Info), Site Logo, Site Title, Page Title, Author Box, Post Comments, Post Navigation, Archive Title, Archive Posts, Breadcrumbs, Sitemap.
+- **Site widgets** (WordPress's classic widgets): Pages, Calendar, Archives, Categories, Recent Posts, Search, Tag Cloud (of categories: posts have no tags), Recent Comments, Meta.
+- **Shop** (only while the shop plugin is active): Products, Product Categories, Menu Cart, Custom Add to Cart, Product Title, Product Images, Product Price, Add to Cart, Product Rating, Product Stock, Product Meta, Short Description, Product Content, Product Data Tabs, Additional Information, Product Related, Upsells, Archive Products, Archive Description, Cart, Checkout, My Account, Purchase Summary, Shop Notices.
+
+Sections and columns are Elementor's Container. Also: dynamic tags such as `{{page.title}}` and `{{user.name|there}}`, entrance animations, sticky elements, custom CSS per element (`selector { … }`), global colours and fonts, section and page templates (with JSON import/export), 30 revisions per page, undo/redo, autosave to the browser, a preview of unsaved changes, and a conflict check when two people save the same page.
 
 **How a layout is stored and shown.** The layout is a JSON tree in `pages.builder_data`; `is_builder_enabled` switches the public page from its classic content to the layout. The public site renders it with `BuilderRenderer`, which loads only the widget views: the editor, dnd-kit and the controls are a separate chunk that loads on `/builder/…` alone. Each element's styles are generated into one stylesheet with media queries at 1024px and 767px. In the editor the same generator runs for the previewed device only, so the canvas matches what that device shows without resizing the browser window.
 
@@ -249,7 +257,13 @@ Three rules are enforced by the database, not the editor:
 
 **Featured images.** Pages have no separate featured image column, so the Posts and Featured Image widgets use each post's social image (SEO panel → og:image).
 
-**Author names** in Post Meta come from `builder_author_names()`, which returns only the display names of people with published content: `profiles` itself is readable only when signed in, because it holds emails.
+**Author names** in Post Meta come from `builder_author_names()`, which returns only the display names of people with published content: `profiles` itself is readable only when signed in, because it holds emails. The Author Box uses `builder_author_profile(page id)` for the same reason: name, avatar and bio of one published page's author.
+
+**Templates on public pages.** Saved templates are readable only by builders, so the Template widget (and Loop Grid, Loop Carousel, Carousel, Tabs, Mega Menu and Off-Canvas, which can show a template) reads them through `builder_template_public()`. It returns a template only when a published builder page uses it, directly or through one template that page uses; unused templates stay private. Loop widgets render the template once per post with that post as `{{post.*}}` and as the Post Title/Featured Image/… widgets' current post.
+
+**Posts Slider** pages through posts in a grid of columns × rows per slide. Columns are responsive, so a slide holds a different number of posts per device; each slide is one query page, loaded when it (or its neighbour) is shown. **Taxonomy Filter** filters Posts, Posts Slider, Loop Grid, Loop Carousel and Archive Posts widgets on the same page that share its *filter group* name.
+
+**Shop widgets** live in [`plugins/rwp-shop/builder`](./plugins/rwp-shop/builder) and are registered by the shop plugin, so switching the shop off removes them. Single-product widgets show the product picked in the widget, or `?product=slug` from the URL, so one builder page can act as a product template. Cart, Checkout and My Account embed the shop's own screens, so prices and totals still come from `shop_calculate`.
 
 ### Backup and restore
 

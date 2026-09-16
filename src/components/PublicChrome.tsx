@@ -28,6 +28,37 @@ export const usePublicChrome = () => useContext(PublicChromeContext);
 
 const defaultMenuLinks: MenuLink[] = [{ label: 'Home', url: '/' }];
 
+/** Site settings, the session and the signed-in user's role. */
+const loadChromeState = async (): Promise<PublicChromeState> => {
+  const [settings, { data: sessionData }] = await Promise.all([
+    loadSettings().catch(() => defaultSettings),
+    getSupabaseClient().auth.getSession(),
+  ]);
+  const user = sessionData.session?.user;
+  let role: UserRole = 'subscriber';
+  if (user) {
+    const profile = await fetchProfile(user.id).catch(() => null);
+    role = profile ? profile.role : getUserRole(user);
+  }
+  return { settings, userId: user?.id || '', email: user?.email || '', role, ready: true };
+};
+
+/**
+ * The same data without the header and footer, for plugin components embedded in a page that
+ * already has them (e.g. the shop's cart or checkout placed with the page builder).
+ */
+export function PublicChromeProvider({ children }: { children: ReactNode }) {
+  const [state, setState] = useState<PublicChromeState>({
+    settings: defaultSettings, userId: '', email: '', role: 'subscriber', ready: false,
+  });
+  useEffect(() => {
+    let mounted = true;
+    void loadChromeState().then((loaded) => { if (mounted) setState(loaded); });
+    return () => { mounted = false; };
+  }, []);
+  return <PublicChromeContext.Provider value={state}>{children}</PublicChromeContext.Provider>;
+}
+
 /**
  * The public header, menu and footer for pages that are not rows in the pages table,
  * such as plugin routes. Mirrors what PublicContent loads for a regular page.
@@ -41,11 +72,9 @@ export default function PublicChrome({ children, layout = 'wide' }: { children: 
   useEffect(() => {
     let mounted = true;
     const load = async () => {
-      const supabase = getSupabaseClient();
-      const [settings, { data: menuOption }, { data: sessionData }] = await Promise.all([
-        loadSettings().catch(() => defaultSettings),
-        supabase.from('options').select('option_value').eq('option_name', 'menu_links').maybeSingle(),
-        supabase.auth.getSession(),
+      const [chromeState, { data: menuOption }] = await Promise.all([
+        loadChromeState(),
+        getSupabaseClient().from('options').select('option_value').eq('option_name', 'menu_links').maybeSingle(),
       ]);
       if (!mounted) return;
       if (menuOption?.option_value) {
@@ -56,15 +85,7 @@ export default function PublicChrome({ children, layout = 'wide' }: { children: 
           // Keep the default menu when the option contains invalid JSON.
         }
       }
-      const user = sessionData.session?.user;
-      let role: UserRole = 'subscriber';
-      if (user) {
-        const profile = await fetchProfile(user.id).catch(() => null);
-        role = profile ? profile.role : getUserRole(user);
-      }
-      if (mounted) {
-        setState({ settings, userId: user?.id || '', email: user?.email || '', role, ready: true });
-      }
+      setState(chromeState);
     };
     void load();
     return () => { mounted = false; };

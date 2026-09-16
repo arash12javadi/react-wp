@@ -1,8 +1,8 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import { Lock, Search } from 'lucide-react';
 import { Icon } from '../lib/icons';
-import { categoryLabels, getWidgets, type WidgetCategory } from '../lib/registry';
+import { categoryLabels, categoryOrder, getWidgets, subscribeWidgets, widgetsVersion } from '../lib/registry';
 import { useEditor, useStore, type DragItem } from './store';
 import styles from './editor.module.css';
 
@@ -46,14 +46,16 @@ export default function WidgetPanel() {
   const canManageOptions = useEditor((state) => state.canManageOptions);
   const [query, setQuery] = useState('');
   const [notice, setNotice] = useState('');
-  const widgets = getWidgets();
+  // Plugins (e.g. the shop) add and remove widgets when they are switched on or off.
+  const version = useSyncExternalStore(subscribeWidgets, widgetsVersion, widgetsVersion);
+  const widgets = useMemo(() => (version >= 0 ? getWidgets() : []), [version]);
 
   const grouped = useMemo(() => {
     const term = query.trim().toLowerCase();
     const matches = widgets.filter((widget) => !term
       || widget.label.toLowerCase().includes(term)
       || widget.keywords?.some((keyword) => keyword.includes(term)));
-    return (['basic', 'pro', 'dynamic', 'layout'] as WidgetCategory[])
+    return categoryOrder
       .map((category) => ({ category, items: matches.filter((widget) => widget.category === category) }))
       .filter((group) => group.items.length);
   }, [widgets, query]);

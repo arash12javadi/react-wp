@@ -1,0 +1,81 @@
+/*
+ * Page builder shop widgets. Global rwpb-shop-* / rwpb-product-* class names (not a CSS module), so the
+ * builder's generated widget CSS and Custom CSS can target them, like the rest of render/builder.css.
+ */
+
+.rwpb-shop-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
+.rwpb-shop-section { display: flex; flex-direction: column; gap: 16px; }
+.rwpb-root .rwpb-shop-heading { margin: 0; font-size: 1.4rem; }
+
+/* Full shop screens embedded in a page: the page already provides the width and padding. */
+.rwpb-shop-embed > main { max-width: none; margin: 0; padding: 0; }
+
+.rwpb-shop-categories { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.rwpb-shop-category { display: flex; flex-direction: column; gap: 10px; color: inherit; text-align: center; text-decoration: none; }
+.rwpb-shop-category-image { display: grid; place-items: center; aspect-ratio: 1; overflow: hidden; border-radius: 10px; color: #94a3b8; background: #f1f5f9; }
+.rwpb-shop-category-image img { width: 100%; height: 100%; object-fit: cover; transition: transform .4s ease; }
+.rwpb-shop-category:hover img { transform: scale(1.05); }
+.rwpb-shop-category-name { color: var(--rwpb-secondary); font-weight: 600; }
+
+/* Menu Cart */
+.rwpb-menu-cart { position: relative; display: flex; }
+.rwpb-menu-cart-toggle { display: inline-flex; align-items: center; gap: 10px; padding: 6px; border: 0; color: var(--rwpb-secondary); background: none; font: inherit; text-decoration: none; cursor: pointer; }
+.rwpb-menu-cart-icon { position: relative; display: inline-flex; }
+.rwpb-menu-cart-badge {
+  position: absolute; top: -8px; right: -10px; display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px;
+  border-radius: 99px; color: #fff; background: var(--rwpb-primary); font-size: 11px; font-weight: 700; line-height: 1;
+}
+.rwpb-menu-cart-subtotal { font-weight: 600; }
+.rwpb-menu-cart-panel {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 70; width: min(340px, 90vw); padding: 16px; border: 1px solid #e2e8f0;
+  border-radius: 12px; background: #fff; box-shadow: 0 20px 45px -15px rgb(15 23 42 / 35%); animation: rwpb-fade .15s ease;
+}
+.rwpb-menu-cart-empty { margin: 0; color: #64748b; text-align: center; }
+.rwpb-menu-cart-items { max-height: 320px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.rwpb-menu-cart-items li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
+.rwpb-menu-cart-items img { width: 48px; height: 48px; flex: none; border-radius: 6px; object-fit: cover; }
+.rwpb-menu-cart-line { display: flex; flex: 1; flex-direction: column; min-width: 0; font-size: .9rem; }
+.rwpb-menu-cart-line a { color: var(--rwpb-secondary); font-weight: 600; text-decoration: none; }
+.rwpb-menu-cart-line span { color: #64748b; }
+.rwpb-menu-cart-items button { width: 26px; height: 26px; flex: none; border: 0; border-radius: 50%; color: #64748b; background: #f1f5f9; font-size: 16px; line-height: 1; cursor: pointer; }
+.rwpb-menu-cart-items button:hover { color: #b91c1c; background: #fee2e2; }
+.rwpb-menu-cart-total { display: flex; justify-content: space-between; margin: 12px 0; }
+.rwpb-menu-cart-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.rwpb-button-ghost { color: var(--rwpb-primary); background: transparent; box-shadow: inset 0 0 0 1px var(--rwpb-primary); }
+
+/* Single product */
+.rwpb-root .rwpb-product-title { margin: 0; }
+.rwpb-product-title a { color: inherit; text-decoration: none; }
+.rwpb-product-images-main { position: relative; overflow: hidden; border-radius: 10px; background: #f8fafc; line-height: 0; }
+.rwpb-product-images-main > button { display: block; width: 100%; padding: 0; border: 0; background: none; cursor: zoom-in; }
+.rwpb-product-images-main img { width: 100%; height: auto; }
+.rwpb-product-images-main > span { position: absolute; top: 12px; left: 12px; z-index: 1; line-height: 1.4; }
+.rwpb-product-images-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px; margin-top: 10px; }
+.rwpb-product-images-thumbs button { padding: 0; overflow: hidden; border: 2px solid transparent; border-radius: 6px; background: none; line-height: 0; cursor: pointer; opacity: .7; }
+.rwpb-product-images-thumbs button[aria-pressed='true'] { border-color: var(--rwpb-primary); opacity: 1; }
+.rwpb-product-images-thumbs img { width: 100%; aspect-ratio: 1; object-fit: cover; }
+.rwpb-product-price { font-size: 1.5rem; font-weight: 700; }
+.rwpb-product-rating { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rwpb-product-stock { margin: 0; color: #15803d; font-weight: 600; }
+.rwpb-product-stock.is-out { color: #b91c1c; }
+.rwpb-product-meta { display: flex; flex-direction: column; gap: 4px; color: #64748b; font-size: .92rem; }
+.rwpb-product-meta-inline { flex-direction: row; flex-wrap: wrap; gap: 4px 18px; }
+.rwpb-product-attributes { width: 100%; border-collapse: collapse; }
+.rwpb-product-attributes th, .rwpb-product-attributes td { padding: 10px 12px; border-bottom: 1px solid #e2e8f0; text-align: left; }
+.rwpb-product-attributes th { width: 35%; color: var(--rwpb-secondary); font-weight: 600; }
+.rwpb-product-review { padding: 12px 0; border-bottom: 1px solid #f1f5f9; }
+.rwpb-product-review p { margin: 4px 0; }
+
+/* Add to cart */
+.rwpb-add-to-cart { display: flex; flex-direction: column; gap: 12px; }
+.rwpb-add-to-cart-variations { display: grid; gap: 10px; }
+.rwpb-add-to-cart-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.rwpb-add-to-cart-qty { width: 84px; }
+.rwpb-add-to-cart-button:disabled { opacity: .55; cursor: not-allowed; }
+
+/* Notices */
+.rwpb-shop-notices { display: flex; flex-direction: column; gap: 8px; }
+.rwpb-shop-notice { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 10px 16px; border-radius: 8px; color: #fff; background: var(--rwpb-secondary); text-align: center; }
+.rwpb-shop-notice-success { color: #065f46; background: #d1fae5; }
+.rwpb-shop-notice a { color: inherit; font-weight: 700; }
+.rwpb-shop-notice button { border: 0; color: inherit; background: none; font-size: 20px; line-height: 1; cursor: pointer; opacity: .8; }

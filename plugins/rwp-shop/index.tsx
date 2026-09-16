@@ -14,6 +14,7 @@ import { CartHeaderLink, ProductCard } from './public/components';
 import { fetchCatalog } from './lib/api';
 import { cart } from './lib/cart';
 import { loadShopSettings, useShopSettings } from './lib/settings';
+import { registerShopWidgets } from './builder/widgets';
 import type { CatalogProduct } from './lib/types';
 import styles from './public/shop.module.css';
 
@@ -85,6 +86,9 @@ export const shopPluginCleanup = defineRwpPlugin(manifest, ({ admin, routes, hea
     routes.register({ path: '/my-account/*', component: AccountPage }),
 
     header.register({ id: 'rwp-shop-cart', component: HeaderCart }),
+
+    // Page builder widgets (Products, Add to Cart, Cart, Checkout…), present only while the shop is active.
+    registerShopWidgets(),
 
     shortcodes.register({
       name: 'rwp_products',
