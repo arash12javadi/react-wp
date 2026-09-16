@@ -15,8 +15,18 @@ import { fetchCatalog } from './lib/api';
 import { cart } from './lib/cart';
 import { loadShopSettings, useShopSettings } from './lib/settings';
 import { registerShopWidgets } from './builder/widgets';
+import { withShopLayout } from './builder/ShopLayoutRoute';
 import type { CatalogProduct } from './lib/types';
 import styles from './public/shop.module.css';
+
+const ShopRoutes = {
+  shop: withShopLayout('shop', ShopPage),
+  archive: withShopLayout('product_category', ShopPage),
+  product: withShopLayout('product', ProductPage),
+  cart: withShopLayout('cart', CartPage),
+  checkout: withShopLayout('checkout', CheckoutPage),
+  account: withShopLayout('my_account', AccountPage),
+};
 
 function HeaderCart() {
   const { settings, ready } = useShopSettings();
@@ -75,15 +85,16 @@ export const shopPluginCleanup = defineRwpPlugin(manifest, ({ admin, routes, hea
     admin.registerDashboardWidget({ id: 'rwp-shop-summary', title: '🛒 Shop at a glance', capability: 'manage_shop', component: ShopDashboardWidget }),
     admin.registerSetupCheck({ id: 'rwp-shop', capability: 'manage_shop', run: shopSetupNotices }),
 
-    routes.register({ path: '/shop', component: ShopPage }),
-    routes.register({ path: '/product-category/:slug', component: ShopPage }),
-    routes.register({ path: '/product-tag/:slug', component: ShopPage }),
-    routes.register({ path: '/product/:slug', component: ProductPage }),
-    routes.register({ path: '/cart', component: CartPage }),
-    routes.register({ path: '/checkout', component: CheckoutPage }),
+    // Page Builder → Templates (shop) replace these screens once published; see ShopLayoutRoute.
+    routes.register({ path: '/shop', component: ShopRoutes.shop }),
+    routes.register({ path: '/product-category/:slug', component: ShopRoutes.archive }),
+    routes.register({ path: '/product-tag/:slug', component: ShopRoutes.archive }),
+    routes.register({ path: '/product/:slug', component: ShopRoutes.product }),
+    routes.register({ path: '/cart', component: ShopRoutes.cart }),
+    routes.register({ path: '/checkout', component: ShopRoutes.checkout }),
     routes.register({ path: '/checkout/order-received/:id', component: OrderReceivedPage }),
     routes.register({ path: '/checkout/order-pay/:id', component: OrderPayPage }),
-    routes.register({ path: '/my-account/*', component: AccountPage }),
+    routes.register({ path: '/my-account/*', component: ShopRoutes.account }),
 
     header.register({ id: 'rwp-shop-cart', component: HeaderCart }),
 

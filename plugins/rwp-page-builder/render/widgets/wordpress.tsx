@@ -317,7 +317,7 @@ export const wpSearch: WidgetDefinition = {
     const id = useId();
     const submit = (event: FormEvent) => {
       event.preventDefault();
-      if (mode === 'view' && term.trim()) window.location.href = `/?s=${encodeURIComponent(term.trim())}`;
+      if (mode === 'view' && term.trim()) window.location.href = `/search?s=${encodeURIComponent(term.trim())}`;
     };
     return (
       <WpWidget settings={node.settings} fallbackTitle="Search" className="rwpb-wp-search">

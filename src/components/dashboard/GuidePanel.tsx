@@ -245,7 +245,7 @@ export default function GuidePanel({ navigate }: { navigate: Navigate }) {
       {builderActive && (
         <Section id="builder" icon="🧱" title="Page builder">
           <ul>
-            <li>Open any page with <strong>Edit with Builder</strong> in Pages &amp; Posts, or from Page Builder → Pages. Saving from the builder switches that page to its layout.</li>
+            <li>Open any page with <strong>Edit with Builder</strong> in Pages &amp; Posts, or from Page Builder → Site Pages. Saving from the builder switches that page to its layout. The header, footer, single posts, 404, search results, archives and store screens are designed under Page Builder → Templates.</li>
             <li>Build with sections → columns → widgets. Every element has Content, Style and Advanced tabs, set per device (desktop, tablet, mobile).</li>
             <li>Text fields accept <strong>dynamic tags</strong>, replaced when the page is shown. Add a fallback after a bar: <code>{'{{user.name|there}}'}</code>.</li>
           </ul>

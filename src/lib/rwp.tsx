@@ -4,6 +4,8 @@ import type { Page } from './types';
 export type RwpActionName =
   | 'rwp_init'
   | 'rwp_admin_loaded'
+  /** The admin has a signed-in user who may use it; receives their role. */
+  | 'rwp_admin_ready'
   | 'rwp_public_loaded'
   | 'rwp_user_logged_in'
   | 'rwp_user_logged_out'
@@ -141,6 +143,35 @@ export interface RwpContentAction {
   show?: (page: Page) => boolean;
 }
 
+/** What a site template is shown for. Archives carry what is being listed. */
+export type RwpArchive =
+  | { kind: 'category'; slug: string }
+  | { kind: 'author'; id: string }
+  | { kind: 'date'; year: number; month?: number }
+  | { kind: 'search'; term: string };
+
+export interface RwpTemplateRenderProps {
+  /** e.g. 'header', 'single_post', 'archive_category'. */
+  type: string;
+  /** The post or page being viewed, for single post and page templates. */
+  post?: Page | null;
+  archive?: RwpArchive;
+  /** The content width of the screen around a header or footer ('boxed', 'wide', 'full'). */
+  layoutWidth?: string;
+}
+
+/**
+ * Replaces parts of the public site (header, footer, 404, single post, archives…) with designed
+ * templates. has() must answer synchronously once preload() has resolved, so the public site
+ * never flashes the default screen before the template.
+ */
+export interface RwpTemplateProvider {
+  id: string;
+  preload: () => Promise<void>;
+  has: (type: string) => boolean;
+  component: ComponentType<RwpTemplateRenderProps>;
+}
+
 export interface RwpPluginContext {
   actions: {
     add: (name: RwpActionName, callback: (...args: unknown[]) => void) => () => void;
@@ -171,6 +202,8 @@ export interface RwpPluginContext {
     registerRenderer: (renderer: RwpContentRenderer) => () => void;
     /** Adds a link to each row in Pages & Posts and to the content editor. */
     registerAction: (action: RwpContentAction) => () => void;
+    /** Provides site templates (see RwpTemplateProvider). The last registered provider wins. */
+    registerTemplateProvider: (provider: RwpTemplateProvider) => () => void;
   };
 }
 
@@ -234,6 +267,7 @@ const routes = new Map<string, RwpRoute>();
 const headerItems = new Map<string, RwpHeaderItem>();
 const contentRenderers = new Map<string, RwpContentRenderer>();
 const contentActions = new Map<string, RwpContentAction>();
+const templateProviders = new Map<string, RwpTemplateProvider>();
 interface PluginRecord {
   plugin: RwpPlugin;
   cleanup?: () => void;
@@ -266,6 +300,7 @@ export const rwp: RwpPluginContext & {
   getHeaderItems: () => RwpHeaderItem[];
   getContentRenderer: (page: Page) => RwpContentRenderer | null;
   getContentActions: (page: Page) => RwpContentAction[];
+  getTemplateProvider: () => RwpTemplateProvider | null;
   getPlugins: () => RwpInstalledPlugin[];
 } = {
   actions: {
@@ -356,6 +391,14 @@ export const rwp: RwpPluginContext & {
         notifySubscribers();
       };
     },
+    registerTemplateProvider: (provider) => {
+      templateProviders.set(provider.id, provider);
+      notifySubscribers();
+      return () => {
+        templateProviders.delete(provider.id);
+        notifySubscribers();
+      };
+    },
   },
   registerPlugin: (plugin) => {
     if (plugins.has(plugin.id)) throw new Error(`RWP plugin "${plugin.id}" is already registered.`);
@@ -405,6 +448,7 @@ export const rwp: RwpPluginContext & {
   getHeaderItems: () => [...headerItems.values()],
   getContentRenderer: (page) => [...contentRenderers.values()].find((renderer) => renderer.match(page)) || null,
   getContentActions: (page) => [...contentActions.values()].filter((action) => !action.show || action.show(page)),
+  getTemplateProvider: () => [...templateProviders.values()].pop() || null,
   getPlugins: () => [...plugins.values()].map(({ plugin, active }) => ({ ...plugin, active })),
   subscribe: (listener) => {
     subscribers.add(listener);

@@ -18,6 +18,7 @@ import { loopCarousel, loopGrid, megaMenu, portfolio, postsSlider, taxonomyFilte
 import {
   archivePosts, archiveTitle, authorBox, breadcrumbs, pageTitle, postComments, postNavigation, sidebar, siteLogo, siteTitle, sitemap,
 } from './site';
+import { themeFooter, themeHeader } from './theme';
 import {
   wpArchives, wpCalendar, wpCategories, wpMeta, wpPages, wpRecentComments, wpRecentPosts, wpSearch, wpTagCloud,
 } from './wordpress';
@@ -40,7 +41,7 @@ export const coreWidgets = [
   // Post (dynamic content)
   postTitle, postExcerpt, postContent, featuredImage, postMeta,
   // Site
-  siteLogo, siteTitle, pageTitle, authorBox, postComments, postNavigation, archiveTitle, archivePosts, breadcrumbs, sitemap,
+  themeHeader, themeFooter, siteLogo, siteTitle, pageTitle, authorBox, postComments, postNavigation, archiveTitle, archivePosts, breadcrumbs, sitemap,
   // WordPress-style site widgets
   wpPages, wpCalendar, wpArchives, wpCategories, wpRecentPosts, wpSearch, wpTagCloud, wpRecentComments, wpMeta,
 ];

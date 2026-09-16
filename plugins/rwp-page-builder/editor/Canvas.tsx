@@ -1,6 +1,7 @@
-import { memo, useMemo, useRef, useState, type ClipboardEvent, type ReactNode, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type ClipboardEvent, type ReactNode, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import { Copy, GripVertical, LayoutTemplate, Move, Pencil, Plus, Trash2 } from 'lucide-react';
+import { getSupabaseClient } from '../../../src/lib/db';
 import { globalCss, globalVars, googleFontFamilies, useGlobalStyles, useGoogleFonts } from '../lib/globals';
 import { findNode, locate } from '../lib/tree';
 import type { BuilderNode, ColumnNode, SectionNode } from '../lib/types';
@@ -192,6 +193,22 @@ const CanvasContent = memo(function CanvasContent({ content }: { content: Sectio
   return <>{content.map((node) => <NodeView key={node.id} node={node} />)}</>;
 });
 
+/** The newest published post (single_post) or page (page) to preview a template with, or null. */
+function useTemplateSample(type: string | null | undefined): number | null {
+  const [id, setId] = useState<number | null>(null);
+  useEffect(() => {
+    if (type !== 'single_post' && type !== 'page') { setId(null); return undefined; }
+    let active = true;
+    let query = getSupabaseClient().from('pages').select('id').eq('status', 'published').eq('is_post', type === 'single_post');
+    if (type === 'page') query = query.eq('is_site_template', false).eq('is_builder_enabled', false);
+    void query.order('created_at', { ascending: false }).limit(1).then(({ data }) => {
+      if (active) setId((data as Array<{ id: number }> | null)?.[0]?.id ?? null);
+    });
+    return () => { active = false; };
+  }, [type]);
+  return id;
+}
+
 export default function Canvas({ onOpenTemplates }: { onOpenTemplates: () => void }) {
   const store = useStore();
   const { actions } = store;
@@ -202,8 +219,10 @@ export default function Canvas({ onOpenTemplates }: { onOpenTemplates: () => voi
   const globals = useGlobalStyles();
   useGoogleFonts(googleFontFamilies(globals, doc));
 
-  // Dynamic tags preview against this page, including a title edited but not yet saved.
-  const previewPage = useMemo(() => ({ ...page, title }), [page, title]);
+  // Dynamic tags preview against this page, including a title edited but not yet saved. The Single
+  // Post and Standard Pages templates preview against the latest published post or page instead.
+  const sampleId = useTemplateSample(page.is_site_template ? page.template_type : null);
+  const previewPage = useMemo(() => (sampleId ? { id: sampleId } : { ...page, title }), [page, title, sampleId]);
   const dynamic = useDynamicContext(previewPage);
 
   const css = useMemo(

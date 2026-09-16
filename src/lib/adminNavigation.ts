@@ -80,6 +80,11 @@ const legacySections: Record<string, [string, string]> = {
   'rwp-shop-products': ['rwp-shop', 'products'],
 };
 
+/** Renamed or merged submenu items, per section. */
+const legacySubsections: Record<string, Record<string, string>> = {
+  'rwp-page-builder': { pages: 'site-pages', 'shop-pages': 'templates' },
+};
+
 const allowed = (role: UserRole, capability?: string) =>
   !capability || hasCapability(role, capability as Capability);
 
@@ -103,7 +108,8 @@ export const resolveAdminLocation = (
 ): { section: string; subsection: string } => {
   const legacy = section ? legacySections[section] : undefined;
   const wantedSection = legacy ? legacy[0] : section;
-  const wantedSub = legacy && !subsection ? legacy[1] : subsection;
+  const requestedSub = legacy && !subsection ? legacy[1] : subsection;
+  const wantedSub = (wantedSection && requestedSub && legacySubsections[wantedSection]?.[requestedSub]) || requestedSub;
   // Roles admitted only for uploads have no Pages & Posts, so they land on Media.
   const item = navigation.find((entry) => entry.id === wantedSection) || navigation[0];
   if (!item) return { section: 'profile', subsection: '' };

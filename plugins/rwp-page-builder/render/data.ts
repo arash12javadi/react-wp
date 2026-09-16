@@ -16,6 +16,21 @@ export interface PostQuery {
   search?: string;
   /** Pages instead of posts. */
   pages?: boolean;
+  /** Author archive: posts by this profile id. */
+  authorId?: string;
+  /** Date archive: created_at in [from, to), ISO strings. */
+  from?: string;
+  to?: string;
+}
+
+let templateColumn: Promise<boolean> | null = null;
+
+/** Site templates are pages rows; lists of pages must leave them out once 20260925_site_templates.sql has added the column. */
+function hasTemplateColumn(): Promise<boolean> {
+  if (!templateColumn) {
+    templateColumn = Promise.resolve(getSupabaseClient().from('pages').select('is_site_template').limit(1)).then(({ error }) => !error);
+  }
+  return templateColumn;
 }
 
 interface PageRow {
@@ -72,6 +87,10 @@ export async function fetchPosts(query: PostQuery, excerptLength = 30): Promise<
     .order(query.orderBy, { ascending: query.order === 'asc' })
     .range(from, from + query.limit - 1);
   if (query.categoryId) request = request.eq('category_id', query.categoryId);
+  if (query.authorId) request = request.eq('author_id', query.authorId);
+  if (query.from) request = request.gte('created_at', query.from);
+  if (query.to) request = request.lt('created_at', query.to);
+  if (query.pages && await hasTemplateColumn()) request = request.eq('is_site_template', false);
   if (query.excludeId) request = request.neq('id', query.excludeId);
   // % and _ are LIKE wildcards; escaped so a search for "50%" means the characters.
   if (query.search?.trim()) request = request.ilike('title', `%${query.search.trim().replace(/[\\%_]/g, (char) => `\\${char}`)}%`);
@@ -80,6 +99,11 @@ export async function fetchPosts(query: PostQuery, excerptLength = 30): Promise<
   const rows = (data || []) as unknown as PageRow[];
   await authorNames(rows.map((row) => row.author_id || ''));
   return { posts: rows.map((row) => toDynamicPost(row, excerptLength)), total: count || 0 };
+}
+
+/** An author's display name, for author archives. Empty when they have no published content. */
+export async function fetchAuthorName(id: string): Promise<string> {
+  return (await authorNames([id])).get(id) || '';
 }
 
 export async function fetchDynamicPage(id: number): Promise<DynamicPost | null> {
@@ -150,6 +174,7 @@ export async function fetchPostLinks(options: { pages?: boolean; limit?: number;
     .eq('is_post', !options.pages)
     .order(options.orderBy || 'created_at', { ascending: Boolean(options.ascending) })
     .limit(options.limit || 500);
+  if (options.pages && await hasTemplateColumn()) request = request.eq('is_site_template', false);
   if (options.from) request = request.gte('created_at', options.from);
   if (options.to) request = request.lt('created_at', options.to);
   const { data, error } = await request;

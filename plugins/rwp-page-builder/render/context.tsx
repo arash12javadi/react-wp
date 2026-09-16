@@ -1,4 +1,5 @@
 import { createContext, useContext, type ComponentType, type HTMLAttributes, type ReactNode } from 'react';
+import type { RwpArchive } from '../../../src/lib/plugin-api';
 import type { DynamicContext } from '../lib/dynamic';
 import type { BuilderNode, Device } from '../lib/types';
 
@@ -37,6 +38,22 @@ const RenderContext = createContext<RenderContextValue>({
 });
 
 export const useRenderContext = () => useContext(RenderContext);
+
+/**
+ * Set while a site template is shown in place of another screen (Page Builder → Templates):
+ * which template, and on archives what is being listed. Null on ordinary pages and in the editor.
+ */
+export interface TemplateContextValue {
+  type: string;
+  archive?: RwpArchive;
+  /** Around a header or footer: the page's content width, which Theme Header/Footer follow by default. */
+  layoutWidth?: string;
+}
+
+const TemplateContext = createContext<TemplateContextValue | null>(null);
+
+export const TemplateProvider = TemplateContext.Provider;
+export const useTemplateContext = () => useContext(TemplateContext);
 
 export function RenderProvider({ value, children }: { value: RenderContextValue; children: ReactNode }) {
   return <RenderContext.Provider value={value}>{children}</RenderContext.Provider>;

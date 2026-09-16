@@ -2,7 +2,11 @@ import { lazy, Suspense } from 'react';
 import { defineRwpPlugin, type RwpAdminPageProps, type RwpRouteProps } from '../../src/lib/plugin-api';
 import manifest from './manifest.json';
 import { BuilderPageContent } from './render/BuilderRenderer';
+import SiteTemplateView from './render/SiteTemplateView';
 import { fetchServerStatus } from './lib/api';
+import { getWidget } from './lib/registry';
+import { installDefaultContent, liveTemplate, preloadLiveTemplates } from './lib/siteTemplates';
+import { hasCapability, type UserRole } from '../../src/lib/roles';
 
 /**
  * The editor (dnd-kit, the inspector, every control) is a separate chunk, loaded only on
@@ -31,14 +35,15 @@ const hasLayout = (page: object) => {
   return Boolean(record.is_builder_enabled && Array.isArray(record.builder_data?.content));
 };
 
-export const pageBuilderCleanup = defineRwpPlugin(manifest, ({ admin, routes, content }) => {
+export const pageBuilderCleanup = defineRwpPlugin(manifest, ({ admin, routes, content, actions }) => {
   const cleanups = [
     admin.registerPage({
       id: 'rwp-page-builder', label: 'Page Builder', icon: '🧱', capability: 'edit_posts', component: AdminScreen,
       submenu: [
-        { id: 'pages', label: 'Pages', icon: '📄' },
+        // Old ids (pages, shop-pages) are mapped in src/lib/adminNavigation.ts.
+        { id: 'site-pages', label: 'Site Pages', icon: '🌐' },
         { id: 'templates', label: 'Templates', icon: '🗂️' },
-        { id: 'submissions', label: 'Form submissions', icon: '📥', capability: 'edit_pages' },
+        { id: 'submissions', label: 'Form Submissions', icon: '📥', capability: 'edit_pages' },
         { id: 'status', label: 'Status', icon: '🩺', capability: 'edit_pages' },
       ],
     }),
@@ -52,7 +57,7 @@ export const pageBuilderCleanup = defineRwpPlugin(manifest, ({ admin, routes, co
           id: 'builder-form-email',
           level: 'optional',
           title: 'Page builder forms cannot send notification emails yet',
-          description: `Form entries are stored either way (Page Builder → Form submissions). To be emailed about them, the server needs ${[!status.smtp && 'SMTP settings', !status.secretKey && 'SUPABASE_SECRET_KEY'].filter(Boolean).join(' and ')}.`,
+          description: `Form entries are stored either way (Page Builder → Form Submissions). To be emailed about them, the server needs ${[!status.smtp && 'SMTP settings', !status.secretKey && 'SUPABASE_SECRET_KEY'].filter(Boolean).join(' and ')}.`,
           steps: [
             ...(!status.smtp ? ['Add SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS and SMTP_FROM to .env.local.'] : []),
             ...(!status.secretKey ? ['Add SUPABASE_SECRET_KEY (Supabase → Project Settings → API Keys → secret key) to .env.local.'] : []),
@@ -74,6 +79,20 @@ export const pageBuilderCleanup = defineRwpPlugin(manifest, ({ admin, routes, co
       id: 'rwp-page-builder-edit',
       label: 'Edit with Builder',
       href: (page) => `/builder/${page.id}`,
+    }),
+    // Header, footer, single post, 404, search, archives and shop screens (Page Builder → Templates).
+    content.registerTemplateProvider({
+      id: 'rwp-page-builder',
+      preload: preloadLiveTemplates,
+      has: (type) => Boolean(liveTemplate(type)),
+      component: SiteTemplateView,
+    }),
+    // Default pages and templates, created once and published, the first time someone who may create them opens the admin.
+    actions.add('rwp_admin_ready', (role) => {
+      const userRole = role as UserRole;
+      if (hasCapability(userRole, 'manage_options') && hasCapability(userRole, 'manage_shop')) void installDefaultContent('site');
+      // Shop widgets are registered by the shop plugin, so they exist only while it is active.
+      if (hasCapability(userRole, 'manage_shop') && getWidget('shop-cart')) void installDefaultContent('shop');
     }),
   ];
   return () => cleanups.forEach((cleanup) => cleanup());

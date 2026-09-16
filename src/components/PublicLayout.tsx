@@ -3,6 +3,7 @@ import styles from './PublicLayout.module.css';
 import AdminToolbar from './AdminToolbar';
 import { ThemeChromeProvider, ThemeFooter, ThemeHeader, ThemePreviewBanner, useThemeDocument, type ThemeChrome } from './theme/ThemeLayoutRenderer';
 import { loadWidgetAreas } from '../lib/widgets';
+import SiteTemplate from './SiteTemplate';
 import type { UserRole } from '../lib/roles';
 import type { SiteBranding } from '../lib/settings';
 import type { DynamicMenuLink } from '../lib/dynamicMenu';
@@ -77,9 +78,10 @@ export default function PublicLayout({
             editLink={editLink}
           />
         )}
-        <ThemeHeader layoutWidth={layout} />
+        {/* A published Page Builder header or footer template replaces the Theme Editor's. */}
+        <SiteTemplate types={['header']} layoutWidth={layout} fallback={<ThemeHeader layoutWidth={layout} />} />
         {children}
-        <ThemeFooter layoutWidth={layout} />
+        <SiteTemplate types={['footer']} layoutWidth={layout} fallback={<ThemeFooter layoutWidth={layout} />} />
         <ThemePreviewBanner />
       </div>
     </ThemeChromeProvider>

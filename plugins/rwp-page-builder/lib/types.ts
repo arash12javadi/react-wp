@@ -112,6 +112,9 @@ export interface BuilderPage {
   updated_at: string;
   builder_data: BuilderDocument | null;
   is_builder_enabled: boolean;
+  /** Set by 20260925_site_templates.sql; absent before it runs. */
+  is_site_template?: boolean;
+  template_type?: string | null;
 }
 
 export type TemplateType = 'page' | 'section';

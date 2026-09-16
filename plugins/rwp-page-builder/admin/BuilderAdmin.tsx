@@ -6,11 +6,17 @@ import {
   createTemplate, deleteSubmissions, deleteTemplate, fetchServerStatus, listBuilderPages, listSubmissions, listTemplates,
   renameTemplate, setSubmissionStatus, type Submission,
 } from '../lib/api';
+import { getWidget } from '../lib/registry';
+import {
+  createSiteTemplate, customizeArchive, listSiteTemplates, templateSlots, type TemplateGroup, type TemplateRow, type TemplateSlot,
+} from '../lib/siteTemplates';
 import type { BuilderTemplate, SectionNode, TemplateType } from '../lib/types';
+import { loadSettings } from '../../../src/lib/settings';
 import type { RwpAdminPageProps } from '../../../src/lib/plugin-api';
 import styles from './admin.module.css';
 
-type Tab = 'pages' | 'templates' | 'submissions' | 'status';
+type Tab = 'site-pages' | 'templates' | 'submissions' | 'status';
+const tabs: Tab[] = ['site-pages', 'templates', 'submissions', 'status'];
 
 function useRole() {
   const [role, setRole] = useState<UserRole | null>(null);
@@ -24,7 +30,132 @@ function useRole() {
   return role;
 }
 
-function PagesTab() {
+const groupInfo: Array<{ group: TemplateGroup; title: string; intro: string }> = [
+  { group: 'parts', title: 'Layout Parts', intro: 'Shown on every public page, in place of the Theme Editor’s header and footer.' },
+  { group: 'content', title: 'System Templates', intro: 'Standard pages and posts without their own builder layout, the 404 page and search results.' },
+  { group: 'archive', title: 'Archives', intro: 'The shared layout is used for every archive until you customize a single archive type.' },
+  { group: 'shop', title: 'Shop Templates', intro: 'The store screens. Cart, checkout and account widgets embed the real screens, so prices and payments are unchanged.' },
+];
+
+type CorePage = { id: number; title: string; slug: string; status: string; is_builder_enabled: boolean } | null;
+
+function StatusBadge({ row, fallbackLabel }: { row?: { status: string; is_builder_enabled: boolean } | null; fallbackLabel: string }) {
+  if (!row) return <span className={styles.badgeGrey}>{fallbackLabel}</span>;
+  if (row.status === 'published' && row.is_builder_enabled) return <span className={styles.badgeGreen}>Live</span>;
+  return <span className={styles.badgeBlue} title="Publish it from the builder to use it on the site">{row.is_builder_enabled ? 'Draft' : 'Builder off'}</span>;
+}
+
+/** Core pages and site templates. Administrators and Shop Managers only (enforced by the database too). */
+function SiteTemplatesPanel({ navigate }: { navigate: RwpAdminPageProps['navigate'] }) {
+  const [rows, setRows] = useState<TemplateRow[] | null>(null);
+  const [core, setCore] = useState<{ home: CorePage; blog: CorePage } | null>(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState('');
+  // Shop widgets are registered by the shop plugin, so their absence means it is switched off.
+  const shopActive = Boolean(getWidget('shop-cart'));
+
+  useEffect(() => {
+    listSiteTemplates().then(setRows).catch((loadError: unknown) => setError(loadError instanceof Error ? loadError.message : 'Could not load site templates.'));
+    void (async () => {
+      const settings = await loadSettings().catch(() => null);
+      const ids = [settings?.home_page_id, settings?.posts_page_id].filter(Boolean) as string[];
+      const { data } = ids.length
+        ? await getSupabaseClient().from('pages').select('id,title,slug,status,is_builder_enabled').in('id', ids)
+        : { data: [] };
+      const find = (id?: string) => ((data || []) as NonNullable<CorePage>[]).find((page) => String(page.id) === id) || null;
+      setCore({ home: find(settings?.home_page_id), blog: find(settings?.posts_page_id) });
+    })();
+  }, []);
+
+  const create = async (slot: TemplateSlot) => {
+    setError('');
+    setBusy(slot.type);
+    try {
+      const id = slot.overrides ? await customizeArchive(slot) : await createSiteTemplate(slot);
+      window.location.href = `/builder/${id}`;
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : `Could not create the ${slot.label} template.`);
+      setBusy('');
+    }
+  };
+
+  const coreRow = (label: string, icon: string, description: string, page: CorePage, viewHref: string) => (
+    <tr key={label}>
+      <td><strong><span aria-hidden="true">{icon}</span> {label}</strong><span className={styles.muted}>{page ? `“${page.title}” · ${description}` : description}</span></td>
+      <td><code>{page ? viewHref : '—'}</code></td>
+      <td>{page ? <StatusBadge row={page} fallbackLabel="" /> : <span className={styles.badgeGrey}>Not set</span>}</td>
+      <td className={styles.actions}>
+        {page
+          ? <><a className={styles.primary} href={`/builder/${page.id}`}>Edit with Page Builder</a><a className={styles.secondary} href={viewHref} target="_blank" rel="noreferrer">View</a></>
+          : <button type="button" className={styles.secondary} onClick={() => navigate('settings', 'site')}>Choose it in Settings → Site</button>}
+      </td>
+    </tr>
+  );
+
+  return (
+    <>
+      {error && <p className={styles.error} role="alert">{error}</p>}
+      <section className={styles.panel}>
+        <div className={styles.toolbar}>
+          <h3>Core Pages</h3>
+          <p>Your front page and blog page are ordinary pages: open them in the builder to design them. Other pages use the Standard Pages template below unless they have their own layout.</p>
+        </div>
+        {!core ? <p className={styles.muted}>Loading…</p> : (
+          <div className={styles.tableWrap}>
+            <table className={styles.table}>
+              <thead><tr><th>Page</th><th>Shown on</th><th>Status</th><th /></tr></thead>
+              <tbody>
+                {coreRow('Homepage', '🏠', 'The front page of the site.', core.home, '/')}
+                {coreRow('Blog Index', '📚', 'Lists your latest posts.', core.blog, core.blog ? `/${core.blog.slug}` : '/')}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {groupInfo.map(({ group, title, intro }) => (
+        <section key={group} className={styles.panel}>
+          <div className={styles.toolbar}>
+            <h3>{title}</h3>
+            <p>{intro} A template is used once it is published; while it is a draft, or before one exists, the site shows its built-in screen.</p>
+          </div>
+          {group === 'shop' && !shopActive && <p className={styles.error} role="alert">The Shop plugin is not active, so its widgets are missing from the builder and shop templates are not shown. Activate it under Plugins.</p>}
+          {!rows && !error && <p className={styles.muted}>Loading…</p>}
+          {rows && (
+            <div className={styles.tableWrap}>
+              <table className={styles.table}>
+                <thead><tr><th>Template</th><th>Shown on</th><th>Status</th><th>Updated</th><th /></tr></thead>
+                <tbody>
+                  {templateSlots.filter((slot) => slot.group === group).map((slot) => {
+                    const row = rows.find((item) => item.template_type === slot.type);
+                    return (
+                      <tr key={slot.type}>
+                        <td><strong><span aria-hidden="true">{slot.icon}</span> {slot.label}</strong><span className={styles.muted}>{slot.description}</span></td>
+                        <td><code>{slot.routes}</code></td>
+                        <td><StatusBadge row={row} fallbackLabel={slot.overrides ? 'Uses the shared archive' : 'Default screen'} /></td>
+                        <td>{row ? new Date(row.updated_at).toLocaleDateString() : '—'}</td>
+                        <td className={styles.actions}>
+                          {row
+                            ? <a className={styles.primary} href={`/builder/${row.id}`}>Edit with Page Builder</a>
+                            : <button type="button" className={styles.primary} disabled={busy !== ''} onClick={() => void create(slot)}>
+                              {busy === slot.type ? 'Creating…' : slot.overrides ? 'Customize' : 'Create with Page Builder'}
+                            </button>}
+                          <a className={styles.secondary} href={slot.viewHref} target="_blank" rel="noreferrer">View</a>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      ))}
+    </>
+  );
+}
+
+function SitePagesTab() {
   const [pages, setPages] = useState<Awaited<ReturnType<typeof listBuilderPages>> | null>(null);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState<'builder' | 'all'>('builder');
@@ -113,6 +244,7 @@ function TemplatesTab() {
   return (
     <section className={styles.panel}>
       <div className={styles.toolbar}>
+        <h3>Saved Templates</h3>
         <p>Save sections or whole pages from the builder, then insert them from its Templates button.</p>
         <button type="button" className={styles.secondary} onClick={() => fileInput.current?.click()}>Import template (.json)</button>
         <input ref={fileInput} type="file" accept="application/json,.json" hidden onChange={(event) => {
@@ -312,17 +444,21 @@ function StatusTab() {
 }
 
 /** Page Builder, with its section chosen from the admin sidebar's submenu (see index.tsx). */
-export default function BuilderAdmin({ subsection }: RwpAdminPageProps) {
+export default function BuilderAdmin({ subsection, navigate }: RwpAdminPageProps) {
   const role = useRole();
-  const tab: Tab = (['pages', 'templates', 'submissions', 'status'] as Tab[]).includes(subsection as Tab) ? subsection as Tab : 'pages';
+  // Old ids (pages, shop-pages) are mapped by src/lib/adminNavigation.ts; anything unknown lands on Site Pages.
+  const tab: Tab = tabs.includes(subsection as Tab) ? subsection as Tab : 'site-pages';
   const canSeeSubmissions = role ? hasCapability(role, 'edit_pages') : false;
+  // Site templates change every page, so only Administrators and Shop Managers see them.
+  const canManageTemplates = role ? hasCapability(role, 'manage_shop') : false;
   return (
     <div className={styles.wrap}>
       <div className={styles.intro}>
         <h2>Page Builder</h2>
         <p>Design pages visually with sections, columns and widgets.</p>
       </div>
-      {tab === 'pages' && <PagesTab />}
+      {tab === 'site-pages' && <SitePagesTab />}
+      {tab === 'templates' && canManageTemplates && <SiteTemplatesPanel navigate={navigate} />}
       {tab === 'templates' && <TemplatesTab />}
       {tab === 'submissions' && canSeeSubmissions && <SubmissionsTab />}
       {tab === 'status' && canSeeSubmissions && <StatusTab />}

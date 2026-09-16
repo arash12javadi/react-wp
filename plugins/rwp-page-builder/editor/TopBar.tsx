@@ -3,6 +3,7 @@ import { ArrowLeft, ChevronDown, Eye, History, LayoutTemplate, Monitor, Redo2, S
 import { rwp } from '../../../src/lib/rwp';
 import { saveBuilderPage, SaveConflictError } from '../lib/api';
 import { autosaveKey, previewKey } from '../lib/keys';
+import { templateSlot } from '../lib/siteTemplates';
 import type { Device } from '../lib/types';
 import { isDirty, useEditor, useStore } from './store';
 import styles from './editor.module.css';
@@ -100,11 +101,15 @@ export default function TopBar({ registerSave, onOpenRevisions, onOpenTemplates,
   };
 
   const primaryLabel = savedStatus === 'published' ? 'Update' : canPublish ? 'Publish' : 'Save draft';
+  // A site template is shown in place of other screens, not on its own slug.
+  const siteTemplate = page.is_site_template ? templateSlot(page.template_type) : undefined;
+  const backHref = `/admin?section=rwp-page-builder&tab=${siteTemplate ? 'templates' : 'site-pages'}`;
+  const liveHref = siteTemplate ? siteTemplate.viewHref : `/${page.slug}`;
 
   return (
     <header className={styles.topbar}>
       <div className={styles.topbarGroup}>
-        <a className={styles.iconButton} href={`/admin?section=rwp-page-builder`} title="Back to the dashboard" aria-label="Back to the dashboard"
+        <a className={styles.iconButton} href={backHref} title="Back to the dashboard" aria-label="Back to the dashboard"
           onClick={(event) => { if (isDirty(store.getState()) && !window.confirm('Leave the builder? Unsaved changes are kept in this browser and offered next time.')) event.preventDefault(); }}>
           <ArrowLeft size={18} />
         </a>
@@ -146,7 +151,7 @@ export default function TopBar({ registerSave, onOpenRevisions, onOpenTemplates,
             <div className={styles.menu} role="menu">
               <button type="button" role="menuitem" onClick={() => void save('draft')}>{savedStatus === 'published' ? 'Switch to draft (unpublish)' : 'Save draft'}</button>
               <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onSavePageTemplate(); }}>Save page as template</button>
-              {page.status === 'published' && <a role="menuitem" href={`/${page.slug}`} target="_blank" rel="noreferrer">View live page</a>}
+              {page.status === 'published' && <a role="menuitem" href={liveHref} target="_blank" rel="noreferrer">{siteTemplate ? `View live ${siteTemplate.label.toLowerCase()}` : 'View live page'}</a>}
             </div>
           )}
         </div>

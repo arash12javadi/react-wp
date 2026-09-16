@@ -99,14 +99,19 @@ function useEntranceAnimations(rootRef: RefObject<HTMLDivElement | null>, key: u
 export interface BuilderRendererProps {
   doc: BuilderDocument;
   page: BuilderPage | null;
+  /**
+   * For site templates: the post or page the template is shown for, which dynamic widgets (Post
+   * Title, Post Content…) display. null for none (header, 404). Forms still belong to `page`.
+   */
+  contextPage?: (Pick<BuilderPage, 'id'> & Partial<BuilderPage>) | null;
   children?: ReactNode;
 }
 
 /** Renders a saved layout for visitors. */
-export default function BuilderRenderer({ doc, page, children }: BuilderRendererProps) {
+export default function BuilderRenderer({ doc, page, contextPage, children }: BuilderRendererProps) {
   const globals = useGlobalStyles();
   useGoogleFonts(googleFontFamilies(globals, doc));
-  const dynamic = useDynamicContext(page);
+  const dynamic = useDynamicContext(contextPage === undefined ? page : contextPage);
   const css = useMemo(() => `${globalCss(globals)}\n${generateCss(doc)}`, [doc, globals]);
   const rootRef = useRef<HTMLDivElement>(null);
   useEntranceAnimations(rootRef, doc);
@@ -119,7 +124,7 @@ export default function BuilderRenderer({ doc, page, children }: BuilderRenderer
     <RenderProvider value={context}>
       <style>{css}</style>
       <div ref={rootRef} className="rwpb-root">
-        {doc.settings.showTitle && page && <h1 className="rwpb-page-title">{page.title}</h1>}
+        {doc.settings.showTitle && page && !page.is_site_template && <h1 className="rwpb-page-title">{page.title}</h1>}
         {doc.content.map((node) => <NodeView key={node.id} node={node} />)}
         {children}
       </div>

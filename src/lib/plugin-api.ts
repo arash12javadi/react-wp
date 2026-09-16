@@ -19,6 +19,9 @@ export {
   type RwpContentRenderer,
   type RwpContentRendererProps,
   type RwpContentAction,
+  type RwpArchive,
+  type RwpTemplateProvider,
+  type RwpTemplateRenderProps,
 } from './rwp';
 
 import { rwp, type RwpPluginManifest, type RwpPluginContext } from './rwp';

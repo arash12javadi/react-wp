@@ -17,9 +17,16 @@
 
 .rwpb-root *, .rwpb-root *::before, .rwpb-root *::after { box-sizing: border-box; }
 .rwpb-root img, .rwpb-root video, .rwpb-root iframe { max-width: 100%; }
-.rwpb-root :is(h1, h2, h3, h4, h5, h6) { margin: 0; line-height: 1.2; color: var(--rwpb-secondary); }
-.rwpb-root p { margin: 0 0 0.9em; }
-.rwpb-root p:last-child { margin-bottom: 0; }
+/* :where(:not(.rwpb-theme-part *)) keeps the Theme Header/Footer widgets looking as they do outside the builder, without raising specificity. */
+.rwpb-root :is(h1, h2, h3, h4, h5, h6):where(:not(.rwpb-theme-part *)) { margin: 0; line-height: 1.2; color: var(--rwpb-secondary); }
+.rwpb-root p:where(:not(.rwpb-theme-part *)) { margin: 0 0 0.9em; }
+.rwpb-root p:last-child:where(:not(.rwpb-theme-part *)) { margin-bottom: 0; }
+
+/* Site templates (Page Builder → Templates). A sticky Theme Editor header cannot stick inside the
+   template's own wrappers, so the whole header template sticks instead. */
+.rwpb-template-header:has(.rwpt-sticky) { position: sticky; top: 0; z-index: 50; }
+.rwpb-template-header .rwp-header.rwpt-sticky { position: static; }
+.rwpb-theme-part { width: 100%; }
 
 .rwpb-page-title { max-width: 1140px; margin: 0 auto; padding: 32px 20px 0; }
 

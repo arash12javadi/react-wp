@@ -1,5 +1,5 @@
 /** Site (theme builder) widgets: sidebar, logo, titles, author box, comments, post navigation, archive, breadcrumbs, sitemap. */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import CommentSection from '../../../../src/components/CommentSection';
 import PublicSidebar from '../../../../src/components/PublicSidebar';
 import WidgetRenderer from '../../../../src/components/WidgetRenderer';
@@ -10,8 +10,8 @@ import { Icon } from '../../lib/icons';
 import type { WidgetDefinition } from '../../lib/registry';
 import { safeMediaUrl } from '../../lib/sanitize';
 import { alignToFlex, color, isSet, length, typography, type Typography } from '../../lib/style';
-import { useRenderContext } from '../context';
-import { fetchAdjacentPosts, fetchAuthorProfile, fetchCategories, fetchPageCategoryId, fetchPostLinks } from '../data';
+import { useRenderContext, useTemplateContext } from '../context';
+import { fetchAdjacentPosts, fetchAuthorName, fetchAuthorProfile, fetchCategories, fetchPageCategoryId, fetchPostLinks } from '../data';
 import { posts } from './posts';
 import { EditorPlaceholder, useLinkProps, useMediaUrl, useText } from './shared';
 import { clamp, formatDate, headingTag, num, pick, str, useAsync, useCurrentPost, useSiteSettings, WidgetError } from './kit';
@@ -314,10 +314,12 @@ export const archiveTitle: WidgetDefinition = {
   label: 'Archive Title',
   icon: 'heading',
   category: 'site',
-  keywords: ['category title', 'search results title'],
-  defaults: () => ({ settings: { tag: 'h1', categoryPrefix: 'Category: ', searchPrefix: 'Search results for: ', fallback: 'page' } }),
+  keywords: ['category title', 'search results title', 'author archive', 'date archive'],
+  defaults: () => ({ settings: { tag: 'h1', categoryPrefix: 'Category: ', authorPrefix: 'Author: ', datePrefix: 'Archives: ', searchPrefix: 'Search results for: ', fallback: 'page' } }),
   controls: [
     { key: 'categoryPrefix', label: 'Category prefix', type: 'text' },
+    { key: 'authorPrefix', label: 'Author prefix', type: 'text' },
+    { key: 'datePrefix', label: 'Date prefix', type: 'text' },
     { key: 'searchPrefix', label: 'Search prefix', type: 'text' },
     { key: 'fallback', label: 'On other pages show', type: 'select', options: opts(['page', 'The page title'], ['custom', 'Custom text'], ['nothing', 'Nothing']) },
     { key: 'fallbackText', label: 'Custom text', type: 'text', dynamic: true, condition: (settings) => settings.fallback === 'custom' },
@@ -329,24 +331,30 @@ export const archiveTitle: WidgetDefinition = {
   css: (bag) => ({ '': alignCss(bag), ' .rwpb-archive-title': { color: color(bag.color), ...typography(bag.typography as Typography | undefined) } }),
   View: function ArchiveTitleView({ node }) {
     const post = useCurrentPost();
+    const archive = useTemplateContext()?.archive;
     const Tag = headingTag(node.settings.tag, 'h2');
-    const slug = urlParam('category');
-    const term = urlParam('s');
+    // An archive template (/category/news, /search?s=…) knows what it lists; ordinary pages read ?category= and ?s=.
+    const slug = archive ? (archive.kind === 'category' ? archive.slug : '') : urlParam('category');
+    const term = archive ? (archive.kind === 'search' ? archive.term : '') : urlParam('s');
+    const authorId = archive?.kind === 'author' ? archive.id : '';
     const categories = useAsync(slug ? 'categories-list' : null, fetchCategories);
+    const author = useAsync(authorId ? `author-name:${authorId}` : null, () => fetchAuthorName(authorId));
     const fallbackText = useText(node.settings.fallbackText);
     let text = '';
-    if (term) text = `${str(node.settings.searchPrefix)}${term}`;
+    if (archive?.kind === 'search' || term) text = `${str(node.settings.searchPrefix)}${term}`;
     else if (slug) text = categories.data ? `${str(node.settings.categoryPrefix)}${categories.data.find((category) => category.slug === slug)?.name || slug}` : '';
+    else if (authorId) text = author.data !== null ? `${str(node.settings.authorPrefix)}${author.data || 'Unknown author'}` : '';
+    else if (archive?.kind === 'date') text = `${str(node.settings.datePrefix)}${archive.month ? `${new Date(2000, archive.month - 1, 1).toLocaleString(undefined, { month: 'long' })} ` : ''}${archive.year}`;
     else if (node.settings.fallback === 'custom') text = fallbackText;
     else if (node.settings.fallback !== 'nothing') text = post?.title || '';
-    if (!text) return <EditorPlaceholder>Shows “Category: …” or “Search results for: …” when the URL has ?category= or ?s=.</EditorPlaceholder>;
+    if (!text) return <EditorPlaceholder>Shows “Category: News”, “Author: …”, “Archives: May 2026” or “Search results for: …” on archive and search pages.</EditorPlaceholder>;
     return <Tag className="rwpb-archive-title">{text}</Tag>;
   },
 };
 
 const NO_MATCH = '00000000-0000-0000-0000-000000000000';
 
-/** The Posts widget, filtered by ?category=slug and ?s=term in the URL. */
+/** The Posts widget, filtered by the archive template being shown, or by ?category=slug and ?s=term in the URL. */
 export const archivePosts: WidgetDefinition = {
   ...posts,
   type: 'archive-posts',
@@ -359,17 +367,29 @@ export const archivePosts: WidgetDefinition = {
     : control)),
   View: function ArchivePostsView({ node }) {
     const { mode } = useRenderContext();
-    const slug = mode === 'view' ? urlParam('category') : '';
-    const term = mode === 'view' ? urlParam('s') : '';
+    const archive = useTemplateContext()?.archive;
+    const fromUrl = mode === 'view' && !archive;
+    const slug = archive?.kind === 'category' ? archive.slug : fromUrl ? urlParam('category') : '';
+    // A search template with an empty term matches nothing rather than listing every post.
+    const term = archive?.kind === 'search' ? (archive.term.trim() || NO_MATCH) : fromUrl ? urlParam('s') : '';
+    const extra = useMemo(() => {
+      if (archive?.kind === 'author') return { authorId: archive.id };
+      if (archive?.kind === 'date') {
+        const from = new Date(Date.UTC(archive.year, (archive.month || 1) - 1, 1));
+        const to = archive.month ? new Date(Date.UTC(archive.year, archive.month, 1)) : new Date(Date.UTC(archive.year + 1, 0, 1));
+        return { dateFrom: from.toISOString(), dateTo: to.toISOString() };
+      }
+      return {};
+    }, [archive]);
     const categories = useAsync(slug ? 'categories-list' : null, fetchCategories);
-    const [settings, setSettings] = useState<Record<string, unknown> | null>(slug ? null : { ...node.settings, search: term });
+    const [settings, setSettings] = useState<Record<string, unknown> | null>(slug ? null : { ...node.settings, ...extra, search: term });
     useEffect(() => {
-      if (!slug) { setSettings({ ...node.settings, search: term }); return; }
+      if (!slug) { setSettings({ ...node.settings, ...extra, search: term }); return; }
       if (!categories.data) return;
       // An unknown slug must show nothing, not every post.
       const categoryId = categories.data.find((category) => category.slug === slug)?.id || NO_MATCH;
-      setSettings({ ...node.settings, categoryId, search: term });
-    }, [slug, term, categories.data, node.settings]);
+      setSettings({ ...node.settings, ...extra, categoryId, search: term });
+    }, [slug, term, extra, categories.data, node.settings]);
     if (categories.error) return <WidgetError message={categories.error} />;
     if (!settings) return null;
     const PostsView = posts.View;

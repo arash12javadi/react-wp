@@ -32,6 +32,7 @@ import CheckoutPage from '../public/CheckoutPage';
 import { OrderReceivedPage } from '../public/OrderViews';
 import ShopPage from '../public/ShopPage';
 import { ProductCard, ProductPriceHtml, SaleBadge, Stars } from '../public/components';
+import { useShopRoute } from './ShopLayoutRoute';
 import './shop-widgets.css';
 
 const isBrowser = typeof window !== 'undefined';
@@ -73,10 +74,11 @@ const productControl = (): Control => ({
   help: 'Pick a product, or leave it on the URL to build one layout for many products: link to this page with ?product=the-product-slug.',
 });
 
-/** The product a single-product widget shows: chosen in the widget, or ?product= in the URL. */
+/** The product a single-product widget shows: chosen in the widget, the /product/:slug being viewed, or ?product= in the URL. */
 function useProduct(settings: Record<string, unknown>) {
   const { mode } = useRenderContext();
-  const chosen = str(settings.product) || urlParam('product');
+  const route = useShopRoute();
+  const chosen = str(settings.product) || route?.productSlug || urlParam('product');
   const slug = useAsync(!chosen && mode === 'edit' ? 'shop-preview-slug' : null, firstProductSlug);
   const resolved = chosen || slug.data || '';
   const product = useAsync(resolved ? `shop-product:${resolved}` : null, () => loadProduct(resolved));
@@ -722,7 +724,9 @@ const archiveProducts: WidgetDefinition = {
   defaults: () => ({ settings: {} }),
   controls: [],
   View: function ArchiveProductsView() {
-    return <Embedded label="The full shop catalogue, with sorting, filters and pagination,"><ShopPage params={{}} /></Embedded>;
+    // On /product-category/:slug and /product-tag/:slug the catalogue follows the archive being viewed.
+    const route = useShopRoute();
+    return <Embedded label="The full shop catalogue, with sorting, filters and pagination,"><ShopPage params={route?.params || {}} /></Embedded>;
   },
 };
 
@@ -737,7 +741,8 @@ const archiveDescription: WidgetDefinition = {
   css: (bag) => ({ '': alignCss(bag), ' .rwpb-shop-description': textCss(bag, 'text') }),
   View: function ArchiveDescriptionView({ node }) {
     const { settings, ready } = useShopSettings();
-    const slug = urlParam('product_category');
+    const route = useShopRoute();
+    const slug = route?.categorySlug || urlParam('product_category');
     const categories = useAsync(slug ? 'shop-categories' : null, fetchCategories);
     if (!ready) return null;
     const category = slug ? categories.data?.find((item) => item.slug === slug) : null;
@@ -767,7 +772,11 @@ const checkoutWidget: WidgetDefinition = {
 const myAccount: WidgetDefinition = {
   type: 'shop-my-account', label: 'My Account', icon: 'circle-user', category: 'shop', keywords: ['woocommerce', 'account', 'orders', 'addresses'],
   defaults: () => ({ settings: {} }), controls: [],
-  View: function MyAccountView() { return <Embedded label="The customer account dashboard (orders, addresses, details)"><AccountPage params={{ '*': '' }} /></Embedded>; },
+  View: function MyAccountView() {
+    // On /my-account/* the embedded account follows the sub-page (orders, addresses…) in the URL.
+    const route = useShopRoute();
+    return <Embedded label="The customer account dashboard (orders, addresses, details)"><AccountPage params={{ '*': route?.params['*'] || '' }} /></Embedded>;
+  },
 };
 
 const purchaseSummary: WidgetDefinition = {

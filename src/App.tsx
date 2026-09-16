@@ -16,6 +16,8 @@ import PublicHome from './components/PublicHome';
 import PublicContent from './components/PublicContent';
 import AuthPage from './components/AuthPage';
 import PublicChrome from './components/PublicChrome';
+import PublicArchive, { archiveFromPath } from './components/PublicArchive';
+import { preloadSiteTemplates } from './components/SiteTemplate';
 import { canAccessAdmin } from './lib/roles';
 import { useCurrentProfile } from './lib/profiles';
 import { describeDbError, resolveSupabaseConfig, tryGetSupabaseClient } from './lib/db';
@@ -94,6 +96,8 @@ const checkDatabaseWithRetry = async (): Promise<SupabaseClient | null> => {
 interface PublicRouting {
   homePageId: string;
   postsPageSlug: string;
+  /** A posts page designed with the Page Builder shows its own layout instead of the theme's post index. */
+  postsPageHasLayout: boolean;
 }
 
 const loadPublicRouting = async (supabase: SupabaseClient): Promise<PublicRouting> => {
@@ -104,11 +108,13 @@ const loadPublicRouting = async (supabase: SupabaseClient): Promise<PublicRoutin
   // a title the server already wrote is left alone.
   if (document.title === placeholderTitle) applyDocumentTitle(settings.site_title);
   let postsPageSlug = '';
+  let postsPageHasLayout = false;
   if (settings.home_page_id && settings.posts_page_id) {
-    const { data } = await supabase.from('pages').select('slug').eq('id', settings.posts_page_id).maybeSingle();
+    const { data } = await supabase.from('pages').select('*').eq('id', settings.posts_page_id).maybeSingle();
     postsPageSlug = data?.slug || '';
+    postsPageHasLayout = Boolean(data && rwp.getContentRenderer(data as import('./lib/types').Page));
   }
-  return { homePageId: settings.home_page_id, postsPageSlug };
+  return { homePageId: settings.home_page_id, postsPageSlug, postsPageHasLayout };
 };
 
 function SimpleSection({ title, description }: { title: string; description: string }) {
@@ -234,6 +240,11 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
     applyDocumentTitle(branding.site_title, screenTitle);
   }, [branding.site_title, ready, screenTitle]);
 
+  // Once the signed-in role is known; plugins use it for one-time setup such as default pages.
+  useEffect(() => {
+    if (ready && canAccessAdmin(role)) rwp.actions.do('rwp_admin_ready', role);
+  }, [ready, role]);
+
   if (connectionError) {
     return <ConnectionError detail={connectionError} onReconfigure={onReconfigure} />;
   }
@@ -335,7 +346,7 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
 
 export default function App() {
   const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
-  const [routing, setRouting] = useState<PublicRouting>({ homePageId: '', postsPageSlug: '' });
+  const [routing, setRouting] = useState<PublicRouting>({ homePageId: '', postsPageSlug: '', postsPageHasLayout: false });
   const [checkingDatabase, setCheckingDatabase] = useState(true);
   const isAdminRoute = window.location.pathname.replace(/\/+$/, '') === '/admin';
   const reconfigure = () => {
@@ -363,8 +374,10 @@ export default function App() {
           // Loaded before the first render so the saved layout does not flash in after the default one.
           initThemePreview();
           applyThemeDocument(await loadTheme());
+          // Before the first render too, so a designed header or 404 never flashes in after the default.
+          await preloadSiteTemplates();
         }
-        const publicRouting = await loadPublicRouting(client).catch(() => ({ homePageId: '', postsPageSlug: '' }));
+        const publicRouting = await loadPublicRouting(client).catch(() => ({ homePageId: '', postsPageSlug: '', postsPageHasLayout: false }));
         if (mounted) {
           setRouting(publicRouting);
           setSupabase(client);
@@ -405,14 +418,25 @@ export default function App() {
     return pluginRoute.route.chrome === false ? rendered : <PublicChrome>{rendered}</PublicChrome>;
   }
 
+  // Search forms send ?s= to the home page. When the home page is a page (not the post feed, which
+  // filters itself), show the search results screen instead.
+  const homeSearch = new URLSearchParams(window.location.search).get('s');
+  if (!pathname && routing.homePageId && homeSearch !== null) {
+    return <PublicArchive archive={{ kind: 'search', term: homeSearch }} />;
+  }
+
   if (!pathname) {
     return routing.homePageId
       ? <PublicContent pageId={routing.homePageId} onReconfigure={reconfigure} />
       : <PublicHome onReconfigure={reconfigure} />;
   }
 
+  // Search results and post archives (Page Builder → Templates designs them).
+  const archive = archiveFromPath(`/${pathname}`, window.location.search);
+  if (archive) return <PublicArchive archive={archive} />;
+
   const slug = pathname.replace(/^posts\//, '').replace(/^pages\//, '');
-  if (routing.postsPageSlug && slug === routing.postsPageSlug) {
+  if (routing.postsPageSlug && slug === routing.postsPageSlug && !routing.postsPageHasLayout) {
     return <PublicHome onReconfigure={reconfigure} />;
   }
   return <PublicContent slug={slug} onReconfigure={reconfigure} />;

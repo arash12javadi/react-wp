@@ -97,14 +97,15 @@ export const posts: WidgetDefinition = {
     const pagination = String(settings.pagination || 'none');
     // A Taxonomy Filter widget in the same group overrides the chosen category.
     const filterCategory = useTaxonomyFilter(settings.filterGroup);
-    const queryKey = JSON.stringify([filterCategory ?? settings.categoryId, limit, settings.orderBy, settings.order, settings.excerptLength, settings.excludeCurrent, pageId, settings.search || '']);
+    // authorId, dateFrom and dateTo are set by Archive Posts on author and date archives.
+    const queryKey = JSON.stringify([filterCategory ?? settings.categoryId, limit, settings.orderBy, settings.order, settings.excerptLength, settings.excludeCurrent, pageId, settings.search || '', settings.authorId || '', settings.dateFrom || '', settings.dateTo || '']);
 
     // A new query starts again from page one.
     useEffect(() => { setPage(1); }, [queryKey]);
 
     useEffect(() => {
       let active = true;
-      const [categoryId, , orderBy, order, excerptLength, excludeCurrent, , search] = JSON.parse(queryKey) as [string, number, string, string, number, boolean, number, string];
+      const [categoryId, , orderBy, order, excerptLength, excludeCurrent, , search, authorId, dateFrom, dateTo] = JSON.parse(queryKey) as [string, number, string, string, number, boolean, number, string, string, string, string];
       setState((current) => ({ ...current, loading: true, error: '' }));
       fetchPosts({
         categoryId: categoryId || undefined,
@@ -114,6 +115,9 @@ export const posts: WidgetDefinition = {
         order: order === 'asc' ? 'asc' : 'desc',
         excludeId: excludeCurrent ? pageId : null,
         search: typeof search === 'string' && search ? search : undefined,
+        authorId: authorId || undefined,
+        from: dateFrom || undefined,
+        to: dateTo || undefined,
       }, Number(excerptLength) || 20)
         .then((result) => {
           if (!active) return;

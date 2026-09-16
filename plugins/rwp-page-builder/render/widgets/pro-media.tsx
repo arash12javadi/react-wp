@@ -645,7 +645,7 @@ export const search: WidgetDefinition = {
     const submit = (event: FormEvent) => {
       event.preventDefault();
       if (mode === 'edit' || !term.trim()) return;
-      window.location.href = shop ? `/shop?s=${encodeURIComponent(term.trim())}` : `/?s=${encodeURIComponent(term.trim())}`;
+      window.location.href = shop ? `/shop?s=${encodeURIComponent(term.trim())}` : `/search?s=${encodeURIComponent(term.trim())}`;
     };
 
     const form = (
@@ -665,7 +665,7 @@ export const search: WidgetDefinition = {
     const liveList = results && (
       <ul id={listId} className="rwpb-search-results" aria-live="polite">
         {results.length === 0 ? <li className="rwpb-search-none">No posts found.</li> : results.map((post) => <li key={post.id}><a href={`/${post.slug}`}>{post.title}</a></li>)}
-        {results.length > 0 && <li className="rwpb-search-all"><a href={`/?s=${encodeURIComponent(term.trim())}`}>See all results →</a></li>}
+        {results.length > 0 && <li className="rwpb-search-all"><a href={`/search?s=${encodeURIComponent(term.trim())}`}>See all results →</a></li>}
       </ul>
     );
 

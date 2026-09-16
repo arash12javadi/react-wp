@@ -226,10 +226,15 @@ export async function deleteSubmissions(ids: string[]) {
   if (!data?.length) throw new Error('Your role cannot delete form submissions (it needs the edit_pages capability: Editor or above).');
 }
 
+/** Site pages and posts: everything except site templates (Page Builder → Templates lists those). */
 export async function listBuilderPages() {
-  const { data, error } = await getSupabaseClient().from('pages')
-    .select('id,title,slug,status,is_post,is_builder_enabled,updated_at,author_id')
-    .order('updated_at', { ascending: false });
+  const columns = 'id,title,slug,status,is_post,is_builder_enabled,updated_at,author_id';
+  const supabase = getSupabaseClient();
+  let { data, error } = await supabase.from('pages').select(columns).eq('is_site_template', false).order('updated_at', { ascending: false });
+  // Before the site templates migration there are no templates to leave out, so list everything.
+  if (error && /is_site_template/.test(describeDbError(error))) {
+    ({ data, error } = await supabase.from('pages').select(columns).order('updated_at', { ascending: false }));
+  }
   if (error) throw explainError(error, 'Loading pages');
   return (data || []) as Array<Pick<BuilderPage, 'id' | 'title' | 'slug' | 'status' | 'is_post' | 'is_builder_enabled' | 'updated_at' | 'author_id'>>;
 }

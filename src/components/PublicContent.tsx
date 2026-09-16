@@ -12,6 +12,7 @@ import PublicLayout from './PublicLayout';
 import PublicSidebar from './PublicSidebar';
 import ContentRenderer from './ContentRenderer';
 import CommentSection from './CommentSection';
+import SiteTemplate from './SiteTemplate';
 import styles from './PublicHome.module.css';
 import { rwp } from '../lib/rwp';
 
@@ -58,11 +59,13 @@ export default function PublicContent({ slug, pageId, onReconfigure }: PublicCon
         if (pageError) throw pageError;
         if (!mounted) return;
 
-        setPage(data as Page | null);
+        // Site templates are shown in place of other screens, never at their own address.
+        const loaded = data as Page | null;
+        setPage(loaded && !loaded.is_site_template ? loaded : null);
         setSettings(settings);
         setSiteTitle(rwp.filters.apply('rwp_site_title', settings.site_title));
         setExcerptLength(settings.excerpt_length);
-        applyMeta(buildMeta(data as Page | null, {
+        applyMeta(buildMeta(loaded && !loaded.is_site_template ? loaded : null, {
           siteTitle: settings.site_title,
           siteTagline: settings.site_tagline,
           siteIcon: settings.site_icon,
@@ -115,9 +118,11 @@ export default function PublicContent({ slug, pageId, onReconfigure }: PublicCon
   ) : null;
 
   const showTitle = page?.is_post ? appSettings.general.show_post_titles : appSettings.general.show_page_titles;
+  // A page's own layout (renderer) wins; otherwise a published Single Post or Page template, if any.
   const article = page && (renderer ? (
     <renderer.component page={page} comments={comments} />
   ) : (
+    <SiteTemplate types={[page.is_post ? 'single_post' : 'page']} post={page} fallback={
     <article className={styles.feed} aria-labelledby="content-heading">
       <p className={styles.kicker}>
         {page.is_post ? 'From the blog' : 'Page'}
@@ -134,6 +139,7 @@ export default function PublicContent({ slug, pageId, onReconfigure }: PublicCon
       />
       {comments}
     </article>
+    } />
   ));
 
   return (
@@ -153,7 +159,9 @@ export default function PublicContent({ slug, pageId, onReconfigure }: PublicCon
       <main className={containerClass}>
         {loading && <p className={styles.muted}>Loading…</p>}
         {error && <div className={styles.error} role="alert"><p>{error}</p>{onReconfigure && <button type="button" onClick={onReconfigure}>Reconfigure Supabase</button>}</div>}
-        {!loading && !error && !page && <section className={styles.hero}><h1>Page not found</h1><p>This page does not exist or is not published.</p><a className={styles.heroLink} href="/">Return home</a></section>}
+        {!loading && !error && !page && (
+          <SiteTemplate types={['404']} fallback={<section className={styles.hero}><h1>Page not found</h1><p>This page does not exist or is not published.</p><a className={styles.heroLink} href="/">Return home</a></section>} />
+        )}
         {page && (withSidebar ? (
           // The page decides whether it has a sidebar; the theme decides which side. "Hidden" is for the index only.
           <div className={`${styles.grid} rwpt-grid rwpt-sidebar-${theme.layout.index.options.sidebar_position === 'left' ? 'left' : 'right'}`}>
