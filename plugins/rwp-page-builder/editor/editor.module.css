@@ -385,6 +385,9 @@ textarea.input { resize: vertical; }
   display: grid; place-items: center; width: 26px; height: 24px; border: 0; color: #fff; background: none; cursor: pointer;
 }
 .sectionTab button:hover, .columnTab button:hover, .widgetTab button:hover { background: rgb(255 255 255 / 18%); }
+/* Wider than the icon buttons: it carries a label. */
+.sectionTab .sectionAiButton { display: inline-flex; gap: 4px; width: auto; padding: 0 9px; background: linear-gradient(90deg, #7c3aed, #db2777); font-size: 11px; font-weight: 700; white-space: nowrap; }
+.sectionTab .sectionAiButton:hover { background: linear-gradient(90deg, #6d28d9, #be185d); }
 .sectionTab > :first-child { border-top-left-radius: 7px; }
 .sectionTab > :last-child { border-top-right-radius: 7px; }
 .tabHandle { cursor: grab !important; touch-action: none; }

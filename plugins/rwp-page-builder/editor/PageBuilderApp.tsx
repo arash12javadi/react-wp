@@ -41,6 +41,7 @@ function initialState(page: BuilderPage, role: UserRole, savedDoc: BuilderDocume
     past: [], future: [], coalesce: null, drag: null, dropTarget: null, clipboard: null,
     canPublish: hasCapability(role, 'publish_posts'),
     canManageOptions: hasCapability(role, 'manage_options'),
+    aiSectionId: null,
   };
 }
 

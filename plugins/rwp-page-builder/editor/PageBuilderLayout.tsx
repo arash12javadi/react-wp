@@ -10,6 +10,7 @@ import InspectorPanel from './InspectorPanel';
 import Navigator from './Navigator';
 import PageSettingsPanel from './PageSettingsPanel';
 import RevisionsModal from './RevisionsModal';
+import SectionAiModal from './ai/SectionAiModal';
 import SeoPanel from './seo/SeoPanel';
 import TemplatesModal, { type TemplatesModalMode } from './TemplatesModal';
 import TopBar from './TopBar';
@@ -38,6 +39,7 @@ export default function PageBuilderLayout() {
   const selectedId = useEditor((state) => state.selectedId);
   const drag = useEditor((state) => state.drag);
   const dropTarget = useEditor((state) => state.dropTarget);
+  const aiSectionId = useEditor((state) => state.aiSectionId);
   const [revisionsOpen, setRevisionsOpen] = useState(false);
   const [templates, setTemplates] = useState<TemplatesModalMode | null>(null);
   const saveRef = useRef<() => void>(() => {});
@@ -216,6 +218,7 @@ export default function PageBuilderLayout() {
       </DragOverlay>
       {revisionsOpen && <RevisionsModal onClose={() => setRevisionsOpen(false)} />}
       {templates && <TemplatesModal mode={templates} onClose={() => setTemplates(null)} />}
+      {aiSectionId && <SectionAiModal key={aiSectionId} sectionId={aiSectionId} onClose={actions.closeSectionAi} />}
     </DndContext>
   );
 }

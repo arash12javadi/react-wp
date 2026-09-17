@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState, type ClipboardEvent, type ReactNode, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { useDraggable } from '@dnd-kit/core';
-import { Copy, GripVertical, LayoutTemplate, Move, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Copy, GripVertical, LayoutTemplate, Move, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { getSupabaseClient } from '../../../src/lib/db';
 import { globalCss, globalVars, googleFontFamilies, useGlobalStyles, useGoogleFonts } from '../lib/globals';
 import { findNode, locate } from '../lib/tree';
@@ -156,6 +156,10 @@ function Chrome({ node }: { node: BuilderNode }) {
           })}><Plus size={13} /></button>
           <DragHandle node={node} className={styles.tabHandle}><GripVertical size={13} /></DragHandle>
           <button type="button" title="Edit section" aria-label="Edit section" onClick={stop(() => actions.select(node.id))}><Pencil size={12} /></button>
+          <button type="button" className={`${styles.sectionAiButton} section-ai-btn`} title="Optimize section with AI"
+            onClick={stop(() => { actions.select(node.id); actions.openSectionAi(node.id); })}>
+            <Sparkles size={12} aria-hidden="true" /> AI Section Refine
+          </button>
           <button type="button" title="Duplicate" aria-label="Duplicate section" onClick={stop(() => actions.duplicate(node.id))}><Copy size={12} /></button>
           <button type="button" title="Delete" aria-label="Delete section" onClick={stop(() => actions.remove(node.id))}><Trash2 size={12} /></button>
         </span>

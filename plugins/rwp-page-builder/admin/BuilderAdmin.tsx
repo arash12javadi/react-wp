@@ -532,7 +532,7 @@ function SubmissionsTab() {
 }
 
 function StatusTab() {
-  const [status, setStatus] = useState<{ smtp: boolean; secretKey: boolean } | null | undefined>(undefined);
+  const [status, setStatus] = useState<{ smtp: boolean; secretKey: boolean; gemini?: boolean } | null | undefined>(undefined);
   useEffect(() => { void fetchServerStatus().then(setStatus); }, []);
   const item = (ok: boolean, label: string, fix: string) => (
     <li className={ok ? styles.ok : styles.bad}><strong>{ok ? '✓' : '✕'} {label}</strong>{!ok && <span>{fix}</span>}</li>
@@ -546,6 +546,12 @@ function StatusTab() {
         <ul className={styles.checklist}>
           {item(status.smtp, 'SMTP is configured', 'Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS and SMTP_FROM in .env.local (or the host environment) and restart the server.')}
           {item(status.secretKey, 'SUPABASE_SECRET_KEY is set', 'The server needs it to read private form recipients and record whether each email was sent. Add it to .env.local and restart.')}
+        </ul>
+      )}
+      <h3>AI Section Refine</h3>
+      {status && (
+        <ul className={styles.checklist}>
+          {item(Boolean(status.gemini), 'GEMINI_API_KEY is set', 'Optional. Create a free key in Google AI Studio (aistudio.google.com/apikey), add GEMINI_API_KEY to .env.local and restart the server. Never use a VITE_ prefix: that would publish the key in the site’s JavaScript.')}
         </ul>
       )}
       <h3>How forms are protected</h3>

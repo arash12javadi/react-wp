@@ -8,6 +8,8 @@
  * through, or is revealed to, the visitor's browser.
  */
 
+import { geminiConfigured, optimizeSectionRoute } from './serverAi.mjs';
+
 class HttpError extends Error {
   constructor(status, message) {
     super(message);
@@ -173,7 +175,9 @@ export default {
       if (!ctx.bearerToken) return { status: 401, body: { error: 'Sign in to view the page builder status.' } };
       const allowed = await rest(ctx, 'rpc/user_has_cap', { method: 'POST', body: { capability: 'edit_pages' }, auth: 'user' }).catch(() => false);
       if (allowed !== true) return { status: 403, body: { error: 'Viewing server status needs the edit_pages capability (Editor or above).' } };
-      return { status: 200, body: { smtp: smtpConfigured(), secretKey: Boolean(ctx.supabase.secretKey) } };
+      return { status: 200, body: { smtp: smtpConfigured(), secretKey: Boolean(ctx.supabase.secretKey), gemini: geminiConfigured() } };
     },
+
+    'POST ai/section': (ctx) => optimizeSectionRoute(ctx, rest),
   },
 };

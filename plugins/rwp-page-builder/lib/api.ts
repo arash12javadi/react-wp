@@ -242,7 +242,7 @@ export async function listBuilderPages() {
   return (data || []) as Array<Pick<BuilderPage, 'id' | 'title' | 'slug' | 'status' | 'is_post' | 'is_builder_enabled' | 'updated_at' | 'author_id'>>;
 }
 
-export async function fetchServerStatus(): Promise<{ smtp: boolean; secretKey: boolean } | null> {
+export async function fetchServerStatus(): Promise<{ smtp: boolean; secretKey: boolean; gemini?: boolean } | null> {
   const { data } = await getSupabaseClient().auth.getSession();
   const response = await fetch('/api/plugins/rwp-page-builder/status', {
     headers: data.session ? { Authorization: `Bearer ${data.session.access_token}` } : {},

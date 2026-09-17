@@ -7,6 +7,7 @@ import {
 } from '../lib/tree';
 import type { BuilderDocument, BuilderNode, BuilderPage, ColumnNode, Device, SectionNode, WidgetNode } from '../lib/types';
 import type { SeoFields } from '../../../src/components/SeoPanel';
+import { applyCopyChanges, type CopyChange } from '../services/geminiSectionOpt';
 
 export type SidePanel = 'widgets' | 'navigator' | 'globals' | 'page' | 'seo' | 'edit';
 
@@ -81,6 +82,8 @@ export interface EditorState {
   clipboard: BuilderNode | null;
   canPublish: boolean;
   canManageOptions: boolean;
+  /** Section whose "AI Section Refine" window is open. */
+  aiSectionId: string | null;
 }
 
 type Listener = () => void;
@@ -413,6 +416,23 @@ function createActions(store: BaseStore) {
     },
 
     replaceDocument: (doc: BuilderDocument) => commit(() => doc, { select: null }),
+
+    openSectionAi: (sectionId: string) => store.setState({ aiSectionId: sectionId }),
+    closeSectionAi: () => store.setState({ aiSectionId: null }),
+
+    /**
+     * Applies AI copy changes as ONE undo step (Ctrl+Z reverts the whole refinement). Only the
+     * changed widgets and their ancestors get new objects, so other sections do not re-render.
+     */
+    applySectionCopy: (changes: CopyChange[]): { applied: number; stale: number } => {
+      let result = { applied: 0, stale: 0 };
+      commit((doc) => {
+        const outcome = applyCopyChanges(doc, changes);
+        result = { applied: outcome.applied, stale: outcome.stale };
+        return outcome.doc;
+      });
+      return result;
+    },
 
     setDocumentSetting: (key: string, value: unknown) => commit((doc) => ({ ...doc, settings: { ...doc.settings, [key]: value } }), { coalesce: `doc:${key}` }),
 
