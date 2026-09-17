@@ -23,10 +23,41 @@
   position: relative;
 }
 
-.refresh {
+.headingActions {
   position: absolute;
   top: 0;
   right: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.upload {
+  border: 0;
+  border-radius: 6px;
+  padding: 9px 12px;
+  color: #fff;
+  background: #4f46e5;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.upload:hover {
+  background: #4338ca;
+}
+
+@media (max-width: 640px) {
+  .headingActions {
+    position: static;
+    justify-content: flex-start;
+    margin-top: 10px;
+  }
+}
+
+.refresh {
   border: 1px solid #cbd5e1;
   border-radius: 6px;
   padding: 8px 11px;

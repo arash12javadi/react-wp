@@ -31,6 +31,10 @@ pnpm-debug.log*
 .env*
 data/
 
+# Plugin uploads being unpacked (server/pluginInstaller.mjs)
+.rwp-tmp/
+server/.plugins.*.mjs
+
 # React-WP server installation/configuration files
 react-wp.config.json
 react-wp.config.*.json

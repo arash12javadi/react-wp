@@ -10,6 +10,8 @@ import { publicConfig, readConfig, writeConfig } from './server/config.mjs';
 import { authorizeImageKitUpload, authorizeMediaDelete, deleteFromProvider, describeDeleteSupport } from './server/media.mjs';
 import { renderDocumentInjections, renderEditorInjections } from './server/seo.mjs';
 import { handlePluginRequest, resolveOrigin } from './server/plugins.mjs';
+import { authorizePluginManager, deletePluginFolder, listPluginFolders } from './server/pluginFiles.mjs';
+import { InstallError, installPlugin, MAX_ZIP_BYTES } from './server/pluginInstaller.mjs';
 
 const port = Number(process.env.PORT || 3000);
 const root = path.resolve('dist');
@@ -191,6 +193,106 @@ const server = http.createServer(async (request, response) => {
         return;
       }
       json(response, 200, { success: true, skipped: Boolean(result.skipped) });
+      return;
+    }
+    if (url.pathname === '/api/admin/plugins/upload') {
+      if (request.method !== 'POST') {
+        json(response, 405, { error: 'Method not allowed' });
+        return;
+      }
+      const config = publicConfig(await readConfig());
+      if (!config?.supabaseUrl || !config?.supabasePublishableKey) {
+        json(response, 501, { error: 'This site is not installed, so plugins cannot be uploaded.' });
+        return;
+      }
+      // Checked before the body is read, so nobody without permission can make the server buffer 25 MB.
+      const auth = await authorizePluginManager(
+        config.supabaseUrl,
+        config.supabasePublishableKey,
+        (request.headers.authorization || '').replace(/^Bearer\s+/i, ''),
+      );
+      if (!auth.ok) {
+        json(response, auth.status, { error: auth.error });
+        return;
+      }
+      const contentType = String(request.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+      let source;
+      if (contentType === 'application/json') {
+        const body = await readBody(request).catch(() => null);
+        if (!body || typeof body.url !== 'string' || !body.url.trim()) {
+          json(response, 400, { error: 'Send JSON like {"url": "https://…/plugin.zip"}.' });
+          return;
+        }
+        source = { url: body.url.trim() };
+      } else if (['application/zip', 'application/x-zip-compressed', 'application/octet-stream'].includes(contentType)) {
+        if (Number(request.headers['content-length']) > MAX_ZIP_BYTES) {
+          json(response, 413, { error: `Plugin ZIPs may be at most ${MAX_ZIP_BYTES / 1024 / 1024} MB.` });
+          return;
+        }
+        const chunks = [];
+        let size = 0;
+        for await (const chunk of request) {
+          size += chunk.length;
+          if (size > MAX_ZIP_BYTES) {
+            // Close the connection once the error is flushed, instead of reading the rest of the upload.
+            response.on('finish', () => request.destroy());
+            json(response, 413, { error: `Plugin ZIPs may be at most ${MAX_ZIP_BYTES / 1024 / 1024} MB.` });
+            return;
+          }
+          chunks.push(chunk);
+        }
+        source = { zip: Buffer.concat(chunks) };
+      } else {
+        json(response, 415, { error: `Send the ZIP as application/zip, or a download URL as application/json (got "${contentType || 'no content type'}").` });
+        return;
+      }
+
+      // One JSON object per line: progress steps as they happen, then the result or the error.
+      response.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+      const send = (event) => response.write(`${JSON.stringify(event)}\n`);
+      try {
+        const result = await installPlugin(source, auth, (step) => send({ type: 'step', step }));
+        send({ type: 'result', result });
+      } catch (error) {
+        if (!(error instanceof InstallError)) console.error('Plugin installation failed:', error);
+        send({
+          type: 'error',
+          status: error instanceof InstallError ? error.status : 500,
+          error: error instanceof InstallError ? error.message : `Plugin installation failed on the server: ${error instanceof Error ? error.message : 'unknown error'}`,
+        });
+      }
+      response.end();
+      return;
+    }
+    if (url.pathname === '/api/plugin-files' || url.pathname === '/api/plugin-files/delete') {
+      const config = publicConfig(await readConfig());
+      if (!config?.supabaseUrl || !config?.supabasePublishableKey) {
+        json(response, 501, { error: 'This site is not installed, so plugins cannot be managed.' });
+        return;
+      }
+      const auth = await authorizePluginManager(
+        config.supabaseUrl,
+        config.supabasePublishableKey,
+        (request.headers.authorization || '').replace(/^Bearer\s+/i, ''),
+      );
+      if (!auth.ok) {
+        json(response, auth.status, { error: auth.error });
+        return;
+      }
+      if (url.pathname === '/api/plugin-files' && request.method === 'GET') {
+        json(response, 200, await listPluginFolders());
+        return;
+      }
+      if (url.pathname === '/api/plugin-files/delete' && request.method === 'POST') {
+        const body = await readBody(request);
+        const result = await deletePluginFolder(auth, body.id).catch((error) => ({
+          status: Number(error?.status) || 500,
+          body: { error: `Deleting plugins/${String(body.id)} failed: ${error instanceof Error ? error.message : 'unknown error'}` },
+        }));
+        json(response, result.status, result.body);
+        return;
+      }
+      json(response, 405, { error: 'Method not allowed' });
       return;
     }
     if (url.pathname.startsWith('/api/plugins/')) {

@@ -1,20 +1,35 @@
 /**
  * Server-side plugin routes, served at /api/plugins/<plugin-id>/<route>.
  *
- * Plugins are imported statically rather than discovered with readdir: Vercel bundles a
- * function by tracing its imports, so a dynamically discovered module (and its npm
- * dependencies) would be missing from the deployment. Add one import per plugin that
- * ships a server.mjs.
+ * Plugins are imported by literal path rather than discovered with readdir: Vercel bundles a
+ * function by tracing its imports, so a module found at runtime (and its npm dependencies)
+ * would be missing from the deployment. There is one import per plugin that ships a server.mjs.
+ * The imports are dynamic so a plugin folder deleted from the Plugins screen does not stop
+ * the server from starting; any other load error is still logged.
+ *
+ * The lines between the rwp:server-plugin-imports markers are rewritten by the plugin
+ * uploader and Delete (server/serverPluginImports.mjs). Keep exactly one
+ * import('../plugins/<folder>/server.mjs'), per line there, or those actions refuse to edit.
  *
  * A plugin server module default-exports { id, routes }, where routes maps
  * "METHOD path" (e.g. "POST stripe/session") to async (context) => response.
  * A response is { status, body } (body is sent as JSON), { status, redirect },
  * or { status, text, headers }.
  */
-import shop from '../plugins/rwp-shop/server.mjs';
-import pageBuilder from '../plugins/rwp-page-builder/server.mjs';
+const loaded = await Promise.allSettled([
+  // rwp:server-plugin-imports:start
+  import('../plugins/rwp-shop/server.mjs'),
+  import('../plugins/rwp-page-builder/server.mjs'),
+  // rwp:server-plugin-imports:end
+]);
 
-const serverPlugins = [shop, pageBuilder];
+const serverPlugins = loaded.flatMap((result) => {
+  if (result.status === 'fulfilled') return [result.value.default];
+  // A deleted plugin folder is expected; anything else is a real error in the plugin.
+  const folderDeleted = result.reason?.code === 'ERR_MODULE_NOT_FOUND' && /Cannot find module .*server\.mjs'/.test(String(result.reason?.message));
+  if (!folderDeleted) console.error('A plugin server module failed to load:', result.reason);
+  return [];
+});
 
 const activeCache = { at: 0, ids: null };
 
@@ -35,8 +50,8 @@ async function readActivePluginIds(supabaseUrl, supabaseKey) {
       return [];
     }
   };
-  const [active, deleted] = await Promise.all([read('rwp_active_plugins'), read('rwp_deleted_plugins')]);
-  const ids = (active ?? serverPlugins.map((plugin) => plugin.id)).filter((id) => !(deleted || []).includes(id));
+  const active = await read('rwp_active_plugins');
+  const ids = active ?? serverPlugins.map((plugin) => plugin.id);
   activeCache.at = Date.now();
   activeCache.ids = ids;
   return ids;

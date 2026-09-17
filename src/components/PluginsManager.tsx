@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { describeDbError, getOption, getSupabaseClient, updateOption } from '../lib/db';
+import { describeDbError, getSupabaseClient, updateOption } from '../lib/db';
 import { rwp, type RwpInstalledPlugin } from '../lib/rwp';
 import { BulkBar, RowCheckbox, SelectAllCheckbox, useBulkSelection } from './BulkActions';
+import PluginUploadModal, { readPendingInstallResult } from './PluginUploadModal';
 import styles from './PluginsManager.module.css';
 
 const activationOption = 'rwp_active_plugins';
-const deletedOption = 'rwp_deleted_plugins';
 
 interface PluginRow extends RwpInstalledPlugin {
   plugin_id: string;
@@ -14,6 +14,36 @@ interface PluginRow extends RwpInstalledPlugin {
   installed_at: string;
   updated_at: string;
 }
+
+/** What server.mjs found in plugins/ on disk. */
+interface PluginFiles {
+  /** False when the listing could not be fetched; `reason` says why. Delete is disabled then. */
+  available: boolean;
+  reason?: string;
+  onDisk: string[];
+  /** Folders on disk that the running build does not contain yet. */
+  notBuilt: Array<{ id: string; folder: string; name: string }>;
+  problems: string[];
+}
+
+const fetchPluginFiles = async (accessToken: string | undefined): Promise<Omit<PluginFiles, 'notBuilt'> & { plugins: Array<{ id: string; folder: string; name: string }> }> => {
+  const unavailable = (reason: string) => ({ available: false, reason, onDisk: [], plugins: [], problems: [] });
+  if (!accessToken) return unavailable('You are not signed in.');
+  let response: Response;
+  try {
+    response = await fetch('/api/plugin-files', { headers: { Authorization: `Bearer ${accessToken}` }, cache: 'no-store' });
+  } catch {
+    return unavailable('The Node server (server.mjs) could not be reached.');
+  }
+  const body = await response.json().catch(() => ({})) as { plugins?: Array<{ id: string; folder: string; name: string }>; problems?: string[]; error?: string };
+  if (!response.ok) {
+    return unavailable(response.status === 404
+      ? 'This host has no /api/plugin-files endpoint. Plugin files can only be managed when the site runs on server.mjs (npm start); on Vercel, remove the folder from the repository and redeploy.'
+      : body.error || `GET /api/plugin-files returned HTTP ${response.status}${response.status >= 500 ? '. In development, is server.mjs running on :3000?' : '.'}`);
+  }
+  const plugins = body.plugins || [];
+  return { available: true, onDisk: plugins.map((plugin) => plugin.id), plugins, problems: body.problems || [] };
+};
 
 const readActiveIds = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [];
@@ -38,6 +68,11 @@ export default function PluginsManager() {
   const [, refresh] = useState(0);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [files, setFiles] = useState<PluginFiles>({ available: false, onDisk: [], notBuilt: [], problems: [] });
+  const [pendingInstall] = useState(readPendingInstallResult);
+  const [uploadOpen, setUploadOpen] = useState(pendingInstall !== null);
+  /** Bumped after an upload so the disk listing (and its "restart to load" notice) is re-read. */
+  const [reloadKey, setReloadKey] = useState(0);
 
   const visible = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -57,17 +92,29 @@ export default function PluginsManager() {
     const loadPlugins = async () => {
       const supabase = getSupabaseClient();
       const registeredPlugins = rwp.getPlugins();
-      const [{ data: deletedOptionRow }, { data: existingRows, error: existingError }] = await Promise.all([
-        supabase.from('options').select('option_value').eq('option_name', deletedOption).maybeSingle(),
+      const [{ data: sessionData }, { data: existingRows, error: existingError }, { data: activeRow, error: activeError }] = await Promise.all([
+        supabase.auth.getSession(),
         supabase.from('plugins').select('plugin_id,active').eq('source', 'bundled'),
+        supabase.from('options').select('option_value').eq('option_name', activationOption).maybeSingle(),
       ]);
-      const deletedIds = readOptionIds(deletedOptionRow?.option_value);
-      const visiblePlugins = registeredPlugins.filter((plugin) => !deletedIds.includes(plugin.id));
-      deletedIds.forEach((id) => {
-        if (registeredPlugins.some((plugin) => plugin.id === id)) rwp.deactivatePlugin(id);
-      });
-      const registeredIds = visiblePlugins.map((plugin) => plugin.id);
       if (existingError) throw existingError;
+      if (activeError) throw activeError;
+      const diskFiles = await fetchPluginFiles(sessionData.session?.access_token);
+      // Like WordPress, a plugin is installed while its folder exists. The running build can still
+      // contain a folder deleted since it was built (npm start), so the disk listing decides.
+      const visiblePlugins = diskFiles.available
+        ? registeredPlugins.filter((plugin) => diskFiles.onDisk.includes(plugin.id))
+        : registeredPlugins;
+      registeredPlugins
+        .filter((plugin) => plugin.active && !visiblePlugins.includes(plugin))
+        .forEach((plugin) => rwp.deactivatePlugin(plugin.id));
+      const registeredIds = visiblePlugins.map((plugin) => plugin.id);
+      const pluginFiles: PluginFiles = {
+        ...diskFiles,
+        notBuilt: diskFiles.plugins.filter((plugin) => !registeredPlugins.some((registered) => registered.id === plugin.id)),
+      };
+      // No option yet means every bundled plugin is active (App.tsx); otherwise new plugins start inactive.
+      const storedActiveIds = activeRow ? readOptionIds(activeRow.option_value) : null;
       const existingById = new Map((existingRows || []).map((row) => [row.plugin_id, row]));
       const metadata = visiblePlugins.map((plugin) => ({
         plugin_id: plugin.id,
@@ -75,12 +122,12 @@ export default function PluginsManager() {
         version: plugin.version,
         author: plugin.author || null,
         description: plugin.description || '',
-        folder: `plugins/${plugin.id}`,
+        folder: `plugins/${diskFiles.plugins.find((item) => item.id === plugin.id)?.folder || plugin.id}`,
         source: 'bundled',
       }));
       const newRows = metadata
         .filter((plugin) => !existingById.has(plugin.plugin_id))
-        .map((plugin) => ({ ...plugin, active: true }));
+        .map((plugin) => ({ ...plugin, active: storedActiveIds === null || storedActiveIds.includes(plugin.plugin_id) }));
       if (newRows.length > 0) {
         const { error: insertError } = await supabase.from('plugins').insert(newRows);
         if (insertError) throw insertError;
@@ -111,15 +158,12 @@ export default function PluginsManager() {
           .in('plugin_id', staleIds);
         if (deleteError) throw deleteError;
       }
-      const [{ data: rows, error: rowsError }, storedIds] = await Promise.all([
-        supabase.from('plugins').select('*').order('name'),
-        getOption<unknown>(activationOption, []),
-      ]);
+      const { data: rows, error: rowsError } = await supabase.from('plugins').select('*').order('name');
       if (rowsError) throw rowsError;
-      const ids = readActiveIds(storedIds).filter((id) => !deletedIds.includes(id));
+      const ids = storedActiveIds ?? registeredIds;
       const currentIds = ids.filter((id) => registeredIds.includes(id));
-      if (currentIds.length !== ids.length) await updateOption(activationOption, currentIds);
-      const dbRows = (rows || []) as PluginRow[];
+      if (storedActiveIds && currentIds.length !== ids.length) await updateOption(activationOption, currentIds);
+      const dbRows = ((rows || []) as PluginRow[]).filter((row) => row.source !== 'bundled' || registeredIds.includes(row.plugin_id));
       const registeredById = new Map(registeredPlugins.map((plugin) => [plugin.id, plugin]));
       const mergedRows = dbRows.map((row) => ({
         ...row,
@@ -127,10 +171,11 @@ export default function PluginsManager() {
         id: row.plugin_id,
         active: row.active,
       }));
-      return { ids: currentIds, registeredPlugins: visiblePlugins, mergedRows };
+      return { ids: currentIds, registeredPlugins: visiblePlugins, mergedRows, pluginFiles };
     };
-    loadPlugins().then(({ ids, registeredPlugins, mergedRows }) => {
+    loadPlugins().then(({ ids, registeredPlugins, mergedRows, pluginFiles }) => {
         if (!mounted) return;
+        setFiles(pluginFiles);
         setActiveIds(ids);
         setPlugins(mergedRows);
         registeredPlugins.forEach((plugin) => {
@@ -156,7 +201,7 @@ export default function PluginsManager() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [reloadKey]);
 
   const describe = (list: PluginRow[]) => (list.length === 1 ? list[0].name : `${list.length} plugins`);
 
@@ -201,31 +246,52 @@ export default function PluginsManager() {
 
   const deletePlugins = async (targets: PluginRow[]) => {
     if (!targets.length) return;
-    const question = targets.length === 1
-      ? `Delete "${targets[0].name}" from the plugin registry? This does not delete bundled source files.`
-      : `Delete ${targets.length} plugins from the plugin registry? This does not delete bundled source files.`;
-    if (!window.confirm(question)) return;
-    const ids = targets.map((plugin) => plugin.plugin_id);
-    setDeletingId(targets.length === 1 ? ids[0] : 'bulk');
     setError('');
     setFeedback('');
+    if (!files.available) {
+      setError(`Plugin files cannot be deleted here: ${files.reason}`);
+      return;
+    }
+    const active = targets.filter((plugin) => plugin.active);
+    if (active.length) {
+      setError(`Deactivate ${describe(active)} before deleting ${active.length === 1 ? 'it' : 'them'}.`);
+      return;
+    }
+    const question = targets.length === 1
+      ? `Delete "${targets[0].name}"? This permanently removes the plugins/${targets[0].plugin_id} folder from the server.`
+      : `Delete ${targets.length} plugins? This permanently removes their folders from plugins/ on the server.`;
+    if (!window.confirm(question)) return;
+    setDeletingId(targets.length === 1 ? targets[0].plugin_id : 'bulk');
+    const deletedIds: string[] = [];
+    const failures: string[] = [];
     try {
       const supabase = getSupabaseClient();
-      const { error: deleteError } = await supabase
-        .from('plugins')
-        .delete()
-        .in('plugin_id', ids);
-      if (deleteError) throw deleteError;
-      const nextIds = activeIds.filter((id) => !ids.includes(id));
-      const saved = await updateOption(activationOption, nextIds);
-      if (!saved) throw new Error('Plugin registry was deleted, but its activation state could not be saved.');
-      targets.filter((plugin) => plugin.active).forEach((plugin) => rwp.deactivatePlugin(plugin.plugin_id));
-      const deleted = await getOption<unknown>(deletedOption, []);
-      await updateOption(deletedOption, [...new Set([...readActiveIds(deleted), ...ids])]);
-      setActiveIds(nextIds);
-      setPlugins((current) => current.filter((item) => !ids.includes(item.plugin_id)));
-      setFeedback(`${describe(targets)} ${targets.length === 1 ? 'was' : 'were'} removed from the plugin registry.`);
-      selection.clear();
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) throw new Error('Your session has expired. Sign in again.');
+      for (const plugin of targets) {
+        const response = await fetch('/api/plugin-files/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ id: plugin.plugin_id }),
+        });
+        const body = await response.json().catch(() => ({})) as { error?: string };
+        if (!response.ok) {
+          failures.push(body.error || `Deleting ${plugin.name} failed: HTTP ${response.status}.`);
+          continue;
+        }
+        deletedIds.push(plugin.plugin_id);
+      }
+      if (deletedIds.length) {
+        const { error: deleteError } = await supabase.from('plugins').delete().in('plugin_id', deletedIds);
+        if (deleteError) failures.push(`The folders were deleted, but their rows in the plugins table were not: ${describeDbError(deleteError)}`);
+        setPlugins((current) => current.filter((item) => !deletedIds.includes(item.plugin_id)));
+        setFiles((current) => ({ ...current, onDisk: current.onDisk.filter((id) => !deletedIds.includes(id)) }));
+        const deleted = targets.filter((plugin) => deletedIds.includes(plugin.plugin_id));
+        setFeedback(`${describe(deleted)} ${deleted.length === 1 ? 'was' : 'were'} deleted.`);
+        selection.clear();
+      }
+      if (failures.length) setError(failures.join(' '));
     } catch (deleteError: unknown) {
       setError(deleteError instanceof Error ? deleteError.message : describeDbError(deleteError));
     } finally {
@@ -244,7 +310,7 @@ export default function PluginsManager() {
     window.location.reload();
   };
 
-  if (loading) return <div className={styles.status} role="status">Loading plugins…</div>;
+  if (loading) return <div className={styles.status} role="status">Loading pluginsâ€¦</div>;
 
   return (
     <section className={styles.wrapper} aria-labelledby="plugins-heading">
@@ -252,14 +318,39 @@ export default function PluginsManager() {
         <div>
           <h2 id="plugins-heading">Plugins</h2>
           <p>Extend React-WP with typed actions, filters, admin pages, widgets, and shortcodes.</p>
-          <button type="button" className={styles.refresh} onClick={reloadPlugins}>Refresh plugins</button>
+          <div className={styles.headingActions}>
+            <button type="button" className={styles.upload} onClick={() => setUploadOpen(true)}>Upload Plugin</button>
+            <button type="button" className={styles.refresh} onClick={reloadPlugins}>Refresh plugins</button>
+          </div>
         </div>
       </div>
+      {uploadOpen && (
+        <PluginUploadModal
+          initialResult={pendingInstall}
+          onClose={() => setUploadOpen(false)}
+          onInstalled={(installed) => {
+            setError('');
+            setFeedback(`${installed.plugin.name} ${installed.plugin.version} was uploaded. It appears in this list as inactive once the site has been rebuilt.`);
+            setReloadKey((value) => value + 1);
+          }}
+        />
+      )}
       {error && <div className={styles.error} role="alert">{error}</div>}
       {feedback && <div className={styles.feedback} role="status">{feedback}</div>}
       <div className={styles.notice}>
-        Plugin activation is stored in Supabase and shared by every administrator. Uploaded JavaScript is not executed yet; a sandboxed installer will be added before third-party code installation is enabled.
+        A plugin is installed while its folder exists in <code>plugins/</code>. Activation is stored in Supabase and shared by every administrator. Delete removes the folder from the server.
       </div>
+      {!files.available && files.reason && (
+        <div className={styles.notice} role="status">Plugin folders could not be checked, so Delete is unavailable: {files.reason}</div>
+      )}
+      {files.notBuilt.length > 0 && (
+        <div className={styles.notice} role="status">
+          Found {files.notBuilt.map((plugin) => `${plugin.name} (plugins/${plugin.folder})`).join(', ')} on disk, but the running site was built without {files.notBuilt.length === 1 ? 'it' : 'them'}. Restart the server with <code>npm start</code> (which rebuilds) and {files.notBuilt.length === 1 ? 'it' : 'they'} will appear here as inactive. Under <code>npm run dev</code>, reload this page.
+        </div>
+      )}
+      {files.problems.length > 0 && (
+        <div className={styles.error} role="alert">{files.problems.join(' ')}</div>
+      )}
       {plugins.length === 0 ? (
         <div className={styles.empty}>
           <strong>No plugins registered</strong>
@@ -276,7 +367,7 @@ export default function PluginsManager() {
               ))}
             </div>
             <input type="search" className={styles.search} value={search} onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search plugins…" aria-label="Search plugins" />
+              placeholder="Search pluginsâ€¦" aria-label="Search plugins" />
           </div>
           <BulkBar selection={selection} total={visible.length} noun="plugins"
             busy={savingId === 'bulk' || deletingId === 'bulk' ? 'working' : ''}
@@ -299,7 +390,7 @@ export default function PluginsManager() {
                     <td><strong>{plugin.name}</strong><small>{plugin.plugin_id}</small></td>
                     <td>{plugin.description || 'No description provided.'}</td>
                     <td>{plugin.version}</td>
-                    <td>{plugin.author || '—'}</td>
+                    <td>{plugin.author || 'â€”'}</td>
                     <td><span className={plugin.active ? styles.active : styles.inactive}>{plugin.active ? 'Active' : 'Inactive'}</span></td>
                     <td>
                       <button
@@ -308,7 +399,7 @@ export default function PluginsManager() {
                         disabled={savingId === plugin.plugin_id || deletingId === plugin.plugin_id}
                         onClick={() => void setActive([plugin], !plugin.active)}
                       >
-                        {savingId === plugin.plugin_id ? 'Saving…' : plugin.active ? 'Deactivate' : 'Activate'}
+                        {savingId === plugin.plugin_id ? 'Savingâ€¦' : plugin.active ? 'Deactivate' : 'Activate'}
                       </button>
                       <button
                         type="button"
@@ -316,7 +407,7 @@ export default function PluginsManager() {
                         disabled={savingId === plugin.plugin_id || deletingId === plugin.plugin_id}
                         onClick={() => void deletePlugins([plugin])}
                       >
-                        {deletingId === plugin.plugin_id ? 'Deleting…' : 'Delete'}
+                        {deletingId === plugin.plugin_id ? 'Deletingâ€¦' : 'Delete'}
                       </button>
                     </td>
                   </tr>

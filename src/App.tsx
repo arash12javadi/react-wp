@@ -48,15 +48,12 @@ const readPluginIds = (value: string | null | undefined): string[] => {
 };
 
 const initializePlugins = async (supabase: SupabaseClient) => {
-  const [{ data: activeRow }, { data: deletedRow }] = await Promise.all([
-    supabase.from('options').select('option_value').eq('option_name', 'rwp_active_plugins').maybeSingle(),
-    supabase.from('options').select('option_value').eq('option_name', 'rwp_deleted_plugins').maybeSingle(),
-  ]);
-  const deletedIds = readPluginIds(deletedRow?.option_value);
+  const { data: activeRow } = await supabase
+    .from('options').select('option_value').eq('option_name', 'rwp_active_plugins').maybeSingle();
   const registered = rwp.getPlugins();
   const activeIds = activeRow ? readPluginIds(activeRow.option_value) : registered.map((plugin) => plugin.id);
   registered.forEach((plugin) => {
-    if (!deletedIds.includes(plugin.id) && activeIds.includes(plugin.id)) rwp.activatePlugin(plugin.id);
+    if (activeIds.includes(plugin.id)) rwp.activatePlugin(plugin.id);
   });
 };
 
