@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
-import { getOption, getSupabaseClient, updateOption } from '../lib/db';
+import { useEffect, useMemo, useState } from 'react';
+import { describeDbError, getOption, getSupabaseClient, updateOption } from '../lib/db';
 import { rwp, type RwpInstalledPlugin } from '../lib/rwp';
+import { BulkBar, RowCheckbox, SelectAllCheckbox, useBulkSelection } from './BulkActions';
 import styles from './PluginsManager.module.css';
 
 const activationOption = 'rwp_active_plugins';
@@ -35,6 +36,19 @@ export default function PluginsManager() {
   const [feedback, setFeedback] = useState('');
   const [deletingId, setDeletingId] = useState('');
   const [, refresh] = useState(0);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+
+  const visible = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return plugins.filter((plugin) =>
+      (statusFilter === 'all' || (statusFilter === 'active') === Boolean(plugin.active))
+      && (!term || [plugin.name, plugin.plugin_id, plugin.description, plugin.author, plugin.version]
+        .filter(Boolean).join(' ').toLowerCase().includes(term)));
+  }, [plugins, search, statusFilter]);
+  const visibleIds = useMemo(() => visible.map((plugin) => plugin.plugin_id), [visible]);
+  const selection = useBulkSelection(visibleIds);
+  const activeCount = plugins.filter((plugin) => plugin.active).length;
 
   useEffect(() => rwp.subscribe(() => refresh((value) => value + 1)), []);
 
@@ -144,38 +158,55 @@ export default function PluginsManager() {
     };
   }, []);
 
-  const togglePlugin = async (plugin: PluginRow) => {
-    setSavingId(plugin.id);
+  const describe = (list: PluginRow[]) => (list.length === 1 ? list[0].name : `${list.length} plugins`);
+
+  /** Activates or deactivates several plugins with one write to the table and one to the option. */
+  const setActive = async (targets: PluginRow[], nextActive: boolean) => {
+    const changing = targets.filter((plugin) => plugin.active !== nextActive);
+    if (!changing.length) {
+      setFeedback(`${describe(targets)} ${targets.length === 1 ? 'is' : 'are'} already ${nextActive ? 'active' : 'inactive'}.`);
+      return;
+    }
+    const ids = changing.map((plugin) => plugin.plugin_id);
+    setSavingId(changing.length === 1 ? ids[0] : 'bulk');
     setError('');
     setFeedback('');
-    const nextActive = !plugin.active;
     const nextIds = nextActive
-      ? [...new Set([...activeIds, plugin.id])]
-      : activeIds.filter((id) => id !== plugin.id);
+      ? [...new Set([...activeIds, ...ids])]
+      : activeIds.filter((id) => !ids.includes(id));
     try {
       const supabase = getSupabaseClient();
-      const { error: updateError } = await supabase
+      const { data, error: updateError } = await supabase
         .from('plugins')
         .update({ active: nextActive, updated_at: new Date().toISOString() })
-        .eq('plugin_id', plugin.plugin_id);
+        .in('plugin_id', ids)
+        .select('plugin_id');
       if (updateError) throw updateError;
+      if ((data || []).length < ids.length) {
+        throw new Error(`The database updated ${(data || []).length} of ${ids.length} plugin rows: row level security skipped the rest. Managing plugins needs the activate_plugins capability.`);
+      }
       const saved = await updateOption(activationOption, nextIds);
       if (!saved) throw new Error('Plugin activation state could not be saved.');
-      if (nextActive) rwp.activatePlugin(plugin.id);
-      else rwp.deactivatePlugin(plugin.id);
+      ids.forEach((id) => (nextActive ? rwp.activatePlugin(id) : rwp.deactivatePlugin(id)));
       setActiveIds(nextIds);
-      setPlugins((current) => current.map((item) => item.plugin_id === plugin.plugin_id ? { ...item, active: nextActive } : item));
-      setFeedback(`${plugin.name} ${nextActive ? 'activated' : 'deactivated'}.`);
+      setPlugins((current) => current.map((item) => ids.includes(item.plugin_id) ? { ...item, active: nextActive } : item));
+      setFeedback(`${describe(changing)} ${nextActive ? 'activated' : 'deactivated'}.`);
+      selection.clear();
     } catch (toggleError: unknown) {
-      setError(toggleError instanceof Error ? toggleError.message : 'Unable to update plugin.');
+      setError(toggleError instanceof Error ? toggleError.message : describeDbError(toggleError));
     } finally {
       setSavingId('');
     }
   };
 
-  const deletePlugin = async (plugin: PluginRow) => {
-    if (!window.confirm(`Delete "${plugin.name}" from the plugin registry? This does not delete bundled source files.`)) return;
-    setDeletingId(plugin.plugin_id);
+  const deletePlugins = async (targets: PluginRow[]) => {
+    if (!targets.length) return;
+    const question = targets.length === 1
+      ? `Delete "${targets[0].name}" from the plugin registry? This does not delete bundled source files.`
+      : `Delete ${targets.length} plugins from the plugin registry? This does not delete bundled source files.`;
+    if (!window.confirm(question)) return;
+    const ids = targets.map((plugin) => plugin.plugin_id);
+    setDeletingId(targets.length === 1 ? ids[0] : 'bulk');
     setError('');
     setFeedback('');
     try {
@@ -183,22 +214,30 @@ export default function PluginsManager() {
       const { error: deleteError } = await supabase
         .from('plugins')
         .delete()
-        .eq('plugin_id', plugin.plugin_id);
+        .in('plugin_id', ids);
       if (deleteError) throw deleteError;
-      const nextIds = activeIds.filter((id) => id !== plugin.plugin_id);
+      const nextIds = activeIds.filter((id) => !ids.includes(id));
       const saved = await updateOption(activationOption, nextIds);
       if (!saved) throw new Error('Plugin registry was deleted, but its activation state could not be saved.');
-      if (plugin.active) rwp.deactivatePlugin(plugin.plugin_id);
+      targets.filter((plugin) => plugin.active).forEach((plugin) => rwp.deactivatePlugin(plugin.plugin_id));
       const deleted = await getOption<unknown>(deletedOption, []);
-      await updateOption(deletedOption, [...new Set([...readActiveIds(deleted), plugin.plugin_id])]);
+      await updateOption(deletedOption, [...new Set([...readActiveIds(deleted), ...ids])]);
       setActiveIds(nextIds);
-      setPlugins((current) => current.filter((item) => item.plugin_id !== plugin.plugin_id));
-      setFeedback(`${plugin.name} was removed from the plugin registry.`);
+      setPlugins((current) => current.filter((item) => !ids.includes(item.plugin_id)));
+      setFeedback(`${describe(targets)} ${targets.length === 1 ? 'was' : 'were'} removed from the plugin registry.`);
+      selection.clear();
     } catch (deleteError: unknown) {
-      setError(deleteError instanceof Error ? deleteError.message : 'Unable to delete plugin.');
+      setError(deleteError instanceof Error ? deleteError.message : describeDbError(deleteError));
     } finally {
       setDeletingId('');
     }
+  };
+
+  const onBulk = (action: string, ids: string[]) => {
+    const targets = plugins.filter((plugin) => ids.includes(plugin.plugin_id));
+    if (action === 'activate') void setActive(targets, true);
+    if (action === 'deactivate') void setActive(targets, false);
+    if (action === 'delete') void deletePlugins(targets);
   };
 
   const reloadPlugins = () => {
@@ -228,14 +267,35 @@ export default function PluginsManager() {
         </div>
       ) : (
         <div className={styles.list}>
-          <div className={styles.tableWrap}>
+          <div className={styles.filters}>
+            <div className={styles.filterTabs} role="tablist" aria-label="Filter plugins">
+              {([['all', `All (${plugins.length})`], ['active', `Active (${activeCount})`], ['inactive', `Inactive (${plugins.length - activeCount})`]] as const).map(([id, label]) => (
+                <button key={id} type="button" role="tab" aria-selected={statusFilter === id}
+                  className={statusFilter === id ? styles.filterActive : styles.filter}
+                  onClick={() => setStatusFilter(id)}>{label}</button>
+              ))}
+            </div>
+            <input type="search" className={styles.search} value={search} onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search plugins…" aria-label="Search plugins" />
+          </div>
+          <BulkBar selection={selection} total={visible.length} noun="plugins"
+            busy={savingId === 'bulk' || deletingId === 'bulk' ? 'working' : ''}
+            actions={[
+              { id: 'activate', label: 'Activate', tone: 'primary', hidden: statusFilter === 'active' },
+              { id: 'deactivate', label: 'Deactivate', hidden: statusFilter === 'inactive' },
+              { id: 'delete', label: 'Delete', tone: 'danger' },
+            ]}
+            onAction={onBulk} />
+          {visible.length === 0 && <div className={styles.empty}><strong>No plugins match</strong><span>Try another search or filter.</span></div>}
+          {visible.length > 0 && <div className={styles.tableWrap}>
             <table className={styles.table}>
               <thead>
-                <tr><th>Plugin</th><th>Description</th><th>Version</th><th>Author</th><th>Status</th><th>Actions</th></tr>
+                <tr><th className={styles.checkCell}><SelectAllCheckbox selection={selection} total={visible.length} /></th><th>Plugin</th><th>Description</th><th>Version</th><th>Author</th><th>Status</th><th>Actions</th></tr>
               </thead>
               <tbody>
-                {plugins.map((plugin) => (
-                  <tr key={plugin.plugin_id}>
+                {visible.map((plugin) => (
+                  <tr key={plugin.plugin_id} className={selection.isSelected(plugin.plugin_id) ? styles.rowSelected : undefined}>
+                    <td className={styles.checkCell}><RowCheckbox selection={selection} id={plugin.plugin_id} label={plugin.name} /></td>
                     <td><strong>{plugin.name}</strong><small>{plugin.plugin_id}</small></td>
                     <td>{plugin.description || 'No description provided.'}</td>
                     <td>{plugin.version}</td>
@@ -246,7 +306,7 @@ export default function PluginsManager() {
                         type="button"
                         className={plugin.active ? styles.deactivate : styles.activate}
                         disabled={savingId === plugin.plugin_id || deletingId === plugin.plugin_id}
-                        onClick={() => void togglePlugin(plugin)}
+                        onClick={() => void setActive([plugin], !plugin.active)}
                       >
                         {savingId === plugin.plugin_id ? 'Saving…' : plugin.active ? 'Deactivate' : 'Activate'}
                       </button>
@@ -254,7 +314,7 @@ export default function PluginsManager() {
                         type="button"
                         className={styles.delete}
                         disabled={savingId === plugin.plugin_id || deletingId === plugin.plugin_id}
-                        onClick={() => void deletePlugin(plugin)}
+                        onClick={() => void deletePlugins([plugin])}
                       >
                         {deletingId === plugin.plugin_id ? 'Deleting…' : 'Delete'}
                       </button>
@@ -263,7 +323,7 @@ export default function PluginsManager() {
                 ))}
               </tbody>
             </table>
-          </div>
+          </div>}
         </div>
       )}
     </section>

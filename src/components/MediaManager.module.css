@@ -112,6 +112,88 @@
   gap: 11px;
 }
 
+.bulkBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  margin-bottom: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #f8fafc;
+}
+
+.bulkBar .muted {
+  margin: 0;
+}
+
+.bulkBar .danger,
+.bulkBar .primary {
+  padding: 7px 12px;
+}
+
+.selectAll {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  color: #334155;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.selectAll input,
+.thumbCheck {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #4f46e5;
+  cursor: pointer;
+}
+
+.bulkCount {
+  color: #4f46e5;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.bulkGhost {
+  border: 1px solid #dbe1ea;
+  border-radius: 6px;
+  padding: 7px 12px;
+  color: #334155;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.thumbWrap,
+.thumbWrapChecked {
+  display: grid;
+  position: relative;
+}
+
+.thumbCheck {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  opacity: 0.85;
+}
+
+.thumbWrap:not(:hover, :focus-within) .thumbCheck:not(:checked) {
+  opacity: 0.35;
+}
+
+.thumbWrapChecked .thumb,
+.thumbWrapChecked .thumbActive {
+  border-color: #4f46e5;
+  background: #eef2ff;
+  box-shadow: 0 0 0 2px rgb(79 70 229 / 25%);
+}
+
 .thumb,
 .thumbActive {
   display: flex;
@@ -159,6 +241,68 @@
   border-radius: 8px;
   padding: 14px;
   background: #f8fafc;
+}
+
+.detailNav {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: center;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.detailNav button,
+.nextMissing {
+  border: 1px solid #dbe1ea;
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: #334155;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.detailNav button:hover:not(:disabled),
+.nextMissing:hover:not(:disabled) {
+  border-color: #c7d2fe;
+  color: #4338ca;
+}
+
+.detailNav button:disabled,
+.nextMissing:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.nextMissing {
+  border-color: #fde68a;
+  color: #92400e;
+  background: #fffbeb;
+}
+
+.detailHint {
+  margin: -4px 0 0;
+  color: #94a3b8;
+  font-size: 0.7rem;
+}
+
+.missingBadge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  border-radius: 999px;
+  padding: 2px 6px;
+  color: #92400e;
+  background: #fef3c7;
+  font-size: 0.62rem;
+  font-style: normal;
+  font-weight: 700;
+  pointer-events: none;
 }
 
 .details label {

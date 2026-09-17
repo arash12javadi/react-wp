@@ -744,27 +744,36 @@ function AsyncSelectControl({ control, value, onChange }: ControlProps) {
   );
 }
 
-/** A list of image URLs picked one at a time from the media library. */
+/** A list of image URLs picked from the media library, one or several at a time. */
 function GalleryControl({ value, onChange }: ControlProps) {
   const images = (Array.isArray(value) ? value : []).filter((item): item is string => typeof item === 'string');
   const [open, setOpen] = useState(false);
+  // Positions, not URLs: the same image may appear twice.
+  const [marked, setMarked] = useState<number[]>([]);
+  const update = (next: string[]) => { setMarked([]); onChange(next); };
   const move = (index: number, delta: number) => {
     const target = index + delta;
     if (target < 0 || target >= images.length) return;
     const next = [...images];
     [next[index], next[target]] = [next[target], next[index]];
-    onChange(next);
+    update(next);
   };
+  const liveMarked = marked.filter((index) => index < images.length);
+  const allMarked = images.length > 0 && liveMarked.length === images.length;
+  const toggleMark = (index: number) =>
+    setMarked((current) => (current.includes(index) ? current.filter((entry) => entry !== index) : [...current, index]));
   return (
     <div className={styles.stack}>
       {images.length > 0 && (
         <div className={styles.galleryGrid}>
           {images.map((url, index) => (
-            <div key={`${url}-${index}`} className={styles.galleryThumb}>
+            <div key={`${url}-${index}`} className={liveMarked.includes(index) ? styles.galleryThumbMarked : styles.galleryThumb}>
               <img src={url} alt="" />
+              <input type="checkbox" className={styles.galleryCheck} checked={liveMarked.includes(index)}
+                aria-label={`Select image ${index + 1}`} onChange={() => toggleMark(index)} />
               <div>
                 <button type="button" aria-label="Move earlier" disabled={index === 0} onClick={() => move(index, -1)}>‹</button>
-                <button type="button" aria-label="Remove image" onClick={() => onChange(images.filter((_, itemIndex) => itemIndex !== index))}>×</button>
+                <button type="button" aria-label="Remove image" onClick={() => update(images.filter((_, itemIndex) => itemIndex !== index))}>×</button>
                 <button type="button" aria-label="Move later" disabled={index === images.length - 1} onClick={() => move(index, 1)}>›</button>
               </div>
             </div>
@@ -772,11 +781,27 @@ function GalleryControl({ value, onChange }: ControlProps) {
         </div>
       )}
       <div className={styles.buttonRow}>
-        <button type="button" className={styles.smallButton} onClick={() => setOpen(true)}><Plus size={13} /> Add image</button>
-        {images.length > 0 && <button type="button" className={styles.smallButtonGhost} onClick={() => onChange([])}>Clear all</button>}
+        <button type="button" className={styles.smallButton} onClick={() => setOpen(true)}><Plus size={13} /> Add images</button>
+        {images.length > 0 && (
+          <button type="button" className={styles.smallButtonGhost}
+            onClick={() => setMarked(allMarked ? [] : images.map((_, index) => index))}>
+            {allMarked ? 'Deselect all' : 'Select all'}
+          </button>
+        )}
+        {liveMarked.length > 0 && (
+          <button type="button" className={styles.smallButtonGhost}
+            onClick={() => update(images.filter((_, index) => !liveMarked.includes(index)))}>
+            Remove selected ({liveMarked.length})
+          </button>
+        )}
+        {images.length > 0 && <button type="button" className={styles.smallButtonGhost} onClick={() => update([])}>Clear all</button>}
         <span className={styles.controlHelp}>{images.length} image{images.length === 1 ? '' : 's'}</span>
       </div>
-      {open && <MediaManager heading="Add to gallery" onClose={() => setOpen(false)} onSelect={(item) => { onChange([...images, item.url]); setOpen(false); }} />}
+      {open && (
+        <MediaManager heading="Add to gallery" onClose={() => setOpen(false)}
+          onSelect={(item) => { update([...images, item.url]); setOpen(false); }}
+          onSelectMany={(picked) => { update([...images, ...picked.map((item) => item.url)]); setOpen(false); }} />
+      )}
     </div>
   );
 }

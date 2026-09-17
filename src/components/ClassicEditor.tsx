@@ -267,6 +267,13 @@ export default function ClassicEditor({ value, onChange, placeholder, disabled =
             setMediaOpen(false);
             editor.chain().focus().setImage({ src: item.url, alt: item.alt_text || item.title || '' }).run();
           }}
+          onSelectMany={(items) => {
+            setMediaOpen(false);
+            editor.chain().focus().insertContent(items.map((item) => ({
+              type: 'image',
+              attrs: { src: item.url, alt: item.alt_text || item.title || '' },
+            }))).run();
+          }}
         />
       )}
 

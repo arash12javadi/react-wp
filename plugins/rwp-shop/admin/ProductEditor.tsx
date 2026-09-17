@@ -585,6 +585,7 @@ export default function ProductEditor({ productId, onClose, onSaved }: { product
                 <option value="pending">Pending review</option>
                 <option value="private">Private</option>
                 <option value="publish">Published</option>
+                {product.status === 'trash' && <option value="trash">Trash</option>}
               </select>
             </Field>
             <Field label="Catalog visibility">

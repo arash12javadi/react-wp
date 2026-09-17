@@ -65,22 +65,51 @@ export function ImagePicker({ value, onChange, label = 'Set image' }: { value: s
 
 export function GalleryPicker({ value, onChange }: { value: string[]; onChange: (urls: string[]) => void }) {
   const [open, setOpen] = useState(false);
+  // Positions, not URLs: the same image may be added twice.
+  const [marked, setMarked] = useState<number[]>([]);
+  const update = (urls: string[]) => { setMarked([]); onChange(urls); };
+  const liveMarked = marked.filter((index) => index < value.length);
+  const allMarked = value.length > 0 && liveMarked.length === value.length;
+  const toggleMark = (index: number) =>
+    setMarked((current) => (current.includes(index) ? current.filter((entry) => entry !== index) : [...current, index]));
   return (
     <div className={styles.boxed}>
-      <div className={styles.imageRow}>
-        {value.map((url, index) => (
-          <div key={`${url}-${index}`} className={styles.imageTile}>
-            <img src={url} alt="" />
-            <button type="button" aria-label="Remove from gallery" onClick={() => onChange(value.filter((_, i) => i !== index))}>×</button>
-          </div>
-        ))}
+      {value.length > 0 && (
+        <div className={styles.imageRow}>
+          {value.map((url, index) => (
+            <div key={`${url}-${index}`} className={liveMarked.includes(index) ? styles.imageTileMarked : styles.imageTile}>
+              <img src={url} alt="" />
+              <input type="checkbox" className={styles.imageTileCheck} checked={liveMarked.includes(index)}
+                aria-label={`Select gallery image ${index + 1}`} onChange={() => toggleMark(index)} />
+              <button type="button" aria-label="Remove from gallery" onClick={() => update(value.filter((_, i) => i !== index))}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className={styles.imageActions}>
+        <button type="button" className={styles.buttonSecondary} onClick={() => setOpen(true)}>Add gallery images</button>
+        {value.length > 0 && (
+          <button type="button" className={styles.buttonSecondary}
+            onClick={() => setMarked(allMarked ? [] : value.map((_, index) => index))}>
+            {allMarked ? 'Deselect all' : 'Select all'}
+          </button>
+        )}
+        {liveMarked.length > 0 && (
+          <button type="button" className={styles.buttonDanger}
+            onClick={() => update(value.filter((_, index) => !liveMarked.includes(index)))}>
+            Remove selected ({liveMarked.length})
+          </button>
+        )}
+        {value.length > 0 && (
+          <button type="button" className={styles.buttonDanger} onClick={() => update([])}>Clear all</button>
+        )}
       </div>
-      <button type="button" className={styles.buttonSecondary} onClick={() => setOpen(true)}>Add gallery image</button>
       {open && (
         <MediaManager
           heading="Add to product gallery"
           onClose={() => setOpen(false)}
-          onSelect={(item) => { onChange([...value, item.url]); setOpen(false); }}
+          onSelect={(item) => { update([...value, item.url]); setOpen(false); }}
+          onSelectMany={(items) => { update([...value, ...items.map((item) => item.url)]); setOpen(false); }}
         />
       )}
     </div>

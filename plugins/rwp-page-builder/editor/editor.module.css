@@ -229,11 +229,14 @@ textarea.input { resize: vertical; }
 .popoverFoot code { color: #5b21b6; font-size: 10.5px; }
 
 .galleryGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.galleryThumb { position: relative; aspect-ratio: 1; overflow: hidden; border: 1px solid var(--ed-border); border-radius: 6px; background: var(--ed-bg); }
-.galleryThumb img { width: 100%; height: 100%; object-fit: cover; }
-.galleryThumb div { position: absolute; inset: auto 2px 2px; display: flex; justify-content: space-between; opacity: 0; transition: opacity .15s; }
-.galleryThumb:hover div, .galleryThumb:focus-within div { opacity: 1; }
-.galleryThumb button { display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; color: #fff; background: rgb(15 23 42 / 75%); cursor: pointer; }
+.galleryThumb, .galleryThumbMarked { position: relative; aspect-ratio: 1; overflow: hidden; border: 1px solid var(--ed-border); border-radius: 6px; background: var(--ed-bg); }
+.galleryThumbMarked { border-color: var(--ed-accent); box-shadow: 0 0 0 2px var(--ed-accent); }
+.galleryThumb img, .galleryThumbMarked img { width: 100%; height: 100%; object-fit: cover; }
+.galleryThumb div, .galleryThumbMarked div { position: absolute; inset: auto 2px 2px; display: flex; justify-content: space-between; opacity: 0; transition: opacity .15s; }
+.galleryThumb:hover div, .galleryThumb:focus-within div, .galleryThumbMarked:hover div, .galleryThumbMarked:focus-within div { opacity: 1; }
+.galleryThumb button, .galleryThumbMarked button { display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; color: #fff; background: rgb(15 23 42 / 75%); cursor: pointer; }
+.galleryCheck { position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; margin: 0; accent-color: var(--ed-accent); cursor: pointer; opacity: 0; transition: opacity .15s; }
+.galleryThumb:hover .galleryCheck, .galleryThumb:focus-within .galleryCheck, .galleryThumbMarked .galleryCheck { opacity: 1; }
 
 .switch, .switchOn { position: relative; width: 36px; height: 20px; padding: 0; border: 0; border-radius: 999px; background: #cbd5e1; cursor: pointer; transition: background .15s; }
 .switch span, .switchOn span { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 25%); transition: transform .15s; }

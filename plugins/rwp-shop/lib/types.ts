@@ -1,5 +1,6 @@
 export type ProductType = 'simple' | 'variable' | 'grouped' | 'external';
-export type ProductStatus = 'draft' | 'pending' | 'private' | 'publish';
+/** 'trash' needs supabase/migrations/20260926_bulk_actions_trash.sql. */
+export type ProductStatus = 'draft' | 'pending' | 'private' | 'publish' | 'trash';
 export type StockStatus = 'instock' | 'outofstock' | 'onbackorder';
 export type OrderStatus = 'pending' | 'processing' | 'on-hold' | 'completed' | 'cancelled' | 'refunded' | 'failed';
 

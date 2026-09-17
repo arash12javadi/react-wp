@@ -297,6 +297,7 @@
 .status_refunded { color: #6b21a8; background: #f3e8ff; }
 .status_publish { color: #065f46; background: #d1fae5; }
 .status_draft { color: #334155; background: #e2e8f0; }
+.status_trash { color: #991b1b; background: #fee2e2; }
 
 .cards {
   display: grid;
@@ -351,7 +352,8 @@
   gap: 8px;
 }
 
-.imageTile {
+.imageTile,
+.imageTileMarked {
   position: relative;
   width: 76px;
   height: 76px;
@@ -361,13 +363,37 @@
   background: #f8fafc;
 }
 
-.imageTile img {
+.imageTileMarked {
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 2px #4f46e5;
+}
+
+.imageTile img,
+.imageTileMarked img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.imageTile button {
+.imageTileCheck {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #4f46e5;
+  cursor: pointer;
+}
+
+.imageActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.imageTile button,
+.imageTileMarked button {
   position: absolute;
   top: 3px;
   right: 3px;

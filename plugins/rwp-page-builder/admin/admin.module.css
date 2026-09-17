@@ -10,7 +10,8 @@
 .panel h3 { margin: 6px 0 0; color: #0f172a; font-size: 1rem; }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .toolbar p { flex: 1; min-width: 220px; margin: 0; color: #64748b; }
-.toolbar select { padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; font: inherit; }
+.toolbar select, .toolbar input[type='search'] { padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; font: inherit; }
+.toolbar input[type='search'] { min-width: 200px; }
 
 .tableWrap { overflow-x: auto; }
 .table { width: 100%; border-collapse: collapse; font-size: .9rem; }

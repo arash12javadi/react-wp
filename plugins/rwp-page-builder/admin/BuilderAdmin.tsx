@@ -1,5 +1,9 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getSupabaseClient } from '../../../src/lib/db';
+import { deleteContent, plural, setContentStatus, type ContentStatus } from '../../../src/lib/contentBulk';
+import {
+  BulkBar, RowCheckbox, SelectAllCheckbox, describeBulkResult, useBulkSelection, type BulkAction,
+} from '../../../src/components/BulkActions';
 import { fetchProfile } from '../../../src/lib/profiles';
 import { hasCapability, type UserRole } from '../../../src/lib/roles';
 import {
@@ -158,38 +162,107 @@ function SiteTemplatesPanel({ navigate }: { navigate: RwpAdminPageProps['navigat
 function SitePagesTab() {
   const [pages, setPages] = useState<Awaited<ReturnType<typeof listBuilderPages>> | null>(null);
   const [error, setError] = useState('');
-  const [filter, setFilter] = useState<'builder' | 'all'>('builder');
-  useEffect(() => {
+  const [notice, setNotice] = useState('');
+  const [busy, setBusy] = useState('');
+  const [filter, setFilter] = useState<'builder' | 'all' | 'trash'>('builder');
+  const [status, setStatus] = useState<'' | 'published' | 'draft'>('');
+  const [search, setSearch] = useState('');
+  const load = useCallback(() => {
     listBuilderPages().then(setPages).catch((loadError: unknown) => setError(loadError instanceof Error ? loadError.message : 'Could not load pages.'));
   }, []);
-  const visible = (pages || []).filter((page) => filter === 'all' || page.is_builder_enabled);
+  useEffect(load, [load]);
+  const inTrash = filter === 'trash';
+  const term = search.trim().toLowerCase();
+  const visible = useMemo(() => (pages || []).filter((page) =>
+    (inTrash ? page.status === 'trash' : page.status !== 'trash')
+    && (filter !== 'builder' || page.is_builder_enabled)
+    && (inTrash || !status || page.status === status)
+    && (!term || `${page.title} ${page.slug}`.toLowerCase().includes(term))), [filter, inTrash, pages, status, term]);
+  const visibleIds = useMemo(() => visible.map((page) => page.id), [visible]);
+  const selection = useBulkSelection(visibleIds);
+  const trashCount = (pages || []).filter((page) => page.status === 'trash').length;
+
+  const runBulk = async (action: string, ids: number[]) => {
+    const rows = visible.filter((page) => ids.includes(page.id));
+    if (!rows.length) return;
+    if (action === 'delete' && !window.confirm(`Permanently delete ${plural(rows.length, 'item')}? This cannot be undone.`)) return;
+    const plan: Record<string, [ContentStatus | null, string]> = {
+      publish: ['published', 'Published'], draft: ['draft', 'Moved to draft'], trash: ['trash', 'Moved to Trash'],
+      restore: ['draft', 'Restored as draft'], delete: [null, 'Permanently deleted'],
+    };
+    const [nextStatus, verb] = plan[action];
+    setError(''); setNotice(''); setBusy(action);
+    try {
+      const result = nextStatus ? await setContentStatus(rows, nextStatus) : await deleteContent(rows);
+      const report = describeBulkResult(verb, rows.length, result.changed.length, rows.length === 1 ? 'item' : 'items', result.blockedReason);
+      setNotice(report.success); setError(report.error);
+      selection.clear();
+      load();
+    } catch (bulkError) {
+      setError(bulkError instanceof Error ? bulkError.message : 'That did not work.');
+    } finally { setBusy(''); }
+  };
+
+  const actions: BulkAction[] = inTrash
+    ? [{ id: 'restore', label: 'Restore', tone: 'primary' }, { id: 'delete', label: 'Delete permanently', tone: 'danger' }]
+    : [
+      { id: 'publish', label: 'Publish', hidden: status === 'published' },
+      { id: 'draft', label: 'Move to draft', hidden: status === 'draft' },
+      { id: 'trash', label: 'Move to Trash', tone: 'danger' },
+    ];
+
   return (
     <section className={styles.panel}>
       <div className={styles.toolbar}>
         <p>Open any page or post in the visual builder. Saving from the builder switches that page to its layout.</p>
-        <select value={filter} onChange={(event) => setFilter(event.target.value as 'builder' | 'all')} aria-label="Filter">
+        <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search title or slug" aria-label="Search pages" />
+        <select value={filter} onChange={(event) => setFilter(event.target.value as 'builder' | 'all' | 'trash')} aria-label="Filter">
           <option value="builder">Built with the builder</option>
           <option value="all">All pages and posts</option>
+          <option value="trash">Trash ({trashCount})</option>
         </select>
+        {!inTrash && (
+          <select value={status} onChange={(event) => setStatus(event.target.value as '' | 'published' | 'draft')} aria-label="Status">
+            <option value="">All statuses</option>
+            <option value="published">Published</option>
+            <option value="draft">Drafts</option>
+          </select>
+        )}
       </div>
       {error && <p className={styles.error} role="alert">{error}</p>}
+      {notice && <p className={styles.success} role="status">{notice}</p>}
       {!pages && !error && <p className={styles.muted}>Loading…</p>}
-      {pages && visible.length === 0 && <p className={styles.muted}>{filter === 'builder' ? 'No pages use the builder yet. Switch the filter to “All pages and posts” and choose one.' : 'No content yet.'}</p>}
+      {pages && visible.length === 0 && (
+        <p className={styles.muted}>
+          {inTrash ? 'The Trash is empty.' : term ? 'Nothing matches your search.' : filter === 'builder' ? 'No pages use the builder yet. Switch the filter to “All pages and posts” and choose one.' : 'No content yet.'}
+        </p>
+      )}
+      {pages && <BulkBar selection={selection} total={visible.length} noun="pages" actions={actions} busy={busy} onAction={(id, ids) => void runBulk(id, ids)} />}
       {visible.length > 0 && (
         <div className={styles.tableWrap}>
           <table className={styles.table}>
-            <thead><tr><th>Title</th><th>Type</th><th>Status</th><th>Editor</th><th>Updated</th><th /></tr></thead>
+            <thead><tr><th><SelectAllCheckbox selection={selection} total={visible.length} /></th><th>Title</th><th>Type</th><th>Status</th><th>Editor</th><th>Updated</th><th /></tr></thead>
             <tbody>
               {visible.map((page) => (
                 <tr key={page.id}>
+                  <td><RowCheckbox selection={selection} id={page.id} label={page.title} /></td>
                   <td><strong>{page.title}</strong><span className={styles.muted}>/{page.slug}</span></td>
                   <td>{page.is_post ? 'Post' : 'Page'}</td>
-                  <td><span className={page.status === 'published' ? styles.badgeGreen : styles.badgeGrey}>{page.status}</span></td>
+                  <td><span className={page.status === 'published' ? styles.badgeGreen : page.status === 'trash' ? styles.badgeRed : styles.badgeGrey}>{page.status}</span></td>
                   <td>{page.is_builder_enabled ? 'Builder' : 'Classic'}</td>
                   <td>{new Date(page.updated_at).toLocaleDateString()}</td>
                   <td className={styles.actions}>
-                    <a className={styles.primary} href={`/builder/${page.id}`}>Edit with Builder</a>
-                    {page.status === 'published' && <a className={styles.secondary} href={`/${page.slug}`} target="_blank" rel="noreferrer">View</a>}
+                    {inTrash ? (
+                      <>
+                        <button type="button" className={styles.secondary} disabled={Boolean(busy)} onClick={() => void runBulk('restore', [page.id])}>Restore</button>
+                        <button type="button" className={styles.danger} disabled={Boolean(busy)} onClick={() => void runBulk('delete', [page.id])}>Delete permanently</button>
+                      </>
+                    ) : (
+                      <>
+                        <a className={styles.primary} href={`/builder/${page.id}`}>Edit with Builder</a>
+                        {page.status === 'published' && <a className={styles.secondary} href={`/${page.slug}`} target="_blank" rel="noreferrer">View</a>}
+                      </>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -205,7 +278,13 @@ function TemplatesTab() {
   const [templates, setTemplates] = useState<BuilderTemplate[] | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [search, setSearch] = useState('');
+  const [busy, setBusy] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
+  const term = search.trim().toLowerCase();
+  const visible = useMemo(() => (templates || []).filter((template) => !term || template.title.toLowerCase().includes(term)), [templates, term]);
+  const visibleIds = useMemo(() => visible.map((template) => template.id), [visible]);
+  const selection = useBulkSelection(visibleIds);
 
   const load = useCallback(() => {
     listTemplates().then(setTemplates).catch((loadError: unknown) => setError(loadError instanceof Error ? loadError.message : 'Could not load templates.'));
@@ -241,11 +320,40 @@ function TemplatesTab() {
     await createTemplate(parsed.title || file.name.replace(/\.json$/i, ''), parsed.type === 'page' ? 'page' : 'section', parsed.content);
   };
 
+  const runBulk = async (action: string, ids: string[]) => {
+    const rows = visible.filter((template) => ids.includes(template.id));
+    if (!rows.length) return;
+    if (action === 'export') {
+      // Browsers may ask once before allowing several downloads from one click.
+      rows.forEach((template, index) => window.setTimeout(() => exportTemplate(template), index * 250));
+      setNotice(`Exporting ${plural(rows.length, 'template')} as separate .json files.`);
+      return;
+    }
+    if (!window.confirm(`Delete ${plural(rows.length, 'template')}? This cannot be undone.`)) return;
+    setError(''); setNotice(''); setBusy(action);
+    const failures: string[] = [];
+    let deleted = 0;
+    for (const template of rows) {
+      try {
+        await deleteTemplate(template.id);
+        deleted += 1;
+      } catch (deleteError) {
+        failures.push(`“${template.title}”: ${deleteError instanceof Error ? deleteError.message : 'not deleted'}`);
+      }
+    }
+    if (deleted) setNotice(`Deleted ${plural(deleted, 'template')}.`);
+    if (failures.length) setError(`${plural(failures.length, 'template')} could not be deleted. ${failures.slice(0, 3).join(' ')}`);
+    setBusy('');
+    selection.clear();
+    load();
+  };
+
   return (
     <section className={styles.panel}>
       <div className={styles.toolbar}>
         <h3>Saved Templates</h3>
         <p>Save sections or whole pages from the builder, then insert them from its Templates button.</p>
+        <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search templates" aria-label="Search templates" />
         <button type="button" className={styles.secondary} onClick={() => fileInput.current?.click()}>Import template (.json)</button>
         <input ref={fileInput} type="file" accept="application/json,.json" hidden onChange={(event) => {
           const file = event.target.files?.[0];
@@ -257,13 +365,20 @@ function TemplatesTab() {
       {notice && <p className={styles.success} role="status">{notice}</p>}
       {!templates && !error && <p className={styles.muted}>Loading…</p>}
       {templates?.length === 0 && <p className={styles.muted}>No templates yet.</p>}
-      {templates && templates.length > 0 && (
+      {templates && templates.length > 0 && visible.length === 0 && <p className={styles.muted}>No templates match your search.</p>}
+      {templates && (
+        <BulkBar selection={selection} total={visible.length} noun="templates" busy={busy}
+          actions={[{ id: 'export', label: 'Export' }, { id: 'delete', label: 'Delete', tone: 'danger' }]}
+          onAction={(id, ids) => void runBulk(id, ids)} />
+      )}
+      {visible.length > 0 && (
         <div className={styles.tableWrap}>
           <table className={styles.table}>
-            <thead><tr><th>Title</th><th>Type</th><th>Sections</th><th>Updated</th><th /></tr></thead>
+            <thead><tr><th><SelectAllCheckbox selection={selection} total={visible.length} /></th><th>Title</th><th>Type</th><th>Sections</th><th>Updated</th><th /></tr></thead>
             <tbody>
-              {templates.map((template) => (
+              {visible.map((template) => (
                 <tr key={template.id}>
+                  <td><RowCheckbox selection={selection} id={template.id} label={template.title} /></td>
                   <td><strong>{template.title}</strong></td>
                   <td>{template.type === 'page' ? 'Page' : 'Section'}</td>
                   <td>{Array.isArray(template.builder_data?.content) ? template.builder_data.content.length : 0}</td>

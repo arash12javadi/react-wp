@@ -193,8 +193,50 @@ td strong {
   background: #fef3c7;
 }
 
+.trash {
+  color: #991b1b;
+  background: #fee2e2;
+  cursor: default;
+}
+
 .date {
   color: #64748b;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.filters select {
+  border: 1px solid #dbe1ea;
+  border-radius: 7px;
+  padding: 8px 10px;
+  color: #1e293b;
+  background: #fff;
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.success {
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border: 1px solid #bbf7d0;
+  border-radius: 7px;
+  color: #166534;
+  background: #f0fdf4;
+  font-size: 0.88rem;
+}
+
+.checkCell {
+  width: 1%;
+  padding-right: 4px;
+}
+
+.rowSelected td {
+  background: #eef2ff;
 }
 
 .editButton {
