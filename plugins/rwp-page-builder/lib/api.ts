@@ -70,14 +70,17 @@ export interface SaveInput {
   title: string;
   status: string;
   layout: string;
+  /** SEO columns from the SEO tab; only columns the page row already has. */
+  seo?: Record<string, string | boolean>;
   /** Skip the "changed since you opened it" check. */
   force?: boolean;
 }
 
-export async function saveBuilderPage({ page, doc, title, status, layout, force }: SaveInput): Promise<{ page: BuilderPage; warning?: string }> {
+export async function saveBuilderPage({ page, doc, title, status, layout, seo, force }: SaveInput): Promise<{ page: BuilderPage; warning?: string }> {
   const supabase = getSupabaseClient();
   const { content, forms } = stripPrivate(doc.content);
   const payload = {
+    ...(seo || {}),
     title: title.trim() || page.title,
     status,
     layout,

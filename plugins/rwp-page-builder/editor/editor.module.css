@@ -92,7 +92,7 @@
 .workspace { display: grid; grid-template-columns: 320px 1fr; min-height: 0; }
 
 .sidebar { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--ed-border); background: var(--ed-panel); z-index: 20; }
-.sidebarTabs { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--ed-border); }
+.sidebarTabs { display: grid; grid-template-columns: repeat(5, 1fr); border-bottom: 1px solid var(--ed-border); }
 .sidebarTab, .sidebarTabActive {
   display: grid; justify-items: center; gap: 3px; padding: 9px 2px 8px; border: 0; border-bottom: 2px solid transparent;
   color: var(--ed-muted); background: none; font-size: 10.5px !important; font-weight: 600 !important; cursor: pointer;

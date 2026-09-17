@@ -1,0 +1,114 @@
+/* SEO tab. Uses the editor's --ed-* theme variables from editor.module.css. */
+
+.panel { display: grid; gap: 12px; padding: 14px; }
+.header { display: flex; align-items: center; justify-content: space-between; }
+.header h3 { margin: 0; font-size: 15px; }
+.iconButton { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--ed-border); border-radius: 6px; color: var(--ed-muted); background: #fff; cursor: pointer; }
+.iconButton:hover { color: var(--ed-accent); border-color: #c4b5fd; }
+
+.notice { margin: 0; padding: 8px 10px; border-radius: 7px; color: #92400e; background: #fef3c7; font-size: 12px; }
+.unsaved { margin: 0; padding: 7px 10px; border-radius: 7px; color: #5b21b6; background: var(--ed-accent-soft); font-size: 11.5px; font-weight: 600; }
+.help { margin: 0; color: var(--ed-muted); font-size: 11.5px; }
+
+.field { display: grid; gap: 5px; }
+.fieldLabel { display: flex; align-items: center; justify-content: space-between; gap: 6px; color: #334155; font-weight: 600; }
+.fieldGroup { display: grid; gap: 11px; }
+.input { width: 100%; min-width: 0; padding: 7px 9px; border: 1px solid #cbd5e1; border-radius: 6px; color: var(--ed-text); background: #fff; font: inherit; }
+.input:focus { border-color: var(--ed-accent); outline: 2px solid rgb(109 40 217 / 18%); }
+textarea.input { resize: vertical; }
+.checkRow { display: flex; align-items: center; gap: 8px; color: #334155; cursor: pointer; }
+
+.counter { padding: 1px 6px; border-radius: 999px; font-size: 10.5px; font-weight: 700; }
+.counterGood { color: #166534; background: #dcfce7; }
+.counterWarn { color: #92400e; background: #fef3c7; }
+.counterBad { color: #991b1b; background: #fee2e2; }
+
+/* Score */
+.scoreCard { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--ed-border); border-radius: 10px; background: #fff; }
+.ringTrack { fill: none; stroke: #e2e8f0; stroke-width: 8; }
+.ringValue { fill: none; stroke: currentColor; stroke-width: 8; stroke-linecap: round; transition: stroke-dashoffset .4s ease; }
+.ringText { fill: var(--ed-text); font-size: 22px; font-weight: 800; }
+.rating_good { color: #16a34a; }
+.rating_needs-work { color: #d97706; }
+.rating_poor { color: #dc2626; }
+.scoreMeta { display: grid; gap: 5px; min-width: 0; }
+/* Outlined in the rating colour, inherited from .rating_* on the card. */
+.ratingBadge { justify-self: start; padding: 1px 9px; border: 1.5px solid currentColor; border-radius: 999px; color: currentColor; font-size: 12px; font-weight: 700; }
+.counts { display: flex; gap: 10px; color: var(--ed-text); font-size: 12px; font-weight: 600; }
+.counts span { display: inline-flex; align-items: center; gap: 3px; }
+.statLine { color: var(--ed-muted); font-size: 11px; }
+
+/* Categories and checks */
+.category { border: 1px solid var(--ed-border); border-radius: 9px; background: #fff; overflow: hidden; }
+.categoryHead { display: flex; align-items: center; gap: 6px; width: 100%; padding: 9px 10px; border: 0; color: var(--ed-text); background: var(--ed-bg); font: inherit; cursor: pointer; text-align: left; }
+.categoryTitle { flex: 1; font-size: 12.5px; font-weight: 700; }
+.categoryCounts { display: inline-flex; gap: 4px; }
+.categoryBody { padding: 10px; border-top: 1px solid var(--ed-border); }
+
+.checkList { margin: 0; padding: 0; list-style: none; }
+.check + .check { border-top: 1px solid var(--ed-border); }
+.checkHead { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 7px; width: 100%; padding: 9px 10px; border: 0; color: var(--ed-text); background: #fff; font: inherit; cursor: pointer; text-align: left; }
+.checkHead:hover { background: #fafafa; }
+.checkTitle { display: grid; min-width: 0; }
+.checkTitle strong { font-size: 12.5px; }
+.checkTitle small { overflow: hidden; color: var(--ed-muted); font-size: 11px; white-space: nowrap; text-overflow: ellipsis; }
+.checkBody { display: grid; gap: 9px; padding: 0 10px 11px 32px; }
+
+.badge { padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 700; white-space: nowrap; }
+.badge_pass { color: #166534; background: #dcfce7; }
+.badge_warning { color: #92400e; background: #fef3c7; }
+.badge_fail { color: #991b1b; background: #fee2e2; }
+.badge_manual { color: #1e40af; background: #dbeafe; }
+.badge_na { color: #64748b; background: #f1f5f9; }
+
+.iconPass { flex: none; color: #16a34a; }
+.iconWarning { flex: none; color: #d97706; }
+.iconFail { flex: none; color: #dc2626; }
+.iconManual { flex: none; color: #2563eb; }
+.iconMuted { flex: none; color: #94a3b8; }
+
+.findings { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.findings li { display: grid; grid-template-columns: 14px 1fr; gap: 6px; align-items: start; color: #334155; font-size: 11.5px; line-height: 1.4; }
+.findings li svg { margin-top: 1px; }
+.findingInfo { color: var(--ed-muted) !important; }
+.infoDot { width: 6px; height: 6px; margin: 5px 4px 0; border-radius: 50%; background: #94a3b8; }
+
+.manual { display: grid; gap: 4px; padding: 7px 9px; border-radius: 7px; color: #1e3a8a; background: #eff6ff; font-size: 11px; }
+.manual > span { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; }
+.manual ul { display: grid; gap: 3px; margin: 0; padding-left: 16px; }
+
+/* Previews */
+.snippet { display: grid; gap: 2px; padding: 10px; border: 1px solid var(--ed-border); border-radius: 8px; background: #fff; font-family: arial, sans-serif; }
+.snippetUrl { color: #202124; font-size: 11.5px; }
+.snippetTitle { color: #1a0dab; font-size: 15px; line-height: 1.3; }
+.snippetDescription { color: #4d5156; font-size: 12px; line-height: 1.45; }
+
+.shareCard { overflow: hidden; border: 1px solid var(--ed-border); border-radius: 9px; background: #fff; }
+.shareImage { display: block; width: 100%; aspect-ratio: 1.91 / 1; object-fit: cover; background: var(--ed-bg); }
+.shareImageSmall { float: left; width: 72px; height: 72px; margin: 8px; border-radius: 6px; object-fit: cover; }
+.shareImageEmpty { display: grid; place-items: center; aspect-ratio: 1.91 / 1; color: var(--ed-muted); background: var(--ed-bg); font-size: 12px; }
+.shareText { display: grid; gap: 2px; padding: 8px 10px; font-size: 11.5px; color: #475569; }
+.shareText strong { color: var(--ed-text); font-size: 12.5px; }
+.shareHost { color: #64748b; font-size: 10.5px; text-transform: uppercase; }
+
+/* Task checklists (keyword research, backlink outreach) */
+.taskList { display: grid; gap: 6px; }
+.taskHead { display: flex; justify-content: space-between; color: #334155; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.taskProgress { color: var(--ed-accent); }
+.progressBar { height: 5px; overflow: hidden; border-radius: 999px; background: #e2e8f0; }
+.progressBar span { display: block; height: 100%; border-radius: inherit; background: var(--ed-accent); transition: width .25s ease; }
+.task, .taskDone { display: grid; grid-template-columns: auto 1fr; gap: 8px; align-items: start; padding: 8px 9px; border: 1px solid var(--ed-border); border-radius: 8px; background: #fff; cursor: pointer; }
+.task:hover { border-color: #c4b5fd; }
+.taskDone { border-color: #bbf7d0; background: #f0fdf4; }
+.task input, .taskDone input { margin-top: 2px; accent-color: var(--ed-accent); }
+.task span, .taskDone span { display: grid; gap: 2px; }
+.task strong, .taskDone strong { font-size: 12px; }
+.taskDone strong { color: #166534; text-decoration: line-through; text-decoration-color: rgb(22 101 52 / 45%); }
+.task small, .taskDone small { color: var(--ed-muted); font-size: 11px; line-height: 1.4; }
+.task a, .taskDone a { justify-self: start; color: var(--ed-accent); font-size: 11px; font-weight: 600; }
+
+.imageRow { display: flex; flex-wrap: wrap; gap: 6px; }
+a.smallButton { display: inline-flex; align-items: center; text-decoration: none; }
+.smallButton, .ghostButton { padding: 5px 10px; border: 1px solid var(--ed-border); border-radius: 6px; color: #334155; background: #fff; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.smallButton:hover { border-color: #c4b5fd; color: var(--ed-accent); }
+.ghostButton { border-color: transparent; color: var(--ed-muted); background: none; }

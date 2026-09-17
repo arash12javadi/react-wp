@@ -8,7 +8,7 @@ import { autosaveKey } from '../lib/keys';
 import { emptyDocument, type BuilderDocument, type BuilderPage } from '../lib/types';
 import { parseDocument } from '../render/BuilderRenderer';
 import PageBuilderLayout from './PageBuilderLayout';
-import { createEditorStore, EditorStoreContext, type EditorState } from './store';
+import { createEditorStore, EditorStoreContext, seoFieldsFromPage, type EditorState } from './store';
 import '../render/widgets';
 import styles from './editor.module.css';
 
@@ -29,11 +29,14 @@ type LoadState =
   | { status: 'ready'; page: BuilderPage; role: UserRole; autosave: Autosave | null };
 
 function initialState(page: BuilderPage, role: UserRole, savedDoc: BuilderDocument, doc: BuilderDocument, title: string): EditorState {
+  const seo = seoFieldsFromPage(page);
   return {
     // A page opened in the builder for the first time switches to full width, as builder layouts expect.
     page, doc, title, status: page.status === 'published' ? 'published' : 'draft', layout: page.is_builder_enabled ? page.layout || 'full' : 'full',
     savedDoc, savedTitle: page.title, savedStatus: page.status === 'published' ? 'published' : 'draft',
     savedLayout: page.is_builder_enabled ? page.layout || 'full' : page.layout || 'boxed',
+    // One object for both, so the page starts clean; editing replaces seo and makes it dirty.
+    seo, savedSeo: seo,
     selectedId: null, hoveredPath: [], device: 'desktop', panel: 'widgets', inspectorTab: 'content',
     past: [], future: [], coalesce: null, drag: null, dropTarget: null, clipboard: null,
     canPublish: hasCapability(role, 'publish_posts'),

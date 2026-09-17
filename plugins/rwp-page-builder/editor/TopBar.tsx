@@ -5,7 +5,7 @@ import { saveBuilderPage, SaveConflictError } from '../lib/api';
 import { autosaveKey, previewKey } from '../lib/keys';
 import { templateSlot } from '../lib/siteTemplates';
 import type { Device } from '../lib/types';
-import { isDirty, useEditor, useStore } from './store';
+import { isDirty, seoPayload, useEditor, useStore } from './store';
 import styles from './editor.module.css';
 
 const deviceButtons: Array<{ id: Device; label: string; icon: typeof Monitor }> = [
@@ -49,7 +49,10 @@ export default function TopBar({ registerSave, onOpenRevisions, onOpenTemplates,
     setMessage(null);
     setMenuOpen(false);
     try {
-      const result = await saveBuilderPage({ page: state.page, doc: state.doc, title: state.title, status: targetStatus, layout: state.layout, force });
+      const result = await saveBuilderPage({
+        page: state.page, doc: state.doc, title: state.title, status: targetStatus, layout: state.layout, force,
+        seo: seoPayload(state.page, state.seo),
+      });
       store.setState((current) => ({
         page: result.page,
         status: targetStatus,
@@ -59,6 +62,7 @@ export default function TopBar({ registerSave, onOpenRevisions, onOpenTemplates,
         title: current.title === state.title ? result.page.title : current.title,
         savedStatus: targetStatus,
         savedLayout: state.layout,
+        savedSeo: state.seo,
       }));
       try { localStorage.removeItem(autosaveKey(state.page.id)); } catch { /* storage unavailable */ }
       rwp.actions.do(result.page.is_post ? 'rwp_post_updated' : 'rwp_page_updated', result.page);

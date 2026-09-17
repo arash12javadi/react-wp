@@ -81,6 +81,8 @@ export interface DocumentSettings {
   showComments?: boolean;
   background?: string;
   customCss?: string;
+  /** Ticked manual SEO tasks from the SEO tab (see editor/seo/seoChecklists.ts). Booleans only: this JSON is public. */
+  seoChecklist?: Record<string, boolean>;
 }
 
 export interface BuilderDocument {

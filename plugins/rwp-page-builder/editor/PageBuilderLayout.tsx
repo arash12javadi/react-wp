@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, type DragStartEvent } from '@dnd-kit/core';
-import { Layers, LayoutGrid, Palette, Settings2 } from 'lucide-react';
+import { Layers, LayoutGrid, Palette, SearchCheck, Settings2 } from 'lucide-react';
 import { findNode } from '../lib/tree';
 import { autosaveKey } from '../lib/keys';
 import Canvas from './Canvas';
@@ -10,6 +10,7 @@ import InspectorPanel from './InspectorPanel';
 import Navigator from './Navigator';
 import PageSettingsPanel from './PageSettingsPanel';
 import RevisionsModal from './RevisionsModal';
+import SeoPanel from './seo/SeoPanel';
 import TemplatesModal, { type TemplatesModalMode } from './TemplatesModal';
 import TopBar from './TopBar';
 import WidgetPanel from './WidgetPanel';
@@ -21,6 +22,7 @@ const panelTabs: Array<{ id: SidePanel; label: string; icon: typeof Layers }> = 
   { id: 'navigator', label: 'Navigator', icon: Layers },
   { id: 'globals', label: 'Site styles', icon: Palette },
   { id: 'page', label: 'Page settings', icon: Settings2 },
+  { id: 'seo', label: 'SEO', icon: SearchCheck },
 ];
 
 const isTyping = (target: EventTarget | null) => {
@@ -187,7 +189,7 @@ export default function PageBuilderLayout() {
               {panelTabs.map(({ id, label, icon: TabIcon }) => (
                 <button key={id} type="button" role="tab" aria-selected={panel === id} title={label}
                   className={panel === id ? styles.sidebarTabActive : styles.sidebarTab} onClick={() => actions.setPanel(id)}>
-                  <TabIcon size={16} aria-hidden="true" />
+                  <TabIcon size={16} strokeWidth={2} aria-hidden="true" />
                   <span>{label}</span>
                 </button>
               ))}
@@ -198,7 +200,8 @@ export default function PageBuilderLayout() {
                 : panel === 'navigator' ? <Navigator onSaveTemplate={(nodeId) => setTemplates({ kind: 'save-section', nodeId })} />
                   : panel === 'globals' ? <GlobalStylesPanel />
                     : panel === 'page' ? <PageSettingsPanel />
-                      : <WidgetPanel />}
+                      : panel === 'seo' ? <SeoPanel />
+                        : <WidgetPanel />}
             </div>
           </aside>
           <Canvas onOpenTemplates={() => setTemplates({ kind: 'insert' })} />

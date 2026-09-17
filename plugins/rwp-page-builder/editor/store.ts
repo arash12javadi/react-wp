@@ -6,8 +6,41 @@ import {
   rebalanceColumns, removeNode, ROOT_ID, sectionDepth, updateNode,
 } from '../lib/tree';
 import type { BuilderDocument, BuilderNode, BuilderPage, ColumnNode, Device, SectionNode, WidgetNode } from '../lib/types';
+import type { SeoFields } from '../../../src/components/SeoPanel';
 
-export type SidePanel = 'widgets' | 'navigator' | 'globals' | 'page' | 'edit';
+export type SidePanel = 'widgets' | 'navigator' | 'globals' | 'page' | 'seo' | 'edit';
+
+/** The page's SEO columns, edited in the SEO tab and saved with the layout. */
+export type BuilderSeoFields = SeoFields;
+
+const seoKeys: Array<keyof SeoFields> = [
+  'seo_title', 'meta_description', 'focus_keyword', 'canonical_url', 'noindex',
+  'og_title', 'og_description', 'og_image', 'twitter_card', 'meta_keywords',
+];
+
+/** Reads the SEO columns off a loaded page row. Columns an older database lacks read as empty. */
+export function seoFieldsFromPage(page: BuilderPage): SeoFields {
+  const row = page as unknown as Record<string, unknown>;
+  const text = (key: keyof SeoFields) => (typeof row[key] === 'string' ? row[key] as string : '');
+  return {
+    seo_title: text('seo_title'),
+    meta_description: text('meta_description'),
+    focus_keyword: text('focus_keyword'),
+    canonical_url: text('canonical_url'),
+    noindex: Boolean(row.noindex),
+    og_title: text('og_title'),
+    og_description: text('og_description'),
+    og_image: text('og_image'),
+    twitter_card: text('twitter_card') || 'summary_large_image',
+    meta_keywords: text('meta_keywords'),
+  };
+}
+
+/** Only the SEO columns the loaded row actually has, so saving never names a missing column. */
+export function seoPayload(page: BuilderPage, fields: SeoFields): Partial<SeoFields> {
+  const row = page as unknown as Record<string, unknown>;
+  return Object.fromEntries(seoKeys.filter((key) => key in row).map((key) => [key, fields[key]])) as Partial<SeoFields>;
+}
 
 export interface DropTarget {
   parentId: string;
@@ -33,6 +66,8 @@ export interface EditorState {
   savedTitle: string;
   savedStatus: string;
   savedLayout: string;
+  seo: SeoFields;
+  savedSeo: SeoFields;
   selectedId: string | null;
   hoveredPath: string[];
   device: Device;
@@ -85,7 +120,8 @@ export function useEditor<T>(selector: (state: EditorState) => T): T {
 }
 
 export const isDirty = (state: EditorState) =>
-  state.doc !== state.savedDoc || state.title !== state.savedTitle || state.status !== state.savedStatus || state.layout !== state.savedLayout;
+  state.doc !== state.savedDoc || state.title !== state.savedTitle || state.status !== state.savedStatus || state.layout !== state.savedLayout
+  || state.seo !== state.savedSeo;
 
 // Node factories -----------------------------------------------------------------------------------
 
@@ -174,6 +210,8 @@ function createActions(store: BaseStore) {
       (state.hoveredPath.join() === path.join() ? {} : { hoveredPath: path })),
 
     setDevice: (device: Device) => store.setState({ device }),
+    setSeoField: <K extends keyof SeoFields>(key: K, value: SeoFields[K]) =>
+      store.setState((state) => (state.seo[key] === value ? {} : { seo: { ...state.seo, [key]: value } })),
     setPanel: (panel: SidePanel) => store.setState({ panel }),
     setInspectorTab: (inspectorTab: ControlTab) => store.setState({ inspectorTab }),
 

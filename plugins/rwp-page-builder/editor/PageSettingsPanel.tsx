@@ -50,9 +50,10 @@ export default function PageSettingsPanel() {
       <Row label="Page custom CSS" help='"selector" targets the whole layout. Applies to this page only.'>
         <textarea className={styles.code} rows={6} spellCheck={false} value={settings.customCss || ''} onChange={(event) => actions.setDocumentSetting('customCss', event.target.value)} />
       </Row>
-      <p className={styles.hint}>Slug, excerpt, category and SEO fields are edited in the classic editor and are kept when you save here.</p>
+      <p className={styles.hint}>SEO title, description and social sharing are in the SEO tab. Slug, excerpt and category are edited in the classic editor and are kept when you save here.</p>
       <div className={styles.buttonRow}>
-        <a className={styles.secondaryButton} href={`/admin?section=content&edit=${page.id}`}>Open SEO &amp; page details</a>
+        <button type="button" className={styles.secondaryButton} onClick={() => actions.setPanel('seo')}>Open the SEO tab</button>
+        <a className={styles.secondaryButton} href={`/admin?section=content&edit=${page.id}`}>Open page details</a>
       </div>
       <h4 className={styles.controlHeading}>Editor</h4>
       {error && <p className={styles.errorText} role="alert">{error}</p>}

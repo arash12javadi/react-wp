@@ -145,7 +145,8 @@ function Chrome({ node }: { node: BuilderNode }) {
 
   // Hidden rather than unmounted while dragging: removing the handle that started a drag cancels it.
   return (
-    <span className={dragging ? styles.chromeDragging : styles.chromeLayer}>
+    // data-rwpb-chrome: editor-only UI, which the SEO analyzer leaves out of the page it audits.
+    <span className={dragging ? styles.chromeDragging : styles.chromeLayer} data-rwpb-chrome="">
       {visible && <span className={`${styles.outline} ${kindClass}${selected ? ` ${styles.outlineSelected}` : ''}`} aria-hidden="true" />}
       {node.kind === 'section' && visible && (
         <span className={styles.sectionTab} onClick={(event) => event.stopPropagation()}>
@@ -181,7 +182,7 @@ function Chrome({ node }: { node: BuilderNode }) {
 function EmptyColumn({ columnId }: { columnId: string }) {
   const { actions } = useStore();
   return (
-    <button type="button" className={styles.emptyColumn} onClick={(event) => { event.stopPropagation(); actions.select(columnId); actions.setPanel('widgets'); }}>
+    <button type="button" className={styles.emptyColumn} data-rwpb-chrome="" onClick={(event) => { event.stopPropagation(); actions.select(columnId); actions.setPanel('widgets'); }}>
       <Plus size={16} /> Drag a widget here
     </button>
   );
@@ -266,6 +267,7 @@ export default function Canvas({ onOpenTemplates }: { onOpenTemplates: () => voi
         <RenderProvider value={context}>
           <div
             className={`rwpb-root ${styles.canvasRoot}`}
+            data-rwpb-canvas-root=""
             data-rwpb-container="root"
             data-rwpb-accepts="section"
             onMouseOver={onMouseOver}
