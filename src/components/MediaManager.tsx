@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react';
 import { describeDbError, getSupabaseClient } from '../lib/db';
 import { loadSettings, type SiteSettings, defaultSettings } from '../lib/settings';
 import { describeDimensions, formatBytes, uploadToCloudinary, uploadToImageKit } from '../lib/uploads';
@@ -6,6 +6,11 @@ import { checkUploadRules, describeAllowance, fetchUploadAllowance, useAppSettin
 import { fetchProfile } from '../lib/profiles';
 import { hasCapability } from '../lib/roles';
 import type { MediaItem, MediaProvider } from '../lib/types';
+import {
+  DEFAULT_MEDIA_FOLDER, createMediaFolder, deleteMediaFolder, folderLineage, isInFolder, listMediaFolders, mediaFoldersMigration,
+  normalizeMediaFolder, renameMediaFolder,
+} from '../lib/mediaFolders';
+import FolderSidebar, { MEDIA_DRAG_TYPE, type FolderDeleteChoice, type FolderNode } from './media/FolderSidebar';
 import styles from './MediaManager.module.css';
 
 type Tab = 'library' | 'upload' | 'url';
@@ -56,6 +61,12 @@ const explainMediaError = (error: unknown): string => {
   if (message.includes('relation "media"') || message.includes('42P01')) {
     return `The media table does not exist. ${migrationHint}`;
   }
+  if (message.includes('media_folder_format')) {
+    return 'The database rejected that folder name. Use letters, digits, "-" and "_", with "/" between levels (for example blog/2026).';
+  }
+  if (/'folder' column|column media\.folder|column "folder"/i.test(message)) {
+    return `The media table has no folder column yet. Run ${mediaFoldersMigration} in the Supabase SQL Editor, then reload. Re-running it is safe.`;
+  }
   if (message.includes('provider_file_id')) {
     return `Your media table predates the provider_file_id column, which is needed to delete files at the provider. ${migrationHint}`;
   }
@@ -93,6 +104,17 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
   const [allowance, setAllowance] = useState<UploadAllowance | null>(null);
   // Set when the library is limited to the viewer's own uploads (Settings → General).
   const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
+  // null while unknown; false until the media folders migration has been run.
+  const [folderSupport, setFolderSupport] = useState<boolean | null>(null);
+  const [folderFilter, setFolderFilter] = useState<string>('all');
+  // Rows of media_folders; null when the folder manager migration has not been run.
+  const [folderRows, setFolderRows] = useState<string[] | null>(null);
+  const [folderBusy, setFolderBusy] = useState(false);
+  const [uploadFolder, setUploadFolder] = useState(DEFAULT_MEDIA_FOLDER);
+  const [moveFolder, setMoveFolder] = useState('');
+  const [movingFolder, setMovingFolder] = useState(false);
+  const [folderDraft, setFolderDraft] = useState('');
+  const folderListId = useId();
 
   useEffect(() => {
     // Surfaced up front rather than only when a delete fails, so orphaned files at the
@@ -107,13 +129,19 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
     setLoading(true);
     setError('');
     try {
-      const [{ data, error: queryError }, loadedSettings, { data: userData }, loadedAllowance] = await Promise.all([
+      const [{ data, error: queryError }, loadedSettings, { data: userData }, loadedAllowance, { error: folderError }, storedFolders] = await Promise.all([
         getSupabaseClient().from('media').select('*').order('created_at', { ascending: false }),
         loadSettings().catch(() => defaultSettings),
         getSupabaseClient().auth.getUser(),
         fetchUploadAllowance().catch(() => null),
+        // Folders need the 20260927 migration; until then the library works exactly as before.
+        getSupabaseClient().from('media').select('folder').limit(1),
+        // Creating, renaming and deleting folders need 20260928; null until it has been run.
+        listMediaFolders(),
       ]);
       if (queryError) throw queryError;
+      setFolderSupport(!folderError);
+      setFolderRows(storedFolders);
       setItems((data || []) as MediaItem[]);
       setSettings(loadedSettings);
       setAllowance(loadedAllowance);
@@ -130,14 +158,54 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
 
   useEffect(() => { void load(); }, [load]);
 
+  // Media the viewer may see at all; the folder list and its counts are built from this.
+  const scoped = useMemo(() => {
+    const ownOnly = appSettings.general.scope_media_to_owner && ownerFilter;
+    return ownOnly ? items.filter((item) => item.uploaded_by === ownerFilter) : items;
+  }, [appSettings.general.scope_media_to_owner, items, ownerFilter]);
+
+  // Stored folders (including empty ones) plus every folder media is in, with parents, as a tree.
+  const folders = useMemo<FolderNode[]>(() => {
+    const direct = new Map<string, number>();
+    const total = new Map<string, number>();
+    const paths = new Set<string>([DEFAULT_MEDIA_FOLDER, ...(folderRows || [])]);
+    scoped.forEach((item) => {
+      const folder = item.folder || DEFAULT_MEDIA_FOLDER;
+      direct.set(folder, (direct.get(folder) || 0) + 1);
+      folderLineage(folder).forEach((path) => {
+        paths.add(path);
+        total.set(path, (total.get(path) || 0) + 1);
+      });
+    });
+    [...paths].forEach((path) => folderLineage(path).forEach((parent) => paths.add(parent)));
+    // Segment by segment, so "blog/2026" sorts under "blog" and before "blog-archive".
+    const byTree = (a: string, b: string) => {
+      const left = a.split('/');
+      const right = b.split('/');
+      for (let index = 0; index < Math.min(left.length, right.length); index += 1) {
+        const order = left[index].localeCompare(right[index]);
+        if (order) return order;
+      }
+      return left.length - right.length;
+    };
+    return [...paths].sort(byTree).map((path) => ({
+      path,
+      name: path.split('/').pop() || path,
+      depth: path.split('/').length - 1,
+      count: direct.get(path) || 0,
+      total: total.get(path) || 0,
+    }));
+  }, [folderRows, scoped]);
+  const activeFolder = folderFilter !== 'all' && folders.some((folder) => folder.path === folderFilter) ? folderFilter : 'all';
+
   const visible = useMemo(() => {
     const term = search.trim().toLowerCase();
-    const ownOnly = appSettings.general.scope_media_to_owner && ownerFilter;
-    return items.filter((item) =>
-      (!ownOnly || item.uploaded_by === ownerFilter) &&
+    return scoped.filter((item) =>
+      // A folder shows its subfolders' media too, matching the count beside it.
+      (activeFolder === 'all' || isInFolder(item.folder || DEFAULT_MEDIA_FOLDER, activeFolder)) &&
       (providerFilter === 'all' || item.provider === providerFilter) &&
-      (!term || `${item.title || ''} ${item.file_name || ''} ${item.alt_text || ''}`.toLowerCase().includes(term)));
-  }, [appSettings.general.scope_media_to_owner, items, ownerFilter, providerFilter, search]);
+      (!term || `${item.title || ''} ${item.file_name || ''} ${item.alt_text || ''} ${item.folder || ''}`.toLowerCase().includes(term)));
+  }, [activeFolder, providerFilter, scoped, search]);
 
   // Bulk actions only touch ticked items that are currently visible, so a filter never hides
   // what is about to be deleted.
@@ -174,6 +242,8 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
 
   // Keeps the image being edited in view when Prev/Next moves past the visible rows.
   const selectedId = selected?.id;
+  const selectedFolder = selected?.folder || DEFAULT_MEDIA_FOLDER;
+  useEffect(() => { setFolderDraft(selectedFolder); }, [selectedId, selectedFolder]);
   useEffect(() => {
     if (!selectedId) return;
     const thumb = gridRef.current?.querySelector(`[data-media-id="${CSS.escape(selectedId)}"]`);
@@ -241,13 +311,15 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
 
       setProgress(0);
       const list = Array.from(files);
+      const folder = folderSupport ? normalizeMediaFolder(uploadFolder) : undefined;
       for (const [index, file] of list.entries()) {
         if (list.length > 1) setUploadStep(`File ${index + 1} of ${list.length}: ${file.name}`);
         setProgress(0);
         const upload = uploadProvider === 'imagekit'
-          ? await uploadToImageKit(file, settings, setProgress)
-          : await uploadToCloudinary(file, settings, setProgress);
+          ? await uploadToImageKit(file, settings, setProgress, folder)
+          : await uploadToCloudinary(file, settings, setProgress, folder);
         const item = await insertRecord({
+          ...(folder ? { folder } : {}),
           url: upload.url,
           title: upload.file_name,
           alt_text: '',
@@ -274,6 +346,7 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
       if (uploaded.length > 1 || (onSelectMany && uploaded.length)) setChecked(uploaded);
       setProgress(null);
       setUploadStep('');
+      if (uploaded.length && folderSupport) refreshFolders();
       void fetchUploadAllowance().then(setAllowance).catch(() => {});
     }
   };
@@ -287,6 +360,7 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
       const url = urlForm.url.trim();
       if (!/^https?:\/\//i.test(url)) throw new Error('Enter a full URL starting with http:// or https://');
       await insertRecord({
+        ...(folderSupport ? { folder: normalizeMediaFolder(uploadFolder) } : {}),
         url,
         title: urlForm.title.trim() || url.split('/').pop() || 'Untitled',
         alt_text: urlForm.alt_text.trim(),
@@ -294,6 +368,7 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
         file_name: url.split('/').pop() || null,
       });
       setUrlForm({ url: '', title: '', alt_text: '' });
+      if (folderSupport) refreshFolders();
       setFeedback('Saved to the library.');
       setTab('library');
     } catch (saveError: unknown) {
@@ -301,6 +376,129 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
     } finally {
       setSavingUrl(false);
     }
+  };
+
+  /**
+   * Moves library items to another folder. This changes the library only: the file stays where it
+   * was uploaded at the provider, because moving it there can change its URL (Cloudinary's fixed
+   * folder mode puts the folder in the public id) and break every page that uses the image.
+   */
+  const moveToFolder = async (targets: MediaItem[], rawFolder: string) => {
+    const folder = normalizeMediaFolder(rawFolder);
+    const moving = targets.filter((item) => (item.folder || DEFAULT_MEDIA_FOLDER) !== folder);
+    setError('');
+    if (!moving.length) {
+      setFeedback(`Already in “${folder}”.`);
+      return;
+    }
+    setFeedback('');
+    setMovingFolder(true);
+    try {
+      // .select() because row level security skips rows silently instead of raising an error.
+      const { data, error: moveError } = await getSupabaseClient()
+        .from('media').update({ folder }).in('id', moving.map((item) => item.id)).select('id');
+      if (moveError) throw moveError;
+      const moved = new Set(((data || []) as Array<{ id: string }>).map((row) => row.id));
+      setItems((current) => current.map((item) => (moved.has(item.id) ? { ...item, folder } : item)));
+      setSelected((current) => (current && moved.has(current.id) ? { ...current, folder } : current));
+      if (moved.size) setFeedback(`Moved ${moved.size} item(s) to “${folder}”.`);
+      // The media_record_folder trigger adds a folder typed here for the first time.
+      refreshFolders();
+      if (moved.size < moving.length) {
+        setError(`${moving.length - moved.size} item(s) were not moved: row level security did not allow changing them. When media is limited to its uploader, you can only move files you uploaded yourself.`);
+      }
+      setMoveFolder('');
+    } catch (moveError: unknown) {
+      setError(explainMediaError(moveError));
+    } finally {
+      setMovingFolder(false);
+    }
+  };
+
+  const refreshFolders = () => { void listMediaFolders().then(setFolderRows); };
+
+  const selectFolder = (path: string) => {
+    setFolderFilter(path);
+    // Uploads default to the folder being browsed.
+    if (path !== 'all') setUploadFolder(path);
+  };
+
+  const createFolder = async (raw: string) => {
+    const path = normalizeMediaFolder(raw);
+    setError('');
+    setFeedback('');
+    setFolderBusy(true);
+    try {
+      await createMediaFolder(path);
+      setFolderRows((current) => [...new Set([...(current || []), ...folderLineage(path)])]);
+      selectFolder(path);
+      setFeedback(`Folder “${path}” is ready. Upload into it, or drag images onto it.`);
+      return true;
+    } catch (createError: unknown) {
+      setError(createError instanceof Error ? createError.message : describeDbError(createError));
+      return false;
+    } finally {
+      setFolderBusy(false);
+    }
+  };
+
+  const renameFolder = async (from: string, raw: string) => {
+    const to = normalizeMediaFolder(raw);
+    if (to === from) return true;
+    setError('');
+    setFeedback('');
+    setFolderBusy(true);
+    try {
+      const moved = await renameMediaFolder(from, to);
+      const remap = (folder: string) => (isInFolder(folder, from) ? to + folder.slice(from.length) : folder);
+      setItems((current) => current.map((item) => ({ ...item, folder: remap(item.folder || DEFAULT_MEDIA_FOLDER) })));
+      setSelected((current) => (current ? { ...current, folder: remap(current.folder || DEFAULT_MEDIA_FOLDER) } : current));
+      if (activeFolder !== 'all') setFolderFilter(remap(activeFolder));
+      setUploadFolder((current) => remap(normalizeMediaFolder(current)));
+      refreshFolders();
+      setFeedback(`Renamed “${from}” to “${to}”${moved ? ` and moved ${moved} item(s)` : ''}.`);
+      return true;
+    } catch (renameError: unknown) {
+      setError(renameError instanceof Error ? renameError.message : describeDbError(renameError));
+      return false;
+    } finally {
+      setFolderBusy(false);
+    }
+  };
+
+  const deleteFolder = async (path: string, choice: FolderDeleteChoice) => {
+    setError('');
+    setFeedback('');
+    setFolderBusy(true);
+    try {
+      if (choice.mode === 'delete-media') {
+        const targets = scoped.filter((item) => isInFolder(item.folder || DEFAULT_MEDIA_FOLDER, path));
+        if (targets.length && !(await deleteMediaItems(targets))) {
+          setError((current) => `${current ? `${current} ` : ''}The folder “${path}” was kept, because some of its media could not be deleted.`);
+          return false;
+        }
+      }
+      const destination = choice.mode === 'move' ? normalizeMediaFolder(choice.to) : undefined;
+      const moved = await deleteMediaFolder(path, destination);
+      if (destination && moved) {
+        setItems((current) => current.map((item) => (isInFolder(item.folder || DEFAULT_MEDIA_FOLDER, path) ? { ...item, folder: destination } : item)));
+      }
+      if (activeFolder !== 'all' && isInFolder(activeFolder, path)) setFolderFilter(destination || 'all');
+      if (isInFolder(normalizeMediaFolder(uploadFolder), path)) setUploadFolder(destination || DEFAULT_MEDIA_FOLDER);
+      refreshFolders();
+      setFeedback(`Deleted the folder “${path}”${moved ? ` and moved ${moved} item(s) to “${destination}”` : ''}.`);
+      return true;
+    } catch (deleteError: unknown) {
+      setError((current) => `${current && choice.mode === 'delete-media' ? `${current} ` : ''}${deleteError instanceof Error ? deleteError.message : describeDbError(deleteError)}`);
+      return false;
+    } finally {
+      setFolderBusy(false);
+    }
+  };
+
+  const dropOnFolder = (path: string, ids: string[]) => {
+    const targets = scoped.filter((item) => ids.includes(item.id));
+    if (targets.length) void moveToFolder(targets, path);
   };
 
   const updateSelected = async (changes: Partial<MediaItem>) => {
@@ -381,9 +579,17 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
       ? `Delete ${targets.length} selected item(s)? ${atProvider.length} file(s) will also be deleted from ${providerNames}. This cannot be undone.`
       : `Remove ${targets.length} selected item(s) from the library?`;
     if (!window.confirm(question)) return;
-
     setError('');
     setFeedback('');
+    await deleteMediaItems(targets);
+  };
+
+  /**
+   * Deletes items at their provider and from the library, after the caller has confirmed.
+   * Returns true only when every item is gone from the library.
+   */
+  const deleteMediaItems = async (targets: MediaItem[]): Promise<boolean> => {
+    const atProvider = targets.filter((item) => item.provider !== 'external');
     setDeleting(true);
     try {
       const token = await accessToken();
@@ -408,12 +614,14 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
         }
       }
 
+      let deletedCount = 0;
       if (removable.length) {
         // .select() because row level security skips rows silently instead of raising an error.
         const { data, error: deleteError } = await getSupabaseClient()
           .from('media').delete().in('id', removable.map((item) => item.id)).select('id');
         if (deleteError) throw deleteError;
         const deleted = new Set(((data || []) as Array<{ id: string }>).map((row) => row.id));
+        deletedCount = deleted.size;
         setItems((current) => current.filter((item) => !deleted.has(item.id)));
         setChecked((current) => current.filter((id) => !deleted.has(id)));
         if (selected && deleted.has(selected.id)) setSelected(null);
@@ -429,8 +637,10 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
         setError((current) => [current, `${targets.length - removable.length} item(s) were kept because their provider delete failed.`].filter(Boolean).join(' '));
       }
       void fetchUploadAllowance().then(setAllowance).catch(() => {});
+      return deletedCount === targets.length;
     } catch (removeError: unknown) {
       setError(explainMediaError(removeError));
+      return false;
     } finally {
       setDeleting(false);
     }
@@ -464,6 +674,11 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
 
       {error && <div className={styles.error} role="alert">{error}</div>}
       {feedback && <div className={styles.feedback} role="status">{feedback}</div>}
+      {folderSupport && (
+        <datalist id={folderListId}>
+          {folders.map((folder) => <option key={folder.path} value={folder.path} />)}
+        </datalist>
+      )}
 
       {deleteSupport && !deleteSupport.cloudinary && items.some((item) => item.provider === 'cloudinary') && (
         <div className={styles.warning} role="status">
@@ -483,7 +698,22 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
       )}
 
       {tab === 'library' && (
-        <div className={styles.libraryLayout}>
+        <div className={folderSupport ? styles.libraryLayoutFolders : styles.libraryLayout}>
+          {folderSupport && (
+            <FolderSidebar
+              nodes={folders}
+              allCount={scoped.length}
+              active={activeFolder}
+              onSelect={selectFolder}
+              manageable={folderRows !== null}
+              busy={folderBusy || movingFolder || deleting}
+              folderListId={folderListId}
+              onCreate={createFolder}
+              onRename={renameFolder}
+              onDelete={deleteFolder}
+              onDropMedia={dropOnFolder}
+            />
+          )}
           <div className={styles.libraryMain}>
             <div className={styles.filters}>
               <input type="search" value={search} onChange={(event) => setSearch(event.target.value)}
@@ -495,6 +725,19 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
                 <option value="external">External URL</option>
               </select>
             </div>
+            {folderSupport && activeFolder !== 'all' && (
+              <p className={styles.folderCrumb}>
+                <button type="button" onClick={() => selectFolder('all')}>All media</button>
+                {folderLineage(activeFolder).map((path) => (
+                  <span key={path}> / <button type="button" onClick={() => selectFolder(path)}>{path.split('/').pop()}</button></span>
+                ))}
+              </p>
+            )}
+            {folderSupport === false && !loading && (
+              <p className={styles.muted} role="status">
+                Folders are available after running <code>{mediaFoldersMigration}</code> in the Supabase SQL Editor.
+              </p>
+            )}
             {!loading && visible.length > 0 && (
               <div className={styles.bulkBar}>
                 <label className={styles.selectAll}>
@@ -510,6 +753,22 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
                     <button type="button" className={styles.danger} disabled={deleting} onClick={() => void removeChecked()}>
                       {deleting ? 'Deleting…' : `Delete selected (${checkedItems.length})`}
                     </button>
+                    {folderSupport && (
+                      // Not a <form>: pickers open inside editor forms, and nested forms submit the outer one.
+                      <div className={styles.moveForm}>
+                        <input list={folderListId} value={moveFolder} onChange={(event) => setMoveFolder(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key !== 'Enter') return;
+                            event.preventDefault();
+                            if (moveFolder.trim()) void moveToFolder(checkedItems, moveFolder);
+                          }}
+                          placeholder="Move to folder…" aria-label="Move selected to folder" />
+                        <button type="button" className={styles.bulkGhost} disabled={movingFolder || !moveFolder.trim()}
+                          onClick={() => void moveToFolder(checkedItems, moveFolder)}>
+                          {movingFolder ? 'Moving…' : 'Move'}
+                        </button>
+                      </div>
+                    )}
                     {onSelectMany && (
                       <button type="button" className={styles.primary} onClick={() => onSelectMany(checkedItems)}>
                         Insert {checkedItems.length} selected
@@ -524,14 +783,31 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
               </div>
             )}
             {loading ? <p className={styles.muted}>Loading media…</p> : visible.length === 0 ? (
-              <p className={styles.muted}>No media yet. Upload a file or add one by URL.</p>
+              activeFolder !== 'all' && !search.trim() && providerFilter === 'all' ? (
+                <div className={styles.emptyFolder}>
+                  <p>The folder “{activeFolder}” is empty.</p>
+                  <button type="button" className={styles.primary} onClick={() => { setUploadFolder(activeFolder); setTab('upload'); }}>
+                    Upload files into it
+                  </button>
+                  <span className={styles.muted}>or drag images from another folder onto it in the sidebar.</span>
+                </div>
+              ) : (
+                <p className={styles.muted}>{scoped.length ? 'No media matches this search or filter.' : 'No media yet. Upload a file or add one by URL.'}</p>
+              )
             ) : (
               <div className={styles.grid} ref={gridRef}>
                 {visible.map((item) => {
                   const isChecked = checked.includes(item.id);
                   const label = item.title || item.file_name || 'media item';
                   return (
-                    <div key={item.id} data-media-id={item.id} className={isChecked ? styles.thumbWrapChecked : styles.thumbWrap}>
+                    <div key={item.id} data-media-id={item.id} className={isChecked ? styles.thumbWrapChecked : styles.thumbWrap}
+                      draggable={Boolean(folderSupport)}
+                      onDragStart={(event) => {
+                        // Dragging a ticked image carries every ticked image with it.
+                        const ids = isChecked ? checkedItems.map((entry) => entry.id) : [item.id];
+                        event.dataTransfer.setData(MEDIA_DRAG_TYPE, JSON.stringify(ids));
+                        event.dataTransfer.effectAllowed = 'move';
+                      }}>
                       <button type="button"
                         className={selected?.id === item.id ? styles.thumbActive : styles.thumb}
                         onClick={(event) => {
@@ -607,6 +883,13 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
                   }} />
               </label>
               <p className={styles.detailHint}>Enter in Title jumps to Alt text; Enter in Alt text opens the next image.</p>
+              {folderSupport && (
+                <label>Folder
+                  <input list={folderListId} value={folderDraft} onChange={(event) => setFolderDraft(event.target.value)}
+                    onBlur={() => { if (normalizeMediaFolder(folderDraft) !== selectedFolder) void moveToFolder([selected], folderDraft); else setFolderDraft(selectedFolder); }}
+                    onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); } }} />
+                </label>
+              )}
               <div className={styles.detailActions}>
                 <button type="button" className={styles.danger} disabled={deleting} onClick={() => void removeSelected()}>
                   {deleting ? 'Deleting…' : 'Delete'}
@@ -624,6 +907,13 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
 
       {tab === 'upload' && (
         <div className={styles.uploadTab}>
+          {folderSupport && (
+            <label className={styles.folderField}>Upload to folder
+              <input list={folderListId} value={uploadFolder} onChange={(event) => setUploadFolder(event.target.value)}
+                onBlur={() => setUploadFolder(normalizeMediaFolder(uploadFolder))} placeholder={DEFAULT_MEDIA_FOLDER} />
+              <span className={styles.muted}>Pick an existing folder or type a new one, e.g. <code>blog/2026</code>. Files are stored in this folder at the provider too.</span>
+            </label>
+          )}
           <div className={styles.providerToggle} role="radiogroup" aria-label="Upload destination">
             {(['cloudinary', 'imagekit'] as MediaProvider[]).map((provider) => (
               <button key={provider} type="button" role="radio" aria-checked={uploadProvider === provider}
@@ -665,6 +955,12 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
 
       {tab === 'url' && (
         <form className={styles.urlTab} onSubmit={saveExternal}>
+          {folderSupport && (
+            <label>Folder
+              <input list={folderListId} value={uploadFolder} onChange={(event) => setUploadFolder(event.target.value)}
+                onBlur={() => setUploadFolder(normalizeMediaFolder(uploadFolder))} placeholder={DEFAULT_MEDIA_FOLDER} />
+            </label>
+          )}
           <label>Image URL
             <input value={urlForm.url} onChange={(event) => setUrlForm((current) => ({ ...current, url: event.target.value }))}
               placeholder="https://example.com/image.jpg" required />

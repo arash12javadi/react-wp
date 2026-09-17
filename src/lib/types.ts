@@ -74,6 +74,8 @@ export interface MediaItem {
   height: number | null;
   bytes: number | null;
   mime_type: string | null;
+  /** Library folder, e.g. "general" or "blog/2026". Absent before the 20260927 migration. */
+  folder?: string;
   uploaded_by?: string | null;
   created_at: string;
 }

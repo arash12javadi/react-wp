@@ -45,6 +45,7 @@ export const uploadToCloudinary = async (
   file: File,
   settings: SiteSettings,
   onProgress: (percent: number) => void,
+  folder?: string,
 ): Promise<UploadResult> => {
   if (!settings.cloudinary_cloud_name || !settings.cloudinary_upload_preset) {
     throw new Error('Set the Cloudinary cloud name and unsigned upload preset under Media → Upload settings first.');
@@ -52,6 +53,9 @@ export const uploadToCloudinary = async (
   const form = new FormData();
   form.append('file', file);
   form.append('upload_preset', settings.cloudinary_upload_preset);
+  // "folder" works in both Cloudinary folder modes: fixed mode prefixes the public id, dynamic
+  // mode sets the asset folder. A folder set on the upload preset itself takes precedence.
+  if (folder) form.append('folder', folder);
 
   const result = await postForm(
     `https://api.cloudinary.com/v1_1/${settings.cloudinary_cloud_name}/auto/upload`,
@@ -75,6 +79,7 @@ export const uploadToImageKit = async (
   file: File,
   settings: SiteSettings,
   onProgress: (percent: number) => void,
+  folder?: string,
 ): Promise<UploadResult> => {
   if (!settings.imagekit_public_key) {
     throw new Error('Set the ImageKit public key under Media → Upload settings first.');
@@ -98,6 +103,8 @@ export const uploadToImageKit = async (
   form.append('token', token);
   form.append('expire', String(expire));
   form.append('signature', signature);
+  // The signature covers only token and expire, so the folder can be chosen here.
+  if (folder) form.append('folder', `/${folder}`);
 
   const result = await postForm('https://upload.imagekit.io/api/v1/files/upload', form, onProgress);
 

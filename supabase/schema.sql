@@ -69,7 +69,7 @@ create table if not exists public.pages (
   updated_at timestamptz default timezone('utc'::text, now()) not null
 );
 
--- Page editor: meta keywords (shown only when enabled under App Settings → SEO).
+-- Page editor: meta keywords (shown only when enabled under App Settings Ã¢â€ â€™ SEO).
 alter table public.pages add column if not exists meta_keywords text;
 
 -- 'trash' was added by 20260926_bulk_actions_trash.sql; older installs have the inline check without it.
@@ -140,7 +140,14 @@ create table if not exists public.media (
 
 alter table public.media add column if not exists provider_file_id text;
 
--- Per-user disk quota overrides (App Settings → Uploads). Keyed by email rather than profile
+-- Media Library folders (20260927_media_folders.sql). Paths like "general" or "blog/2026".
+alter table public.media add column if not exists folder varchar(255) not null default 'general';
+alter table public.media drop constraint if exists media_folder_format;
+alter table public.media add constraint media_folder_format
+  check (folder ~ '^[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*$' and char_length(folder) <= 255);
+create index if not exists idx_media_folder on public.media (folder);
+
+-- Per-user disk quota overrides (App Settings Ã¢â€ â€™ Uploads). Keyed by email rather than profile
 -- id so an allowance can be set before the person signs up, and not stored on profiles because
 -- users can update their own profile row. Private: options is public, this table is not.
 create table if not exists public.rwp_quota_overrides (
@@ -284,7 +291,7 @@ create trigger profiles_guard_role_trigger
   before update on public.profiles
   for each row execute function public.profiles_guard_role();
 
--- Disk quotas and media rules (App Settings → Uploads) --------------------------------------
+-- Disk quotas and media rules (App Settings Ã¢â€ â€™ Uploads) --------------------------------------
 
 -- Bytes the user may store, or null for unlimited. An override by email wins; otherwise the
 -- role's quota applies (Shop Manager uses the Editor quota). Administrators are unlimited
@@ -333,7 +340,7 @@ returns jsonb language sql stable security definer set search_path = public as $
   );
 $$;
 
--- Disk usage of every account, for App Settings → Uploads.
+-- Disk usage of every account, for App Settings Ã¢â€ â€™ Uploads.
 create or replace function public.rwp_disk_usage_report()
 returns jsonb language plpgsql stable security definer set search_path = public as $$
 begin
@@ -405,10 +412,10 @@ begin
   max_kb := public.rwp_app_setting_number('{uploads,max_upload_kb}');
   quota := public.rwp_user_quota_bytes(caller);
   if (max_kb is not null or quota is not null) and new.bytes is null then
-    raise exception 'Upload rejected: the file size is missing, and upload limits are enabled under App Settings → Uploads.';
+    raise exception 'Upload rejected: the file size is missing, and upload limits are enabled under App Settings Ã¢â€ â€™ Uploads.';
   end if;
   if max_kb is not null and new.bytes > max_kb * 1024 then
-    raise exception 'Upload rejected: this file is % KB, over the % KB limit set under App Settings → Uploads.',
+    raise exception 'Upload rejected: this file is % KB, over the % KB limit set under App Settings Ã¢â€ â€™ Uploads.',
       ceil(new.bytes / 1024.0), max_kb;
   end if;
 
@@ -418,14 +425,14 @@ begin
     max_w := public.rwp_app_setting_number('{uploads,max_width}');
     max_h := public.rwp_app_setting_number('{uploads,max_height}');
     if coalesce(min_w, min_h, max_w, max_h) is not null and (new.width is null or new.height is null) then
-      raise exception 'Upload rejected: the image dimensions are missing, and dimension limits are enabled under App Settings → Uploads.';
+      raise exception 'Upload rejected: the image dimensions are missing, and dimension limits are enabled under App Settings Ã¢â€ â€™ Uploads.';
     end if;
     if new.width < min_w or new.height < min_h then
-      raise exception 'Upload rejected: the image is % × % px, smaller than the minimum of % × % px.',
+      raise exception 'Upload rejected: the image is % Ãƒâ€” % px, smaller than the minimum of % Ãƒâ€” % px.',
         new.width, new.height, coalesce(min_w::text, 'any'), coalesce(min_h::text, 'any');
     end if;
     if new.width > max_w or new.height > max_h then
-      raise exception 'Upload rejected: the image is % × % px, larger than the maximum of % × % px.',
+      raise exception 'Upload rejected: the image is % Ãƒâ€” % px, larger than the maximum of % Ãƒâ€” % px.',
         new.width, new.height, coalesce(max_w::text, 'any'), coalesce(max_h::text, 'any');
     end if;
   end if;
@@ -615,6 +622,223 @@ create policy "Uploaders can delete media"
   on public.media for delete to authenticated
   using (public.rwp_can_manage_media(uploaded_by));
 
+-- Media folder manager (20260928_media_folder_manager.sql): folders as rows, created by the
+-- media_record_folder trigger or from the Media Library; renamed/deleted by the invoker functions.
+create table if not exists public.media_folders (
+  path varchar(255) primary key
+    constraint media_folders_path_format check (path ~ '^[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*$' and char_length(path) <= 255),
+  created_by uuid references auth.users(id) on delete set null default auth.uid(),
+  created_at timestamptz not null default now()
+);
+
+-- "blog/2026/may" -> blog, blog/2026, blog/2026/may. Called by the invoker functions below,
+-- so authenticated users need execute; it only splits a string.
+create or replace function public.rwp_media_folder_lineage(p_path text)
+returns setof text language sql immutable set search_path = public as $$
+  select array_to_string((string_to_array(p_path, '/'))[1:depth], '/')
+  from generate_series(1, coalesce(array_length(string_to_array(p_path, '/'), 1), 0)) as depth;
+$$;
+revoke execute on function public.rwp_media_folder_lineage(text) from public, anon;
+grant execute on function public.rwp_media_folder_lineage(text) to authenticated;
+
+-- True when p_folder is p_root or inside it. LIKE is avoided because "_" is a wildcard there.
+create or replace function public.rwp_media_folder_in(p_folder text, p_root text)
+returns boolean language sql immutable set search_path = public as $$
+  select p_folder = p_root or left(p_folder, char_length(p_root) + 1) = p_root || '/';
+$$;
+revoke execute on function public.rwp_media_folder_in(text, text) from public, anon;
+grant execute on function public.rwp_media_folder_in(text, text) to authenticated;
+
+-- Backfill: the default folder plus every folder media already uses, with its parents.
+insert into public.media_folders (path, created_by)
+select distinct lineage, null::uuid
+from (
+  select 'general'::text as folder
+  union
+  select distinct folder from public.media
+) used
+cross join lateral public.rwp_media_folder_lineage(used.folder) as lineage
+on conflict (path) do nothing;
+
+-- Keeps media_folders in step with media.folder. SECURITY DEFINER because it writes folder rows
+-- the caller's own RLS may not cover; the path is already validated by media_folder_format.
+create or replace function public.media_record_folder()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.media_folders (path, created_by)
+  select lineage, auth.uid() from public.rwp_media_folder_lineage(new.folder) as lineage
+  on conflict (path) do nothing;
+  return new;
+end;
+$$;
+revoke execute on function public.media_record_folder() from public, anon, authenticated;
+
+drop trigger if exists media_record_folder on public.media;
+create trigger media_record_folder
+  after insert or update of folder on public.media
+  for each row execute function public.media_record_folder();
+
+alter table public.media_folders enable row level security;
+
+drop policy if exists "Uploaders can read media folders" on public.media_folders;
+create policy "Uploaders can read media folders"
+  on public.media_folders for select to authenticated using (true);
+drop policy if exists "Uploaders can create media folders" on public.media_folders;
+create policy "Uploaders can create media folders"
+  on public.media_folders for insert to authenticated
+  with check (public.user_has_cap('upload_files'));
+-- Same ownership rule as media: your own folders, or everyone's when media is not limited to
+-- its uploader (or you have edit_others_posts). rwp_can_manage_media() only exists once
+-- 20260920_app_settings.sql has been run, so this looks it up when called rather than when the
+-- policy is created: before that migration any uploader may manage any media (the same as the
+-- media policies then), and afterwards the ownership rule applies without re-running this file.
+-- PL/pgSQL resolves the call on first execution, which is what makes the lookup safe.
+create or replace function public.rwp_can_manage_media_folder(p_created_by uuid)
+returns boolean language plpgsql stable security invoker set search_path = public as $$
+begin
+  if not coalesce(public.user_has_cap('upload_files'), false) then
+    return false;
+  end if;
+  -- Folders with no creator (backfilled from existing media) are shared.
+  if p_created_by is null then
+    return true;
+  end if;
+  if to_regprocedure('public.rwp_can_manage_media(uuid)') is null then
+    return true;
+  end if;
+  return public.rwp_can_manage_media(p_created_by);
+end;
+$$;
+revoke execute on function public.rwp_can_manage_media_folder(uuid) from public, anon;
+grant execute on function public.rwp_can_manage_media_folder(uuid) to authenticated;
+
+-- The media inside a folder stays protected by the media policies, because renaming or deleting
+-- a non-empty folder has to update those rows too. The default folder is never deleted.
+drop policy if exists "Uploaders can delete media folders" on public.media_folders;
+create policy "Uploaders can delete media folders"
+  on public.media_folders for delete to authenticated
+  using (path <> 'general' and public.rwp_can_manage_media_folder(created_by));
+
+-- Rename / move a folder --------------------------------------------------------------------------
+create or replace function public.rwp_rename_media_folder(p_from text, p_to text)
+returns jsonb language plpgsql security invoker set search_path = public as $$
+declare
+  src text := trim(both '/' from coalesce(p_from, ''));
+  dst text := trim(both '/' from coalesce(p_to, ''));
+  total integer;
+  moved integer;
+  folder_total integer;
+  folder_removed integer;
+begin
+  if not public.user_has_cap('upload_files') then
+    raise exception using errcode = '42501', message = 'Renaming folders needs the upload_files capability.';
+  end if;
+  if src = 'general' then
+    raise exception 'The "general" folder is where new media goes by default, so it cannot be renamed.';
+  end if;
+  if dst !~ '^[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*$' or char_length(dst) > 255 then
+    raise exception 'The folder name "%" is not valid. Use letters, digits, "-" and "_", with "/" between levels.', dst;
+  end if;
+  if src = dst then
+    return jsonb_build_object('moved', 0);
+  end if;
+  if public.rwp_media_folder_in(dst, src) then
+    raise exception 'The folder "%" cannot be moved inside itself ("%").', src, dst;
+  end if;
+  if not exists (select 1 from public.media_folders where public.rwp_media_folder_in(path, src))
+     and not exists (select 1 from public.media where public.rwp_media_folder_in(folder, src)) then
+    raise exception 'The folder "%" does not exist. Reload the Media Library.', src;
+  end if;
+
+  -- Media rows are readable by everyone, so this counts items the caller may not be able to change.
+  select count(*) into total from public.media where public.rwp_media_folder_in(folder, src);
+  update public.media
+  set folder = dst || substr(folder, char_length(src) + 1)
+  where public.rwp_media_folder_in(folder, src);
+  get diagnostics moved = row_count;
+  if moved < total then
+    raise exception using errcode = '42501', message = format(
+      'The folder "%s" was not renamed: %s of its %s items were uploaded by someone else, and your role can only change its own media (Settings Ã¢â€ â€™ General limits media to its uploader). Nothing was changed.',
+      src, total - moved, total);
+  end if;
+
+  -- Carry empty subfolders over, then remove the old paths.
+  insert into public.media_folders (path)
+  select distinct lineage
+  from public.media_folders f
+  cross join lateral public.rwp_media_folder_lineage(dst || substr(f.path, char_length(src) + 1)) as lineage
+  where public.rwp_media_folder_in(f.path, src)
+  on conflict (path) do nothing;
+
+  select count(*) into folder_total from public.media_folders where public.rwp_media_folder_in(path, src);
+  delete from public.media_folders where public.rwp_media_folder_in(path, src);
+  get diagnostics folder_removed = row_count;
+  if folder_removed < folder_total then
+    raise exception using errcode = '42501', message = format(
+      'The folder "%s" was not renamed: it contains folders created by someone else, which your role cannot remove. Nothing was changed.', src);
+  end if;
+
+  return jsonb_build_object('moved', moved, 'folder', dst);
+end;
+$$;
+revoke execute on function public.rwp_rename_media_folder(text, text) from public, anon;
+grant execute on function public.rwp_rename_media_folder(text, text) to authenticated;
+
+-- Delete a folder -----------------------------------------------------------------------------------
+-- With p_move_to, the folder's media (including subfolders) moves there first. Without it, the
+-- folder must be empty: deleting the media itself goes through /api/media-delete, because the
+-- files also have to be removed at Cloudinary or ImageKit.
+create or replace function public.rwp_delete_media_folder(p_path text, p_move_to text default null)
+returns jsonb language plpgsql security invoker set search_path = public as $$
+declare
+  target text := trim(both '/' from coalesce(p_path, ''));
+  dst text := nullif(trim(both '/' from coalesce(p_move_to, '')), '');
+  total integer;
+  moved integer := 0;
+  folder_total integer;
+  folder_removed integer;
+begin
+  if not public.user_has_cap('upload_files') then
+    raise exception using errcode = '42501', message = 'Deleting folders needs the upload_files capability.';
+  end if;
+  if target = 'general' then
+    raise exception 'The "general" folder is where new media goes by default, so it cannot be deleted.';
+  end if;
+
+  select count(*) into total from public.media where public.rwp_media_folder_in(folder, target);
+  if total > 0 then
+    if dst is null then
+      raise exception 'The folder "%" still holds % item(s). Move them to another folder or delete them first.', target, total;
+    end if;
+    if dst !~ '^[A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*$' or char_length(dst) > 255 then
+      raise exception 'The folder name "%" is not valid. Use letters, digits, "-" and "_", with "/" between levels.', dst;
+    end if;
+    if public.rwp_media_folder_in(dst, target) then
+      raise exception 'Media cannot be moved into "%", because that folder is being deleted.', dst;
+    end if;
+    update public.media set folder = dst where public.rwp_media_folder_in(folder, target);
+    get diagnostics moved = row_count;
+    if moved < total then
+      raise exception using errcode = '42501', message = format(
+        'The folder "%s" was not deleted: %s of its %s items were uploaded by someone else, and your role can only change its own media. Nothing was changed.',
+        target, total - moved, total);
+    end if;
+  end if;
+
+  select count(*) into folder_total from public.media_folders where public.rwp_media_folder_in(path, target);
+  delete from public.media_folders where public.rwp_media_folder_in(path, target);
+  get diagnostics folder_removed = row_count;
+  if folder_removed < folder_total then
+    raise exception using errcode = '42501', message = format(
+      'The folder "%s" was not deleted: it contains folders created by someone else, which your role cannot remove. Nothing was changed.', target);
+  end if;
+
+  return jsonb_build_object('moved', moved, 'folders', folder_removed);
+end;
+$$;
+revoke execute on function public.rwp_delete_media_folder(text, text) from public, anon;
+grant execute on function public.rwp_delete_media_folder(text, text) to authenticated;
+
 alter table public.rwp_quota_overrides enable row level security;
 drop policy if exists "Settings managers manage quota overrides" on public.rwp_quota_overrides;
 create policy "Settings managers manage quota overrides"
@@ -755,7 +979,7 @@ create table if not exists public.shop_product_tags (
 create table if not exists public.shop_variations (
   id uuid primary key default gen_random_uuid(),
   product_id uuid not null references public.shop_products(id) on delete cascade,
-  -- { "Color": "Red", "Size": "" } — an empty value means "any".
+  -- { "Color": "Red", "Size": "" } Ã¢â‚¬â€ an empty value means "any".
   attributes jsonb not null default '{}'::jsonb,
   sku text,
   regular_price numeric(18,4),
@@ -3100,7 +3324,7 @@ begin
      and not public.user_has_cap('manage_shop') then
     raise exception using
       errcode = '42501',
-      message = 'Site templates (header, footer, single post, archives, shop screens…) can only be created or edited by Administrators and Shop Managers (the manage_shop capability).';
+      message = 'Site templates (header, footer, single post, archives, shop screensÃ¢â‚¬Â¦) can only be created or edited by Administrators and Shop Managers (the manage_shop capability).';
   end if;
   return new;
 end;
@@ -3113,7 +3337,7 @@ create trigger builder_guard_site_template
 
 -- Create one template -------------------------------------------------------------------------------
 
--- A free slug starting with p_base: p_base, p_base-2, p_base-3… (Invoker: sees only what the caller can.)
+-- A free slug starting with p_base: p_base, p_base-2, p_base-3Ã¢â‚¬Â¦ (Invoker: sees only what the caller can.)
 create or replace function public.rwp_free_slug(p_base text)
 returns text language plpgsql stable set search_path = public as $$
 declare
@@ -3171,7 +3395,7 @@ $$;
 -- Default content -----------------------------------------------------------------------------------
 
 -- p_items: [{ "key": "home", "title": "Home", "slug": "home", "template_type": null | "header",
---             "content": "<p>…</p>", "builder_data": {…} | null }]
+--             "content": "<p>Ã¢â‚¬Â¦</p>", "builder_data": {Ã¢â‚¬Â¦} | null }]
 -- Items whose slug or template type already exists are skipped. With p_reading, the created
 -- "home" and "blog" items become the front page and posts page, but only when both are unset.
 -- Returns { installed: bool, created: [{ key, id }] }.
@@ -3527,7 +3751,7 @@ revoke execute on function public.rwp_backup_import(jsonb) from public, anon;
 grant execute on function public.rwp_backup_export() to authenticated;
 grant execute on function public.rwp_backup_import(jsonb) to authenticated;
 
--- Optional profile details (Admin → Profile → More about you) --------------------------------------
+-- Optional profile details (Admin Ã¢â€ â€™ Profile Ã¢â€ â€™ More about you) --------------------------------------
 -- Kept identical to supabase/migrations/20260921_profile_details.sql.
 --
 -- A separate table, not more columns on profiles, for two reasons:
@@ -3612,7 +3836,7 @@ revoke all on table public.profile_details from anon;
 
 notify pgrst, 'reload schema';
 
--- Appearance → Theme Editor ----------------------------------------------------------------------
+-- Appearance Ã¢â€ â€™ Theme Editor ----------------------------------------------------------------------
 -- Kept identical to supabase/migrations/20260922_theme_editor.sql.
 --
 -- One row holds the whole theme: the block layout of the header, footer, sidebar, comments and

@@ -22,7 +22,7 @@
 
 /* Constrained only as a modal; the standalone Media screen fills the admin width. */
 .backdrop .panel {
-  max-width: 1040px;
+  max-width: 1180px;
   max-height: 88vh;
   overflow-y: auto;
 }
@@ -81,12 +81,62 @@
   align-items: start;
 }
 
+.libraryLayoutFolders {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr) 280px;
+  gap: 16px;
+  align-items: start;
+}
+
 .libraryMain {
   min-width: 0;
 }
 
+.folderCrumb {
+  margin: -4px 0 10px;
+  color: #94a3b8;
+  font-size: 0.78rem;
+}
+
+.folderCrumb button {
+  border: 0;
+  padding: 0;
+  color: #4f46e5;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+.emptyFolder {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  border: 2px dashed #cbd5e1;
+  border-radius: 9px;
+  padding: 24px;
+  color: #475569;
+}
+
+.emptyFolder p {
+  margin: 0;
+  font-weight: 700;
+}
+
+@media (width <= 1100px) {
+  .libraryLayoutFolders {
+    grid-template-columns: 180px minmax(0, 1fr);
+  }
+
+  .libraryLayoutFolders > .details {
+    grid-column: 1 / -1;
+    position: static;
+  }
+}
+
 .filters {
   display: flex;
+  flex-wrap: wrap;
   gap: 9px;
   margin-bottom: 14px;
 }
@@ -168,6 +218,49 @@
   font: inherit;
   font-size: 0.82rem;
   font-weight: 700;
+}
+
+.moveForm {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.moveForm input {
+  width: 160px;
+  border: 1px solid #dbe1ea;
+  border-radius: 6px;
+  padding: 7px 9px;
+  color: #1e293b;
+  background: #fff;
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.folderField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #334155;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.folderField input {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid #dbe1ea;
+  border-radius: 6px;
+  padding: 9px 11px;
+  color: #1e293b;
+  background: #fff;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 400;
+}
+
+.folderField .muted {
+  font-weight: 400;
 }
 
 .thumbWrap,
@@ -536,7 +629,8 @@
 }
 
 @media (width <= 900px) {
-  .libraryLayout {
+  .libraryLayout,
+  .libraryLayoutFolders {
     grid-template-columns: minmax(0, 1fr);
   }
 
