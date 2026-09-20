@@ -4,5 +4,24 @@
   "version": "1.0.0",
   "author": "React-WP",
   "description": "A WooCommerce-style store: products with variations, cart, checkout, orders, coupons, tax, shipping zones, Stripe, PayPal and offline payments, customer accounts, reviews, reports and order emails.",
-  "entry": "./index.tsx"
+  "entry": "./index.tsx",
+  "media": {
+    "prefixes": ["plugins/rwp-shop"]
+  },
+  "database": {
+    "schema": "./schema.sql",
+    "uninstall": "./uninstall.sql",
+    "tables": [
+      "shop_categories", "shop_tags", "shop_attributes", "shop_attribute_terms",
+      "shop_shipping_classes", "shop_products", "shop_product_categories", "shop_product_tags",
+      "shop_variations", "shop_product_downloads", "shop_customers", "shop_coupons",
+      "shop_tax_rates", "shop_shipping_zones", "shop_shipping_methods", "shop_orders",
+      "shop_order_items", "shop_order_notes", "shop_refunds", "shop_reviews"
+    ],
+    "options": ["shop\\_%"],
+    "retains": [
+      "Shop site templates (Shop, Product, Cart, Checkout, My Account) stay in Pages as ordinary builder layouts.",
+      "The shop_manager role stays on existing accounts; without the shop it grants nothing extra."
+    ]
+  }
 }

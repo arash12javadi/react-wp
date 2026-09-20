@@ -55,6 +55,11 @@ export const uploadToCloudinary = async (
   form.append('upload_preset', settings.cloudinary_upload_preset);
   // "folder" works in both Cloudinary folder modes: fixed mode prefixes the public id, dynamic
   // mode sets the asset folder. A folder set on the upload preset itself takes precedence.
+  //
+  // `folder` here is the PROVIDER folder, already namespaced by the caller through
+  // src/lib/mediaScope.js (media/… for the library, plugins/<id>/… for a plugin). That prefix is
+  // what plugin uninstall and site reset delete by, so an un-namespaced upload becomes a file
+  // nothing can ever clean up.
   if (folder) form.append('folder', folder);
 
   const result = await postForm(

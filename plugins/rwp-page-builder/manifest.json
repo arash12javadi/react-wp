@@ -4,5 +4,15 @@
   "version": "1.0.0",
   "author": "React-WP",
   "description": "A visual drag-and-drop page builder: sections, columns and widgets, responsive styling, dynamic data tags, posts grids, forms, sliders, global colours and fonts, templates and revisions.",
-  "entry": "./index.tsx"
+  "entry": "./index.tsx",
+  "database": {
+    "schema": "./schema.sql",
+    "uninstall": "./uninstall.sql",
+    "tables": ["elementor_templates", "form_submissions", "page_builder_revisions", "builder_form_settings"],
+    "options": ["builder_global_styles"],
+    "retains": [
+      "Saved layouts stay in pages.builder_data: those are core columns, and site templates (header, footer, single post) are rendered by core.",
+      "A page with a layout falls back to its classic editor content while the builder is uninstalled."
+    ]
+  }
 }

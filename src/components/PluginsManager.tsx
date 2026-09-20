@@ -3,6 +3,8 @@ import { describeDbError, getSupabaseClient, updateOption } from '../lib/db';
 import { rwp, type RwpInstalledPlugin } from '../lib/rwp';
 import { BulkBar, RowCheckbox, SelectAllCheckbox, useBulkSelection } from './BulkActions';
 import PluginUploadModal, { readPendingInstallResult } from './PluginUploadModal';
+import PluginUninstallModal from './PluginUninstallModal';
+import { installPluginSchema, isEndpointUnavailable } from '../lib/pluginSchema';
 import styles from './PluginsManager.module.css';
 
 const activationOption = 'rwp_active_plugins';
@@ -69,6 +71,8 @@ export default function PluginsManager() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [files, setFiles] = useState<PluginFiles>({ available: false, onDisk: [], notBuilt: [], problems: [] });
+  /** The plugin whose uninstall dialog is open, or null. */
+  const [uninstalling, setUninstalling] = useState<PluginRow | null>(null);
   const [pendingInstall] = useState(readPendingInstallResult);
   const [uploadOpen, setUploadOpen] = useState(pendingInstall !== null);
   /** Bumped after an upload so the disk listing (and its "restart to load" notice) is re-read. */
@@ -219,7 +223,31 @@ export default function PluginsManager() {
     const nextIds = nextActive
       ? [...new Set([...activeIds, ...ids])]
       : activeIds.filter((id) => !ids.includes(id));
+    const notes: string[] = [];
     try {
+      // Plugin tables are created on activation, not at install time, so a site that never
+      // enables the shop never gets its twenty tables. schema.sql is re-runnable by contract, so
+      // activating an already-provisioned plugin is a no-op rather than an error.
+      if (nextActive) {
+        for (const plugin of changing) {
+          try {
+            const result = await installPluginSchema(plugin.plugin_id);
+            if (result.created?.length) {
+              notes.push(`${plugin.name}: created ${result.created.join(', ')}.`);
+            }
+            if (result.stillMissing?.length) {
+              // The SQL ran but did not produce what the manifest promised: worth saying out loud
+              // rather than letting the plugin fail later with a "relation does not exist".
+              notes.push(`${plugin.name}: schema.sql ran but ${result.stillMissing.join(', ')} ${result.stillMissing.length === 1 ? 'is' : 'are'} still missing.`);
+            }
+          } catch (schemaError: unknown) {
+            if (!isEndpointUnavailable(schemaError)) throw schemaError;
+            // Static host: there is no endpoint to run DDL. Activation still works, and the
+            // plugin's own screens already explain which migration to run by hand.
+            notes.push(`${plugin.name}: its database tables were not checked, because ${schemaError.message}`);
+          }
+        }
+      }
       const supabase = getSupabaseClient();
       const { data, error: updateError } = await supabase
         .from('plugins')
@@ -235,7 +263,7 @@ export default function PluginsManager() {
       ids.forEach((id) => (nextActive ? rwp.activatePlugin(id) : rwp.deactivatePlugin(id)));
       setActiveIds(nextIds);
       setPlugins((current) => current.map((item) => ids.includes(item.plugin_id) ? { ...item, active: nextActive } : item));
-      setFeedback(`${describe(changing)} ${nextActive ? 'activated' : 'deactivated'}.`);
+      setFeedback([`${describe(changing)} ${nextActive ? 'activated' : 'deactivated'}.`, ...notes].join(' '));
       selection.clear();
     } catch (toggleError: unknown) {
       setError(toggleError instanceof Error ? toggleError.message : describeDbError(toggleError));
@@ -335,10 +363,25 @@ export default function PluginsManager() {
           }}
         />
       )}
+      {uninstalling && (
+        <PluginUninstallModal
+          plugin={uninstalling}
+          onDeactivate={() => setActive([uninstalling], false)}
+          onClose={() => setUninstalling(null)}
+          onFinished={(summary) => {
+            setUninstalling(null);
+            setError('');
+            setFeedback(summary);
+            // The folder and possibly its tables are gone; re-read both listings rather than
+            // patching state that no longer matches the server.
+            setReloadKey((value) => value + 1);
+          }}
+        />
+      )}
       {error && <div className={styles.error} role="alert">{error}</div>}
       {feedback && <div className={styles.feedback} role="status">{feedback}</div>}
       <div className={styles.notice}>
-        A plugin is installed while its folder exists in <code>plugins/</code>. Activation is stored in Supabase and shared by every administrator. Delete removes the folder from the server.
+        A plugin is installed while its folder exists in <code>plugins/</code>. Activation is stored in Supabase and shared by every administrator, and it is what creates the plugin&apos;s database tables. <strong>Uninstall</strong> removes the folder and asks what should happen to those tables.
       </div>
       {!files.available && files.reason && (
         <div className={styles.notice} role="status">Plugin folders could not be checked, so Delete is unavailable: {files.reason}</div>
@@ -374,7 +417,9 @@ export default function PluginsManager() {
             actions={[
               { id: 'activate', label: 'Activate', tone: 'primary', hidden: statusFilter === 'active' },
               { id: 'deactivate', label: 'Deactivate', hidden: statusFilter === 'inactive' },
-              { id: 'delete', label: 'Delete', tone: 'danger' },
+              // Folders only. Anything touching plugin data goes through the per-plugin
+              // Uninstall dialog, which is where the backup and wipe choices live.
+              { id: 'delete', label: 'Delete files', tone: 'danger' },
             ]}
             onAction={onBulk} />
           {visible.length === 0 && <div className={styles.empty}><strong>No plugins match</strong><span>Try another search or filter.</span></div>}
@@ -405,9 +450,9 @@ export default function PluginsManager() {
                         type="button"
                         className={styles.delete}
                         disabled={savingId === plugin.plugin_id || deletingId === plugin.plugin_id}
-                        onClick={() => void deletePlugins([plugin])}
+                        onClick={() => { setError(''); setFeedback(''); setUninstalling(plugin); }}
                       >
-                        {deletingId === plugin.plugin_id ? 'Deletingâ€¦' : 'Delete'}
+                        Uninstall
                       </button>
                     </td>
                   </tr>

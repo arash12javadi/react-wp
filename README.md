@@ -102,6 +102,54 @@ Plugins behave like WordPress: a plugin is installed while its folder exists. A 
 
 **Upload Plugin** (Plugins screen) installs a `.zip` file, or one downloaded from an `https://` URL, through `POST /api/admin/plugins/upload` (`server/pluginInstaller.mjs`, self-hosted `server.mjs` only, `activate_plugins` capability). The ZIP may hold the plugin at its root or inside one top-level folder (a GitHub "Download ZIP" works). It is limited to 25 MB, 150 MB unpacked and 5,000 files, and is refused if any path escapes the plugin folder or the plugin id is already installed. Files are unpacked into the git-ignored `.rwp-tmp/` and renamed into `plugins/<id>/` only after validation. A `server.mjs` gets its import added between the `rwp:server-plugin-imports` markers in `server/plugins.mjs` (`server/serverPluginImports.mjs`, which syntax-checks the result and refuses if the region was hand-edited; a failure rolls the install back). Nothing is executed during install: `.sql` files are shown for you to run in the Supabase SQL Editor, and imported npm packages missing from `package.json` or `node_modules` are listed with an `npm install` command. The response streams progress as NDJSON. Afterwards restart `npm start` (it rebuilds, and server routes load at startup), then activate the plugin. If `VERCEL_DEPLOY_HOOK_URL` is set, the hook is called too, but Vercel builds from Git, so the new plugin folder and `server/plugins.mjs` must be committed for that deploy to include them.
 
+### Per-plugin database tables
+
+A fresh install creates the **core CMS only** — thirteen tables in [`supabase/schema.sql`](./supabase/schema.sql). It no longer creates the twenty `shop_*` tables, the four page-builder tables or `code_snippets`, because a site that never enables those plugins has no use for them.
+
+Instead, a plugin that needs tables ships its own `schema.sql` and declares it in `manifest.json`:
+
+```json
+"database": {
+  "schema": "./schema.sql",
+  "uninstall": "./uninstall.sql",
+  "tables": ["shop_orders", "shop_products"],
+  "options": ["shop\\_%"],
+  "retains": ["Shop site templates stay in Pages as ordinary builder layouts."]
+}
+```
+
+`schema.sql` runs **when the plugin is activated**, through `POST /api/admin/plugins/install-schema` (`server/pluginSchema.mjs`). It runs inside a transaction, so a schema that fails half way applies nothing, and it must be safely re-runnable — activating an already-provisioned plugin is then a no-op rather than an error. `tables` is what gets exported to a backup; `options` are the `option_name` patterns the plugin owns; `retains` is shown in the uninstall dialog as "kept either way".
+
+A plugin's SQL may depend on core (`user_has_cap`, `pages`, `profiles`, `options`), but core never references a plugin object and one plugin never references another's. `pages.builder_data`, `builder_data_i18n`, `is_builder_enabled`, `is_site_template` and `template_type` stay **core columns** even though they look like builder state: core writes them (`rwp_install_default_content`, `builder_create_site_template`) and renders the header and footer from them through `<SiteTemplate>` with no builder installed.
+
+Running the database requires a direct PostgreSQL connection, because PostgREST cannot execute DDL. Set `SUPABASE_DB_URL` in `.env.local` (Supabase → Project Settings → Database → Connection string → URI, session mode on port 5432) and activation is a single click. Without it the server asks for your database password in the dialog instead. These endpoints exist only under `server.mjs`; on a static host, activation still works and the screen says the tables were not checked.
+
+### Uninstalling a plugin
+
+**Uninstall** on the Plugins screen opens a dialog rather than a `confirm()`, because uninstalling is three separate decisions: does the code go, does the data go, and is there a copy first. It lists every table the plugin owns with its row count, then offers:
+
+- **Download a backup and keep the data** — exports every row to a JSON file and removes only the plugin's code. Reinstalling brings everything back.
+- **Download a backup, then wipe the data** — exports first, and drops the tables only if that succeeded.
+- **Wipe the data without a backup** — drops the tables immediately.
+
+A wipe also deletes the plugin's **uploaded files**. Uploads are namespaced at the provider (`src/lib/mediaScope.js`): the Media Library uploads to `media/<library folder>`, a plugin to `plugins/<id>/…`. Uninstalling with a wipe clears only the plugin's own prefix and removes the matching `media` rows; `media/` is never touched, including files the plugin pointed at, because those are Library assets you may also be using on a page. A plugin can narrow its prefix in `manifest.json` with `"media": { "prefixes": [...] }`, but the server refuses any prefix outside its own `plugins/<id>/`.
+
+Note that this applies to files uploaded *after* this convention existed. Shop product images chosen from the Media Library before it are Library assets at the old un-namespaced paths, and are deliberately left alone.
+
+Both wiping options require typing `DELETE`, which the server checks too. The order on the server is fixed — export, then drop, then remove the folder — so nobody ends up with wiped tables and no backup file. Dropping runs the plugin's `uninstall.sql` in one transaction and then verifies the declared tables are actually gone; if any survived, the whole thing rolls back. Each `uninstall.sql` documents what it deliberately keeps, such as saved page layouts (core columns) and the shop's site templates (ordinary pages an administrator may have hand-edited).
+
+### Settings → Advanced → Reset Website
+
+A factory reset: it drops the `public` schema, deletes every account and flips `data/react-wp-config.json` back to `installed: false`, so the site returns to the Setup Wizard. It is restricted to Administrators and Super Admins — checked against `profiles.role` rather than the `manage_options` capability, which App Settings can grant to other roles — and requires re-entering the signed-in account's own password, which the server verifies against Supabase Auth, plus typing `RESET`. Everything runs in one transaction, so a failure leaves a working site.
+
+It also deletes every Cloudinary file the site uploaded, unless you clear the "also delete every uploaded file" box. That runs before the database is dropped, because the `media` table is the only record of what this site uploaded. Two passes: every public id recorded in `media` (which is what catches files from before the `media/` prefix existed, sitting at bare paths like `general/…`), then the `media/` and `plugins/` prefixes (which catches files Cloudinary still has but the table has lost track of).
+
+It deliberately does **not** call Cloudinary with an empty prefix or `all=true`. Those wipe the entire cloud, and one Cloudinary account is very often shared between a staging site, a production site and unrelated projects. "All media created by this website" means what the `media` table knows about plus this site's own two prefixes — not everything the API key can reach.
+
+ImageKit files are not deleted: its delete API needs the stored fileId and has no bulk or prefix operation, so wiping a library of any size would mean one request per file. The confirmation screen reports how many were left so you can clear them in the ImageKit dashboard.
+
+Take a backup from Settings → Backup first — it is the only thing that brings any of this back.
+
 ### Updating an existing database for plugins
 
 If the site was installed before plugin support was added, run [`supabase/migrations/20260911_create_plugins.sql`](./supabase/migrations/20260911_create_plugins.sql) in the Supabase SQL Editor. The initial installer creates this table for new installations, but it cannot change an already-installed database unless the installation endpoint is run again.

@@ -11,7 +11,16 @@ A WordPress-style CMS: React 19 + Vite SPA, Supabase (Postgres + Auth) as the wh
 
 ## Database migrations
 
-Migrations in `supabase/migrations/` are **run by hand in the Supabase SQL Editor**; the app cannot apply them. `supabase/schema.sql` is the canonical fresh-install schema and must be kept in sync with every migration.
+Migrations in `supabase/migrations/` are **run by hand in the Supabase SQL Editor**; the app cannot apply them.
+
+There are now **two kinds of fresh-install schema**, and a migration must be kept in sync with exactly one of them:
+
+- `supabase/schema.sql` — **core CMS only** (13 tables: pages, posts, categories, comments, profiles, profile_details, options, menus, media, media_folders, plugins, theme_settings, rwp_quota_overrides). Run by `server.mjs` and `api/install-schema.ts` during the Setup Wizard.
+- `plugins/<id>/schema.sql` — everything that plugin owns, declared in its `manifest.json` `database` block. Run **on activation** by `POST /api/admin/plugins/install-schema`, so a site that never enables the shop never gets its twenty `shop_*` tables.
+
+A plugin's `schema.sql` may depend on core (`user_has_cap`, `pages`, `profiles`, `options`) but **core must never reference a plugin object**, and one plugin must never reference another's. `pages.builder_data`, `.builder_data_i18n`, `.is_builder_enabled`, `.is_site_template` and `.template_type` are **core columns** despite being builder-shaped: core's `rwp_install_default_content` and `builder_create_site_template` write them, and `<SiteTemplate>` renders the header/footer from them without the builder installed.
+
+Each plugin also ships `uninstall.sql`, run only when an administrator explicitly asks to wipe its data. It drops only what that plugin's `schema.sql` creates, and says in a comment what it deliberately keeps.
 
 Every migration must be safely re-runnable, because partial failures get re-run:
 
@@ -21,6 +30,8 @@ Every migration must be safely re-runnable, because partial failures get re-run:
 - End with `notify pgrst, 'reload schema';` or PostgREST won't see new columns.
 
 Audit that programmatically before handing a migration over. Getting this wrong has broken reruns twice.
+
+The split can be exercised end to end in PGlite: run `supabase/schema.sql` alone, assert no `shop_*` / `elementor_templates` / `code_snippets` table exists, then each `plugins/<id>/schema.sql`, then each `uninstall.sql`, then assert the 13 core tables are still there and every plugin reinstalls.
 
 ## Things that are not obvious from the code
 
@@ -58,6 +69,12 @@ Audit that programmatically before handing a migration over. Getting this wrong 
 - **New `public` functions are executable by anon by default** (Supabase default privileges). Internal SECURITY DEFINER helpers must `revoke execute ... from public, anon, authenticated`.
 - **Admin navigation is data** (`src/lib/adminNavigation.ts`): core items, plugin pages (inserted after Comments) and their `submenu`s, filtered by capability. Screens take the selected submenu id as a prop (`tab`/`view`/`subsection`) instead of keeping their own tab state; the location lives in `/admin?section=…&tab=…`. Renamed ids go in `legacySections` so old links keep working.
 - **Dashboard → Overview's checklist** is `src/lib/setupChecks.ts` plus each plugin's `admin.registerSetupCheck`. Checks report whether a server secret is set, never its value.
+- **Plugin schema install, uninstall and the site reset need a direct Postgres connection**, resolved by `server/db.mjs`: `SUPABASE_DB_URL` from `.env.local` first, otherwise a password sent with the request (the Setup Wizard's long-standing fallback). All three are **`server.mjs`-only** — they run DDL, delete folders and rewrite `data/react-wp-config.json`, none of which a static host can do. The browser distinguishes "this host has no such endpoint" (`EndpointUnavailableError` in `src/lib/pluginSchema.ts`) from a real SQL failure, because activation must still work on Vercel while a bad `schema.sql` must not be swallowed.
+- **Provider folders are namespaced and are not `media.folder`** (`src/lib/mediaScope.js`, plain JS so `server.mjs` can import it). Library uploads go to `media/<library folder>`, a plugin's to `plugins/<id>/…`. `media.folder` is the *library* folder shown in the admin and changes when an item is moved; the provider folder is fixed at upload time and is what public ids are built from. Cloudinary cleanup keys off the public id and the URL, never `media.folder`. A plugin may narrow its prefix in `manifest.json` (`media.prefixes`) but `readMediaPrefixes` refuses anything outside its own `plugins/<id>/` — that check is the only thing stopping an uploaded manifest from claiming `media` and wiping the library.
+- **Cloudinary bulk deletion is `server/cloudinary.mjs`**, hand-rolled against the Admin REST API (Basic auth, no signature) because there is no `cloudinary` npm package here. Nothing in it throws: a missing asset, a revoked key or an outage becomes a warning so the database cleanup still runs. It deletes both by prefix (catches files the `media` table forgot) and by recorded public id (catches dynamic-folder clouds, where the folder never appears in the public id). **An empty prefix is refused** — Cloudinary reads it as "the whole cloud", which on a shared account destroys other sites. Site reset therefore deletes recorded ids plus `media/` and `plugins/`, never `all=true`.
+- **ImageKit files are not bulk-deleted.** Its delete API needs the stored fileId and has no prefix or bulk operation, so a reset reports the count instead of making one request per file.
+- **Uninstalling a plugin is three decisions, not one** (`PluginUninstallModal`): does the code go, does the data go, is there a backup first. The order in `server/adminRoutes.mjs` is fixed — export, then drop, then remove the folder — so nobody ends up with wiped tables and no backup file. Wiping requires typing `DELETE`, checked on the server too.
+- **Settings → Advanced → Reset Website** drops the `public` schema, deletes every `auth.users` row and flips `installed: false`. Gated on `profiles.role` being administrator/super_admin (deliberately *not* `manage_options`, which App Settings can grant), on re-verifying the caller's own password against Supabase Auth, and on typing `RESET`. It does **not** delete Cloudinary/ImageKit files; it reports how many there were.
 - **Dashboard → Updates only checks; it never installs.** Versions come from `package.json` and plugin manifests, compared against `updates.json` (fetched from GitHub by default). Bump both when releasing, and list new migrations there.
 - **The public header, footer, sidebar, comments and home page render from the Theme Editor layout** (`theme_settings.layout_structure`, `src/lib/theme.ts`, `src/components/theme/ThemeLayoutRenderer.tsx`). The default layout must keep reproducing the pre-editor look, because sites that never saved a theme get it. Anything read from the layout goes through `normalizeLayout`, and every block renders inside `BlockFrame`, which has its own error boundary. The `rwp-*`/`rwpt-*` class names are what Custom CSS targets, so keep them global and stable. Theme CSS and scripts are written twice, like tracking scripts: `server/seo.mjs` adds them with `<meta name="rwp-theme">`, and `applyThemeDocument` skips scripts when that marker is present. `themeStylesheet` and the server both concatenate `custom_css` + `custom_comments_css`.
 - **Private per-user data goes in `profile_details`, not `profiles`** (every signed-in user can read `profiles`). Its policies allow the owner, `list_users` to read and `edit_users` to write.

@@ -5,13 +5,14 @@ import { createReadStream } from 'node:fs';
 import { access, readFile } from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
-import { Client } from 'pg';
 import { publicConfig, readConfig, writeConfig } from './server/config.mjs';
 import { authorizeImageKitUpload, authorizeMediaDelete, deleteFromProvider, describeDeleteSupport } from './server/media.mjs';
 import { renderDocumentInjections, renderEditorInjections } from './server/seo.mjs';
 import { handlePluginRequest, resolveOrigin } from './server/plugins.mjs';
 import { authorizePluginManager, deletePluginFolder, listPluginFolders } from './server/pluginFiles.mjs';
 import { InstallError, installPlugin, MAX_ZIP_BYTES } from './server/pluginInstaller.mjs';
+import { handleAdminRequest } from './server/adminRoutes.mjs';
+import { resolveConnectionString, withClient } from './server/db.mjs';
 
 const port = Number(process.env.PORT || 3000);
 const root = path.resolve('dist');
@@ -41,23 +42,13 @@ const readBody = async (request) => {
   return body ? JSON.parse(body) : {};
 };
 
-const databaseUrl = (body) => {
-  const supplied = typeof body.connectionString === 'string'
-    ? body.connectionString.trim()
-    : typeof body.databaseUrl === 'string'
-      ? body.databaseUrl.trim()
-      : '';
-  const password = typeof body.dbPassword === 'string' ? body.dbPassword : '';
-  return (supplied || `postgres://postgres:${encodeURIComponent(password)}@db.${body.projectRef}.supabase.co:5432/postgres`)
-    .replace(/\[(?:YOUR-)?PASSWORD\]/gi, encodeURIComponent(password))
-    .replace(/<PASSWORD>/gi, encodeURIComponent(password));
-};
-
+// Installs the CORE schema only. Plugin tables are installed per plugin from the Plugins screen
+// (POST /api/admin/plugins/install-schema), so a site that never enables the shop never gets
+// twenty shop_* tables it will not use.
 const install = async (body) => {
-  const url = databaseUrl(body);
-  const client = new Client({ connectionString: url, ssl: { rejectUnauthorized: false }, connectionTimeoutMillis: 15000 });
-  try {
-    await client.connect();
+  const resolved = resolveConnectionString(body, await readConfig());
+  if (!resolved.ok) throw new Error(resolved.error);
+  await withClient(resolved.url, async (client) => {
     await client.query(schema);
     if (body.saveSettings) {
       if (!body.siteTitle || !body.adminEmail) throw new Error('Site title and admin email are required.');
@@ -80,9 +71,7 @@ const install = async (body) => {
         supabasePublishableKey: body.supabasePublishableKey,
       });
     }
-  } finally {
-    await client.end().catch(() => {});
-  }
+  });
 };
 
 const serveFile = async (request, response, pathname, seoPath = pathname) => {
@@ -194,6 +183,24 @@ const server = http.createServer(async (request, response) => {
       }
       json(response, 200, { success: true, skipped: Boolean(result.skipped) });
       return;
+    }
+    // Per-plugin schema install, plugin uninstall and the site reset. Returns null for anything
+    // it does not own (including /api/admin/plugins/upload below), so this can sit first.
+    if (url.pathname.startsWith('/api/admin/')) {
+      const adminResult = await handleAdminRequest({
+        method: request.method,
+        pathname: url.pathname,
+        query: Object.fromEntries(url.searchParams),
+        headers: request.headers,
+        body: request.method === 'POST' && url.pathname !== '/api/admin/plugins/upload'
+          ? await readBody(request).catch(() => ({}))
+          : {},
+        config: publicConfig(await readConfig()),
+      });
+      if (adminResult) {
+        json(response, adminResult.status, adminResult.body);
+        return;
+      }
     }
     if (url.pathname === '/api/admin/plugins/upload') {
       if (request.method !== 'POST') {
@@ -339,7 +346,22 @@ const server = http.createServer(async (request, response) => {
     }
     json(response, 405, { error: 'Method not allowed' });
   } catch (error) {
-    json(response, 500, { error: `Database setup failed: ${error instanceof Error ? error.message : 'Unknown server error'}` });
+    // Named after the route that actually failed. This used to say "Database setup failed" for
+    // every request, which sent people to check their Supabase password over a media or plugin bug.
+    const pathname = (() => {
+      try {
+        return new URL(request.url || '/', 'http://localhost').pathname;
+      } catch {
+        return request.url || '/';
+      }
+    })();
+    const detail = error instanceof Error ? error.message : 'Unknown server error';
+    console.error(`${request.method} ${pathname} failed:`, error);
+    json(response, 500, {
+      error: pathname === '/api/install-schema'
+        ? `Database setup failed: ${detail}`
+        : `${request.method} ${pathname} failed on the server: ${detail}`,
+    });
   }
 });
 

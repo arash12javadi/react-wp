@@ -69,6 +69,9 @@ const coreNavigation: AdminNavItem[] = [
       { id: 'languages', label: 'Languages', icon: '🗣️' },
       { id: 'roles', label: 'Roles', icon: '🛡️' },
       { id: 'backup', label: 'Backup', icon: '💾' },
+      // Settings already requires manage_options, which only Administrators and Super Admins
+      // have; ResetSitePanel and /api/admin/reset-site check the role again regardless.
+      { id: 'advanced', label: 'Advanced', icon: '⚠️' },
     ],
   },
   { id: 'profile', label: 'Profile', icon: '👤' },

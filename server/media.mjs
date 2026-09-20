@@ -93,7 +93,7 @@ export async function authorizeImageKitUpload(supabaseUrl, supabaseKey, accessTo
   return { ok: true };
 }
 
-async function readOption(supabaseUrl, supabaseKey, name) {
+export async function readOption(supabaseUrl, supabaseKey, name) {
   try {
     const response = await fetch(
       `${supabaseUrl.replace(/\/$/, '')}/rest/v1/options?option_name=eq.${encodeURIComponent(name)}&select=option_value`,

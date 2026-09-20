@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type DragEven
 import { describeDbError, getSupabaseClient } from '../lib/db';
 import { loadSettings, type SiteSettings, defaultSettings } from '../lib/settings';
 import { describeDimensions, formatBytes, uploadToCloudinary, uploadToImageKit } from '../lib/uploads';
+import { siteMediaFolder } from '../lib/mediaScope';
 import { checkUploadRules, describeAllowance, fetchUploadAllowance, useAppSettings, type UploadAllowance } from '../lib/appSettings';
 import { fetchProfile } from '../lib/profiles';
 import { hasCapability } from '../lib/roles';
@@ -312,12 +313,17 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
       setProgress(0);
       const list = Array.from(files);
       const folder = folderSupport ? normalizeMediaFolder(uploadFolder) : undefined;
+      // The library folder and the provider folder are two different things. `folder` is stored
+      // on the row and can be changed later by moving the item; the provider folder is fixed at
+      // upload time and namespaced under media/, which is what keeps a plugin uninstall from
+      // ever being able to delete Media Library files.
+      const providerFolder = siteMediaFolder(folder);
       for (const [index, file] of list.entries()) {
         if (list.length > 1) setUploadStep(`File ${index + 1} of ${list.length}: ${file.name}`);
         setProgress(0);
         const upload = uploadProvider === 'imagekit'
-          ? await uploadToImageKit(file, settings, setProgress, folder)
-          : await uploadToCloudinary(file, settings, setProgress, folder);
+          ? await uploadToImageKit(file, settings, setProgress, providerFolder)
+          : await uploadToCloudinary(file, settings, setProgress, providerFolder);
         const item = await insertRecord({
           ...(folder ? { folder } : {}),
           url: upload.url,

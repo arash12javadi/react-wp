@@ -2,6 +2,7 @@ import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate';
 import { describeDbError, getSupabaseClient } from './db';
 import { loadSettings } from './settings';
 import { uploadToCloudinary, uploadToImageKit } from './uploads';
+import { siteMediaFolder } from './mediaScope';
 import type { MediaItem } from './types';
 
 /**
@@ -228,9 +229,12 @@ export async function restoreBackup(loaded: LoadedBackup, reuploadMedia: boolean
       let result;
       try {
         const file = new File([bytes], name);
+        // Restored files go back under media/<library folder>, the same namespace a normal
+        // upload uses, so a later site reset or plugin uninstall can still account for them.
+        const providerFolder = siteMediaFolder(row.folder);
         result = row.provider === 'imagekit'
-          ? await uploadToImageKit(file, settings, () => {})
-          : await uploadToCloudinary(file, settings, () => {});
+          ? await uploadToImageKit(file, settings, () => {}, providerFolder)
+          : await uploadToCloudinary(file, settings, () => {}, providerFolder);
       } catch (uploadError) {
         const leftover = uploaded ? ` The ${uploaded} file(s) uploaded before it stay in your media account, unused.` : '';
         throw new Error(`Uploading "${name}" to ${provider} failed, so nothing was restored: ${errorText(uploadError)}.${leftover}`);
