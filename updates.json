@@ -16,6 +16,10 @@
   },
   "plugins": {
     "rwp-shop": { "version": "1.0.0" },
-    "rwp-page-builder": { "version": "1.0.0" }
+    "rwp-page-builder": { "version": "1.0.0" },
+    "rwp-code-snippets": {
+      "version": "1.0.0",
+      "migrations": ["supabase/migrations/20260930_code_snippets.sql"]
+    }
   }
 }

@@ -20,6 +20,7 @@ const loaded = await Promise.allSettled([
   // rwp:server-plugin-imports:start
   import('../plugins/rwp-shop/server.mjs'),
   import('../plugins/rwp-page-builder/server.mjs'),
+  import('../plugins/rwp-code-snippets/server.mjs'),
   // rwp:server-plugin-imports:end
 ]);
 

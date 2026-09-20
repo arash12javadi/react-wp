@@ -2,7 +2,7 @@ import { useMemo, useRef, type KeyboardEvent } from 'react';
 import type { CodeIssue } from '../../lib/themeValidation';
 import styles from './ThemeEditor.module.css';
 
-export type CodeLanguage = 'html' | 'css' | 'json';
+export type CodeLanguage = 'html' | 'css' | 'json' | 'javascript';
 
 /**
  * A plain <textarea> over a syntax-highlighted copy of the same text. The textarea keeps native
@@ -56,7 +56,30 @@ const highlightJson = (source: string) =>
       return escapeHtml(match);
     });
 
-const highlighters: Record<CodeLanguage, (source: string) => string> = { html: highlightHtml, css: highlightCss, json: highlightJson };
+// Enough of ES2022 to read code by, not a parser: keywords, the three kinds of string, comments,
+// numbers and the name after function/class/const. Added for the Code Snippets screen.
+const jsKeywords = new Set([
+  'async', 'await', 'break', 'case', 'catch', 'class', 'const', 'continue', 'default', 'delete', 'do', 'else',
+  'export', 'extends', 'false', 'finally', 'for', 'from', 'function', 'if', 'import', 'in', 'instanceof', 'let',
+  'new', 'null', 'of', 'return', 'static', 'super', 'switch', 'this', 'throw', 'true', 'try', 'typeof', 'undefined',
+  'var', 'void', 'while', 'yield',
+]);
+
+const highlightJs = (source: string) =>
+  source.replace(
+    /(\/\*[\s\S]*?(?:\*\/|$)|\/\/[^\n]*)|("(?:[^"\\\n]|\\.)*"?|'(?:[^'\\\n]|\\.)*'?|`(?:[^`\\]|\\.)*`?)|\b(\d[\w.]*)\b|\b([A-Za-z_$][\w$]*)\b|[\s\S]/g,
+    (match, comment?: string, string?: string, number?: string, word?: string) => {
+      if (comment) return span('comment', comment);
+      if (string) return span('string', string);
+      if (number) return span('number', number);
+      if (word) return jsKeywords.has(word) ? span('keyword', word) : escapeHtml(word);
+      return /[{}()[\];,.]/.test(match) ? span('punct', match) : escapeHtml(match);
+    },
+  );
+
+const highlighters: Record<CodeLanguage, (source: string) => string> = {
+  html: highlightHtml, css: highlightCss, json: highlightJson, javascript: highlightJs,
+};
 
 interface CodeEditorProps {
   id: string;

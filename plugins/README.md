@@ -96,6 +96,18 @@ build and only changes after `npm run build` and a server restart.
 
 `rwp-page-builder` is a visual page builder. See the "Page builder" section of the root README.
 
+## Code snippets plugin
+
+`rwp-code-snippets` adds the Code Snippets screen: CSS, JavaScript, HTML and React hook
+snippets stored in `public.code_snippets`, a Gemini-backed code generator and assistant,
+and JSON backup/restore. See the "Code snippets and the AI developer assistant" section of
+the root README, and run `supabase/migrations/20260930_code_snippets.sql` first.
+
+The runtime that applies snippets lives in core, at `src/core/SnippetInjector.tsx`, because
+core must not import plugin code. The plugin starts it on activation and returns its cleanup,
+so deactivating the plugin removes every style, script and hook the snippets added. Anything
+else that wants the same behaviour can call `startSnippetRuntime()` or mount `<SnippetInjector />`.
+
 Other plugins can add builder widgets with `registerWidget` from
 `plugins/rwp-page-builder/lib/registry.ts`: a definition is `{ type, label, icon, category,
 defaults, controls, View, css }`. `controls` is plain data (the editor renders it), `View`

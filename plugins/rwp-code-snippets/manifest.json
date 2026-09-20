@@ -1,0 +1,8 @@
+{
+  "id": "rwp-code-snippets",
+  "name": "RWP Code Snippets & AI Developer Assistant",
+  "version": "1.0.0",
+  "author": "React-WP",
+  "description": "Add CSS, JavaScript, HTML and React action/filter hooks to the site without editing files, with a Gemini code generator, a system-aware assistant and JSON backup and restore.",
+  "entry": "./index.tsx"
+}
