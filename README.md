@@ -79,6 +79,19 @@ const cleanup = rwp.registerPlugin({
 
 Available actions include `rwp_init`, `rwp_admin_loaded`, `rwp_public_loaded`, `rwp_user_logged_in`, `rwp_post_created`, `rwp_post_updated`, `rwp_settings_saved`, and `rwp_menu_saved`. Filters include `rwp_site_title`, `rwp_public_menu`, `rwp_posts`, `rwp_post_title`, `rwp_post_excerpt`, and `rwp_admin_navigation`.
 
+`rwp.actions` and `rwp.filters` are a thin wrapper over the registry in [`src/core/hooks.ts`](./src/core/hooks.ts), which is what plugins should import directly when they want priorities or hook names core does not declare:
+
+```ts
+import { addFilter, addAction, applyFilters, doAction } from './src/lib/plugin-api';
+
+// Lower priority runs first; 10 is the default, as in WordPress.
+const remove = addFilter('the_content', (html) => html.replace(/\{\{year\}\}/g, '2026'), 5);
+```
+
+Both APIs share one registry, so a callback added through either is seen by both. A filter **must return the value**: one that returns `undefined`, or throws, is logged and skipped rather than being allowed to blank out a page. Every `add*` call returns a function that removes the callback again, and a plugin must return those from `register()` or its hooks keep running after it is deactivated.
+
+See [`plugins/rwp-sample-plugin/hooksAndI18nExample.tsx`](./plugins/rwp-sample-plugin/hooksAndI18nExample.tsx) for a runnable example of every hook API below.
+
 Registered admin pages appear in the admin navigation, dashboard widgets render on the dashboard, and registered shortcodes can be rendered by future content components. Plugin cleanup functions should always remove registrations when a plugin is deactivated.
 
 Administrators can manage registered plugins from the **Plugins** admin section. Activation state is stored in the `rwp_active_plugins` option, so it is shared across browsers and deployments connected to the same database. Plugin code is not sandboxed: an installed plugin runs with full access to the site in the browser, and its `server.mjs` runs inside the Node server, so only install plugins you trust.
@@ -351,6 +364,22 @@ On `npm start`, `server/seo.mjs` writes Custom CSS (plus Comments CSS), the `<he
 **Targeting things with CSS.** Build classes are hashed, so Custom CSS should use the stable hooks: `.rwp-site`, `.rwp-header`, `.rwp-nav`, `.rwp-brand`, `.rwp-header-actions`, `.rwp-footer`, `.rwp-footer-columns`, `.rwp-sidebar`, `.rwp-index`, `.rwp-hero`, `.rwp-posts-feed`, `.rwp-post-card`, `.rwp-comments`, `.rwp-comment`, and `.rwpt-block-<block type>` on every block.
 
 **Deliberately not included.** Sidebar code is HTML, not JSX: saved text cannot run React components without shipping a compiler to every visitor and executing arbitrary code, but shortcodes provide the same thing safely. Comments CSS can restyle comments, but there is no HTML template for them. Comment text is written by visitors, and saved HTML wrapped around it would be an unescaped template.
+
+### Languages, text direction and hook slots
+
+Run [`supabase/migrations/20260929_i18n_hooks.sql`](./supabase/migrations/20260929_i18n_hooks.sql) to enable this fully. The language settings themselves work without it; the per-language Page Builder layouts do not.
+
+**Settings → Languages** chooses which languages the site offers, the default for visitors, a separate default for the admin dashboard, and whether the public language switcher is shown. They are four rows in the public `options` table (`default_site_language`, `default_admin_language`, `show_header_language_switcher`, `supported_languages`), not part of the `rwp_app_settings` document, because the public site has to read them before anything else loads.
+
+**Picking a language.** `?lang=fa` in the URL wins, then the visitor's stored choice, then the first of their browser languages the site offers, then the site default. The choice is kept in `localStorage`, per browser, and the admin keeps its own — so you can work in English on a Persian site. Switching does not reload the page.
+
+**Direction and fonts.** [`src/lib/i18n.ts`](./src/lib/i18n.ts) writes `lang`, `dir`, `.rwp-rtl`/`.rwp-ltr` and `--rwp-font-family` onto `<html>`, and loads the locale's web font (Vazirmatn for Persian, Noto Naskh Arabic for Arabic, Inter for the Latin locales). This happens before the first render — `App.tsx` awaits `initI18n()` next to `preloadSiteTemplates()` — so an RTL site never paints left-to-right first. A language code with no definition of its own still gets the right direction: `fa-IR`, `ckb` and the other RTL prefixes are recognised. The layout is written with CSS logical properties (`inset-inline-start`, `padding-inline-start`, `text-align: start`), so there is no second RTL stylesheet; sides that are an explicit design choice (`.rwpb-icon-box-left`, `.rwpb-ribbon-right`, an offcanvas panel's side) stay physical on purpose.
+
+**Translating.** `t('header.login', 'Log in')` resolves against the active locale, then the site default, then English, then the fallback you passed, then the key itself. Core's strings are in [`src/lib/locales/`](./src/lib/locales); a plugin ships its own with `registerPluginTranslations('my-plugin', { fa: { 'my.key': '…' } })`, and a single string can be overridden through the `i18n_translate_key` filter without a dictionary at all.
+
+**Per-language layouts.** A page's own language is `pages.locale` and its layout stays in `pages.builder_data`; layouts for the other languages go in `pages.builder_data_i18n`, keyed by locale. The page builder's language button swaps which one is on the canvas (the canvas gets that language's `dir`, while the editor's own panels stay in the admin language), and a language with no layout yet starts as a copy of the one on screen. Undo history is per language. A visitor reading in a language the page has no layout for sees the default one. `pages.translation_group_id` links separate rows that are translations of each other; `rwp_link_translation(page, translation_of)` sets it up and refuses two rows in the same language.
+
+**Hook slots.** `<HookSlot name="…" />` renders whatever plugins have added to a layout zone. Core provides `before_header`, `after_header`, `before_footer`, `after_footer` (`PublicLayout`), `sidebar_widgets` (`PublicSidebar`), `comment_form_before` / `comment_form_after` (`CommentSection`), `admin_before_content` / `admin_after_content` (`App`), and `builder_sidebar_tabs` / `builder_sidebar_panel` (the page builder). A slot is a filter over an array, so `addSlotContent(name, id, render, priority)` adds to it and an ordinary `addFilter` on the same name can reorder or remove what others added. A contribution that throws is caught and dropped rather than taking the page down. Content itself runs through `the_content`, and the page builder's widget list through `builder_widgets` (with `builder_widget_register` for one widget at a time).
 
 ### The editor
 

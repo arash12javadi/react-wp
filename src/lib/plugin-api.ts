@@ -24,6 +24,28 @@ export {
   type RwpTemplateRenderProps,
 } from './rwp';
 
+// The hook registry, for plugins that want priorities or hook names core does not declare.
+export {
+  addAction, addFilter, applyFilters, doAction, removeAction, removeFilter,
+  hasAction, hasFilter, listHooks, DEFAULT_PRIORITY,
+  type SlotName,
+} from '../core/hooks';
+
+// Layout zones and the React bindings.
+export {
+  HookSlot, addSlotContent, useApplyFilters, useDoAction, useAction, useFilter, useHooks,
+  type HookSlotProps, type SlotContribution,
+} from '../core/HookSlot';
+
+// Translations and text direction.
+export {
+  registerPluginTranslations, isRtlLocale, directionOf, getLocale, getDirection, setLocale,
+  formatDate, formatNumber, t, translate,
+  type LocaleDefinition, type TextDirection, type TranslationDictionary,
+} from './i18n';
+export { useTranslation, useDirection } from '../context/I18nContext';
+export { default as LanguageSwitcher } from '../components/LanguageSwitcher';
+
 import { rwp, type RwpPluginManifest, type RwpPluginContext } from './rwp';
 
 export const defineRwpPlugin = (

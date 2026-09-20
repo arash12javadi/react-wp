@@ -5,6 +5,8 @@ import {
   type CommentNode, type CommentWithAuthor,
 } from '../lib/comments';
 import { useTheme, type ThemeBlock } from '../lib/theme';
+import { useTranslation } from '../context/I18nContext';
+import { HookSlot } from '../core/HookSlot';
 import ContentRenderer from './ContentRenderer';
 import { BlockFrame } from './theme/ThemeLayoutRenderer';
 import styles from './CommentSection.module.css';
@@ -82,7 +84,8 @@ function CommentItem({
   const pending = node.status !== 'approved';
 
   return (
-    <li className={`${styles.item} rwp-comment`} style={{ marginLeft: `${node.depth * 28}px` }}>
+    // Logical, so replies indent from the right in an RTL language rather than off to the left.
+    <li className={`${styles.item} rwp-comment`} style={{ marginInlineStart: `${node.depth * 28}px` }}>
       <article className={pending ? styles.bodyPending : styles.body}>
         <header className={styles.meta}>
           {options.showAvatars && (node.author?.avatar_url
@@ -126,6 +129,7 @@ function CommentItem({
  */
 export default function CommentSection({ pageId, commentsOpen, moderated, maxDepth }: CommentSectionProps) {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const { containers, options } = theme.layout.comments;
   const blocks = containers[0]?.blocks || [];
   const paginated = options.per_page > 0 && blocks.some((block) => block.type === 'comments-pagination' && block.style.visible);
@@ -220,14 +224,21 @@ export default function CommentSection({ pageId, commentsOpen, moderated, maxDep
           </ul>
         ) : null;
       case 'comment-form':
-        return !commentsOpen ? (
-          <p className={styles.closed}>Comments are closed for this page.</p>
-        ) : userId ? (
-          <CommentForm parentId={null} onSubmit={addComment} busy={busy} placeholder={String(block.settings.placeholder || '')} />
-        ) : (
-          <p className={styles.signIn}>
-            <a href={`/login?redirect=${encodeURIComponent(window.location.pathname)}`}>Sign in</a> to join the discussion.
-          </p>
+        return (
+          <>
+            {/* Anti-spam notices, guidelines and consent checkboxes hook in here. */}
+            <HookSlot name="comment_form_before" args={{ pageId, commentsOpen, signedIn: Boolean(userId) }} />
+            {!commentsOpen ? (
+              <p className={styles.closed}>{t('comments.closed', 'Comments are closed.')}</p>
+            ) : userId ? (
+              <CommentForm parentId={null} onSubmit={addComment} busy={busy} placeholder={String(block.settings.placeholder || '')} />
+            ) : (
+              <p className={styles.signIn}>
+                <a href={`/login?redirect=${encodeURIComponent(window.location.pathname)}`}>Sign in</a> to join the discussion.
+              </p>
+            )}
+            <HookSlot name="comment_form_after" args={{ pageId, commentsOpen, signedIn: Boolean(userId) }} />
+          </>
         );
       case 'comments-pagination':
         return paginated && pageCount > 1 ? (
@@ -257,7 +268,11 @@ export default function CommentSection({ pageId, commentsOpen, moderated, maxDep
   return (
     <section className={`${styles.section} rwp-comments`} aria-labelledby="comments-heading">
       <h2 id="comments-heading">
-        {loading ? 'Comments' : total === 0 ? 'No comments yet' : `${total} comment${total === 1 ? '' : 's'}`}
+        {loading
+          ? t('comments.title', 'Comments')
+          : total === 0
+            ? t('comments.none', 'No comments yet.')
+            : t('comments.count', '{count} comments', { count: total })}
       </h2>
 
       {error && <div className={styles.error} role="alert">{error}</div>}

@@ -117,7 +117,23 @@ export interface BuilderPage {
   /** Set by 20260925_site_templates.sql; absent before it runs. */
   is_site_template?: boolean;
   template_type?: string | null;
+  /**
+   * The language this row is written in. Set by 20260929_i18n_hooks.sql, which defaults it to the
+   * site language; absent (undefined) before that migration runs, which every reader must treat
+   * as "the site default", not as a missing page.
+   */
+  locale?: string | null;
+  /** Rows sharing this id are translations of each other, one per locale. */
+  translation_group_id?: string | null;
+  /**
+   * Layouts for the other languages, keyed by locale code. builder_data stays the layout for the
+   * page's own locale, so nothing that already reads it has to change.
+   */
+  builder_data_i18n?: Record<string, BuilderDocument> | null;
 }
+
+/** A page's layouts by locale: its own from builder_data, the rest from builder_data_i18n. */
+export type LocaleDocuments = Record<string, BuilderDocument>;
 
 export type TemplateType = 'page' | 'section';
 

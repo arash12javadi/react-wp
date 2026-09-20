@@ -1,0 +1,122 @@
+/*
+ * Logical properties throughout (inset-inline-start, padding-inline, text-align: start), so the
+ * same rules place the menu correctly under `dir="rtl"` without a mirrored stylesheet.
+ */
+
+.switcher {
+  position: relative;
+  display: inline-flex;
+}
+
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-block: 6px;
+  padding-inline: 10px;
+  background: none;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  color: inherit;
+  font: inherit;
+  font-size: .85rem;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.trigger:hover {
+  border-color: #d1d5db;
+  background: #f9fafb;
+}
+
+.trigger:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.triggerLabel {
+  white-space: nowrap;
+}
+
+.caret {
+  font-size: .7rem;
+  opacity: .7;
+}
+
+.menu {
+  position: absolute;
+  z-index: 40;
+  inset-block-start: calc(100% + 6px);
+  /* Aligned to the end of the trigger: the right in LTR, the left in RTL. */
+  inset-inline-end: 0;
+  min-width: 10rem;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, .14);
+}
+
+.option,
+.optionSelected {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding-block: 8px;
+  padding-inline: 10px;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  color: #374151;
+  font: inherit;
+  font-size: .87rem;
+  text-align: start;
+  cursor: pointer;
+}
+
+.option:hover,
+.optionSelected:hover,
+.option:focus-visible,
+.optionSelected:focus-visible {
+  background: #f3f4f6;
+  outline: none;
+}
+
+.optionSelected {
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+/* Inline variant: a row of languages, for footers and the admin preview. */
+.inline {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.inlineOption,
+.inlineActive {
+  padding-block: 4px;
+  padding-inline: 8px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: inherit;
+  font: inherit;
+  font-size: .82rem;
+  cursor: pointer;
+}
+
+.inlineOption:hover {
+  border-color: #e5e7eb;
+}
+
+.inlineActive {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 600;
+}

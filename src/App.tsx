@@ -30,6 +30,8 @@ import { initThemePreview, loadTheme } from './lib/theme';
 import { applyThemeDocument } from './components/theme/ThemeLayoutRenderer';
 import { useAdminStatus } from './lib/adminStatus';
 import { rwp } from './lib/rwp';
+import { HookSlot } from './core/HookSlot';
+import { initI18n } from './lib/i18n';
 import styles from './Dashboard.module.css';
 
 // Its own chunk: the Overview, Updates and Guide are only ever needed inside the admin.
@@ -336,7 +338,10 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
       dashboardBadge={status.badge}
       onViewSite={() => { window.location.href = '/'; }}
     >
+      {/* Plugins add banners, notices or extra tools around any admin screen. */}
+      <HookSlot name="admin_before_content" args={{ section, subsection, role }} />
       {content}
+      <HookSlot name="admin_after_content" args={{ section, subsection, role }} />
     </AdminLayout>
   );
 }
@@ -365,6 +370,10 @@ export default function App() {
         await initializePlugins(client);
         // Before anything renders: capability checks depend on the role grants in here.
         const appSettings = await loadAppSettings().catch(() => defaultAppSettings);
+        // Also before the first render. The locale decides dir="rtl" on <html> and the body
+        // font, so resolving it later would paint an RTL site left-to-right first. Plugins are
+        // already initialised above, so their dictionaries and i18n filters are in place.
+        await initI18n(isAdminRoute ? 'admin' : 'public').catch(() => undefined);
         const path = window.location.pathname;
         if (!isAdminRoute && !path.startsWith('/builder/')) {
           injectTrackingScripts(appSettings.seo);

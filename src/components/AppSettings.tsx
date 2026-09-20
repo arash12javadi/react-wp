@@ -9,13 +9,19 @@ import { capabilityGrantDefinitions, capabilityLabels, roleLabels, type Capabili
 import { defaultSettings, loadSettings, saveSettings, type SiteSettings } from '../lib/settings';
 import { formatBytes } from '../lib/uploads';
 import { sanitizeTrackingHtml } from '../lib/scriptSanitizer.js';
+import {
+  builtinLocales, defaultI18nSettings, i18nMigration, loadI18nSettings, localeDefinition,
+  saveI18nSettings, type I18nSettings,
+} from '../lib/i18n';
+import LanguageSwitcher from './LanguageSwitcher';
 import { rwp } from '../lib/rwp';
 import settingsStyles from './SiteSettings.module.css';
 import styles from './AppSettings.module.css';
 
-type Tab = 'general' | 'uploads' | 'seo' | 'roles';
+type Tab = 'general' | 'uploads' | 'seo' | 'roles' | 'languages';
 
-export const isAppSettingsTab = (value: string): value is Tab => ['general', 'uploads', 'seo', 'roles'].includes(value);
+export const isAppSettingsTab = (value: string): value is Tab =>
+  ['general', 'uploads', 'seo', 'roles', 'languages'].includes(value);
 
 const grantHelp: Record<keyof CapabilityGrants, string> = {
   subscriber_upload_files: 'Subscribers can open the admin Media screen and upload, within their disk quota.',
@@ -184,12 +190,115 @@ function QuotaOverrides() {
   );
 }
 
-/** Settings → General, Uploads, SEO and Roles. The sidebar picks the section; one Save covers all four. */
+/**
+ * Settings → Languages. Unlike the rest of this screen these are four plain rows in the public
+ * `options` table, not keys inside rwp_app_settings, because the public site reads them before
+ * anything else loads (see src/lib/i18n.ts).
+ */
+function LanguageFields({ value, onChange }: { value: I18nSettings; onChange: (next: I18nSettings) => void }) {
+  const [customCode, setCustomCode] = useState('');
+  const set = <K extends keyof I18nSettings>(key: K, next: I18nSettings[K]) => onChange({ ...value, [key]: next });
+
+  const toggleSupported = (code: string, enabled: boolean) => {
+    const next = enabled
+      ? [...new Set([...value.supported_languages, code])]
+      : value.supported_languages.filter((entry) => entry !== code);
+    // The two defaults are what visitors fall back to, so they can never be switched off.
+    if (!enabled && (code === value.default_site_language || code === value.default_admin_language)) return;
+    set('supported_languages', next.length ? next : [value.default_site_language]);
+  };
+
+  const addCustom = () => {
+    const code = customCode.trim().toLowerCase();
+    if (!/^[a-z]{2,3}(-[a-z0-9]{2,8})?$/.test(code)) return;
+    set('supported_languages', [...new Set([...value.supported_languages, code])]);
+    setCustomCode('');
+  };
+
+  // Offered in the two default pickers: only languages the site actually publishes.
+  const choices = value.supported_languages.map(localeDefinition);
+  const known = Object.keys(builtinLocales);
+  const extra = value.supported_languages.filter((code) => !known.includes(code));
+
+  return (
+    <>
+      <fieldset className={settingsStyles.fieldset}>
+        <legend>Languages this site offers</legend>
+        <div className={styles.twoColumns}>
+          {[...known, ...extra].map((code) => {
+            const definition = localeDefinition(code);
+            const locked = code === value.default_site_language || code === value.default_admin_language;
+            return (
+              <Toggle key={code} checked={value.supported_languages.includes(code)}
+                onChange={(enabled) => toggleSupported(code, enabled)}>
+                <span lang={code}>{definition.nativeName}</span>
+                {' '}
+                <small>({definition.name} · {code} · {definition.dir.toUpperCase()}){locked ? ' · default' : ''}</small>
+              </Toggle>
+            );
+          })}
+        </div>
+        <div className={styles.inlineForm}>
+          <input value={customCode} onChange={(event) => setCustomCode(event.target.value)}
+            placeholder="Another code, e.g. tr or pt-br" aria-label="Add a language code" />
+          <button type="button" className={settingsStyles.secondaryButton} onClick={addCustom}>Add language</button>
+        </div>
+        <span className={settingsStyles.help}>
+          A language added here appears in the switcher and gives pages built with the Page Builder their own layout.
+          Codes outside this list get right-to-left treatment automatically for the usual RTL scripts (Arabic, Persian,
+          Hebrew, Urdu) and left-to-right otherwise, but no bundled font or translated interface strings.
+        </span>
+      </fieldset>
+
+      <fieldset className={settingsStyles.fieldset}>
+        <legend>Defaults</legend>
+        <div className={styles.twoColumns}>
+          <label>
+            Public site language
+            <select value={value.default_site_language} onChange={(event) => set('default_site_language', event.target.value)}>
+              {choices.map((locale) => <option key={locale.code} value={locale.code}>{locale.name} ({locale.code})</option>)}
+            </select>
+          </label>
+          <label>
+            Admin dashboard language
+            <select value={value.default_admin_language} onChange={(event) => set('default_admin_language', event.target.value)}>
+              {choices.map((locale) => <option key={locale.code} value={locale.code}>{locale.name} ({locale.code})</option>)}
+            </select>
+          </label>
+        </div>
+        <span className={settingsStyles.help}>
+          A visitor who has never chosen a language gets the first of their browser languages this site offers, and the
+          public default when none of them match. Someone who uses the switcher keeps their choice in this browser.
+          The admin has its own stored choice, so you can work in English on a Persian site.
+        </span>
+      </fieldset>
+
+      <fieldset className={settingsStyles.fieldset}>
+        <legend>Language switcher</legend>
+        <Toggle checked={value.show_header_language_switcher} onChange={(next) => set('show_header_language_switcher', next)}>
+          Show the language switcher on the public site
+        </Toggle>
+        <span className={settingsStyles.help}>
+          It sits in the header&rsquo;s action buttons and is hidden automatically while the site offers one language.
+          Appearance → Theme Editor → Header action buttons can hide it for one layout without turning it off here.
+          Needs the <code>{i18nMigration}</code> migration.
+        </span>
+        <div className={styles.grant}>
+          <span className={settingsStyles.help}>Preview — these buttons switch this admin screen&rsquo;s language:</span>
+          <LanguageSwitcher variant="inline" force showFlags />
+        </div>
+      </fieldset>
+    </>
+  );
+}
+
+/** Settings → General, Uploads, SEO, Roles and Languages. The sidebar picks the section. */
 export default function AppSettings({ tab }: { tab: Tab }) {
   const [form, setForm] = useState<AppSettingsValue>(defaultAppSettings);
   const [excerpt, setExcerpt] = useState<Pick<SiteSettings, 'excerpt_length' | 'excerpt_unit'>>({
     excerpt_length: defaultSettings.excerpt_length, excerpt_unit: defaultSettings.excerpt_unit,
   });
+  const [languages, setLanguages] = useState<I18nSettings>(defaultI18nSettings);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -199,8 +308,14 @@ export default function AppSettings({ tab }: { tab: Tab }) {
     setLoading(true);
     setError('');
     try {
-      const [app, site] = await Promise.all([loadAppSettings(true), loadSettings()]);
+      const [app, site, i18n] = await Promise.all([
+        loadAppSettings(true), loadSettings(),
+        // A site that has not run the i18n migration has no such rows; the defaults stand in and
+        // the screen stays usable, it just has nothing saved yet.
+        loadI18nSettings(true).catch(() => defaultI18nSettings),
+      ]);
       setForm(app);
+      setLanguages(i18n);
       setExcerpt({ excerpt_length: site.excerpt_length, excerpt_unit: site.excerpt_unit });
     } catch (loadError: unknown) {
       setError(loadError instanceof Error ? loadError.message : 'Could not load settings.');
@@ -237,11 +352,16 @@ export default function AppSettings({ tab }: { tab: Tab }) {
       if (!Number.isInteger(excerpt.excerpt_length) || excerpt.excerpt_length < 5 || excerpt.excerpt_length > maxLength) {
         throw new Error(`Excerpt length must be a whole number from 5 to ${maxLength} ${excerpt.excerpt_unit}.`);
       }
+      if (!languages.supported_languages.length) {
+        throw new Error('Choose at least one language for the site.');
+      }
       const saved = await saveAppSettings(form);
       await saveSettings({ excerpt_length: excerpt.excerpt_length, excerpt_unit: excerpt.excerpt_unit });
+      const savedLanguages = await saveI18nSettings(languages);
       setForm(saved);
-      rwp.actions.do('rwp_settings_saved', { app_settings: saved, ...excerpt });
-      setFeedback('Settings saved (General, Uploads, SEO and Roles are saved together).');
+      setLanguages(savedLanguages);
+      rwp.actions.do('rwp_settings_saved', { app_settings: saved, i18n: savedLanguages, ...excerpt });
+      setFeedback('Settings saved (General, Uploads, SEO, Roles and Languages are saved together).');
     } catch (saveError: unknown) {
       setError(saveError instanceof Error ? saveError.message : 'Could not save settings.');
     } finally {
@@ -421,6 +541,8 @@ export default function AppSettings({ tab }: { tab: Tab }) {
                 </fieldset>
               </>
             )}
+
+            {tab === 'languages' && <LanguageFields value={languages} onChange={setLanguages} />}
 
             {tab === 'roles' && (
               <fieldset className={settingsStyles.fieldset}>

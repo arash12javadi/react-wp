@@ -1,6 +1,9 @@
 import { describeDbError, getSupabaseClient } from '../../../src/lib/db';
+import { currentI18nSettings } from '../../../src/lib/i18n';
 import { findNode, walkNodes } from './tree';
-import type { BuilderDocument, BuilderNode, BuilderPage, BuilderTemplate, SectionNode, TemplateType } from './types';
+import type {
+  BuilderDocument, BuilderNode, BuilderPage, BuilderTemplate, LocaleDocuments, SectionNode, TemplateType,
+} from './types';
 
 export const MIGRATION = 'supabase/migrations/20260918_page_builder.sql';
 
@@ -39,6 +42,38 @@ export function stripPrivate(content: SectionNode[]): { content: SectionNode[]; 
   return { content: copy, forms };
 }
 
+// Languages ----------------------------------------------------------------------------------
+// A page's own language lives in pages.locale and its layout in pages.builder_data, exactly as
+// before. Layouts for the other languages live in pages.builder_data_i18n, keyed by locale.
+// Splitting it this way means every existing page, renderer and backup keeps working, and a
+// database that has not run 20260929_i18n_hooks.sql simply has one language.
+
+/** The page's own language, or the site default for rows written before the i18n migration. */
+export const pageLocale = (page: Pick<BuilderPage, 'locale'>): string =>
+  (page.locale || currentI18nSettings().default_site_language || 'en');
+
+/** True once the database has the i18n columns; false means the editor stays single-language. */
+export const supportsTranslations = (page: BuilderPage): boolean => 'builder_data_i18n' in page;
+
+/**
+ * Every layout the page has, keyed by locale, with the page's own locale first. A locale with no
+ * layout of its own is simply absent — the editor offers to start it from the default language,
+ * and the public renderer falls back to builder_data.
+ */
+export function localeDocuments(page: BuilderPage, ownDoc: BuilderDocument | null): LocaleDocuments {
+  const documents: LocaleDocuments = {};
+  const stored = page.builder_data_i18n;
+  if (stored && typeof stored === 'object' && !Array.isArray(stored)) {
+    Object.entries(stored).forEach(([code, doc]) => {
+      if (doc && Array.isArray((doc as BuilderDocument).content)) {
+        documents[code] = { version: 1, settings: (doc as BuilderDocument).settings || {}, content: (doc as BuilderDocument).content };
+      }
+    });
+  }
+  if (ownDoc) documents[pageLocale(page)] = ownDoc;
+  return documents;
+}
+
 // Pages ------------------------------------------------------------------------------------------
 
 export async function loadBuilderPage(id: number): Promise<BuilderPage> {
@@ -48,11 +83,17 @@ export async function loadBuilderPage(id: number): Promise<BuilderPage> {
   if (!data) throw new Error(`Page ${id} was not found, or your role cannot edit it. Authors and contributors can only open their own pages.`);
   if (!('builder_data' in data)) throw new Error(`The pages table has no builder_data column yet. Run ${MIGRATION} in the Supabase SQL Editor, then reload.`);
   const page = data as BuilderPage;
-  if (page.builder_data && Array.isArray(page.builder_data.content)) {
+  // Every language's layout gets the recipients back, not just the default one: a translated
+  // layout is cloned from it, so its form nodes carry the same ids and the same settings row.
+  const documents = [page.builder_data, ...Object.values(page.builder_data_i18n || {})]
+    .filter((document): document is BuilderDocument => Boolean(document) && Array.isArray(document!.content));
+  if (documents.length) {
     const { data: rows } = await supabase.from('builder_form_settings').select('form_id,email_to,email_subject').eq('page_id', id);
     (rows as FormSettingsRow[] | null || []).forEach((row) => {
-      const node = findNode(page.builder_data!, row.form_id);
-      if (node) node.settings = { ...node.settings, private_email_to: row.email_to || '', private_email_subject: row.email_subject || '' };
+      documents.forEach((document) => {
+        const node = findNode(document, row.form_id);
+        if (node) node.settings = { ...node.settings, private_email_to: row.email_to || '', private_email_subject: row.email_subject || '' };
+      });
     });
   }
   return page;
@@ -74,17 +115,42 @@ export interface SaveInput {
   seo?: Record<string, string | boolean>;
   /** Skip the "changed since you opened it" check. */
   force?: boolean;
+  /**
+   * Layouts for the other languages, keyed by locale. The page's own locale is ignored here —
+   * that layout is `doc`. Left out entirely, the stored translations are kept as they are.
+   */
+  translations?: LocaleDocuments;
 }
 
-export async function saveBuilderPage({ page, doc, title, status, layout, seo, force }: SaveInput): Promise<{ page: BuilderPage; warning?: string }> {
+export async function saveBuilderPage({ page, doc, title, status, layout, seo, force, translations }: SaveInput): Promise<{ page: BuilderPage; warning?: string }> {
   const supabase = getSupabaseClient();
   const { content, forms } = stripPrivate(doc.content);
+  const own = pageLocale(page);
+
+  // Translated layouts are cloned from the default one, so their form nodes keep the same ids
+  // and share one row of private settings. Deduped by form_id for that reason.
+  const allForms = [...forms];
+  let translated: LocaleDocuments | undefined;
+  if (translations && supportsTranslations(page)) {
+    translated = {};
+    Object.entries(translations).forEach(([code, localeDoc]) => {
+      if (code === own || !localeDoc) return;
+      const stripped = stripPrivate(localeDoc.content);
+      translated![code] = { version: 1, settings: localeDoc.settings, content: stripped.content };
+      stripped.forms.forEach((form) => {
+        if (!allForms.some((existing) => existing.form_id === form.form_id)) allForms.push(form);
+      });
+    });
+  }
+
   const payload = {
     ...(seo || {}),
     title: title.trim() || page.title,
     status,
     layout,
     builder_data: { version: 1, settings: doc.settings, content },
+    // Only ever named when the loaded row has the column, or PostgREST rejects the whole update.
+    ...(translated ? { builder_data_i18n: translated } : {}),
     is_builder_enabled: true,
     updated_at: new Date().toISOString(),
   };
@@ -107,7 +173,7 @@ export async function saveBuilderPage({ page, doc, title, status, layout, seo, f
   const saved = data[0] as BuilderPage;
   let warning: string | undefined;
   try {
-    await syncFormSettings(page.id, forms);
+    await syncFormSettings(page.id, allForms);
   } catch (syncError) {
     warning = `The page was saved, but the form email settings were not: ${describeDbError(syncError)}`;
   }

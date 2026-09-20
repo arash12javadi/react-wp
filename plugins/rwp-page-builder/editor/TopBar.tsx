@@ -5,7 +5,8 @@ import { saveBuilderPage, SaveConflictError } from '../lib/api';
 import { autosaveKey, previewKey } from '../lib/keys';
 import { templateSlot } from '../lib/siteTemplates';
 import type { Device } from '../lib/types';
-import { isDirty, seoPayload, useEditor, useStore } from './store';
+import { isDirty, seoPayload, useEditor, useStore, workingLayouts } from './store';
+import LocaleSwitch from './LocaleSwitch';
 import styles from './editor.module.css';
 
 const deviceButtons: Array<{ id: Device; label: string; icon: typeof Monitor }> = [
@@ -49,15 +50,17 @@ export default function TopBar({ registerSave, onOpenRevisions, onOpenTemplates,
     setMessage(null);
     setMenuOpen(false);
     try {
+      const layouts = workingLayouts(state);
       const result = await saveBuilderPage({
         page: state.page, doc: state.doc, title: state.title, status: targetStatus, layout: state.layout, force,
         seo: seoPayload(state.page, state.seo),
+        translations: state.canTranslate ? layouts : undefined,
       });
       store.setState((current) => ({
         page: result.page,
         status: targetStatus,
         // Edits made while the request was in flight stay unsaved.
-        savedDoc: state.doc,
+        savedDocs: layouts,
         savedTitle: result.page.title,
         title: current.title === state.title ? result.page.title : current.title,
         savedStatus: targetStatus,
@@ -121,6 +124,9 @@ export default function TopBar({ registerSave, onOpenRevisions, onOpenTemplates,
         <span className={status === 'published' ? styles.badgePublished : styles.badgeDraft}>{status === 'published' ? 'Published' : 'Draft'}</span>
         {dirty && <span className={styles.unsaved} title="You have unsaved changes">●</span>}
       </div>
+
+      {/* Which language's layout is on the canvas. Hidden on single-language sites. */}
+      <LocaleSwitch />
 
       <div className={styles.deviceSwitch} role="radiogroup" aria-label="Preview device">
         {deviceButtons.map(({ id, label, icon: DeviceIcon }) => (

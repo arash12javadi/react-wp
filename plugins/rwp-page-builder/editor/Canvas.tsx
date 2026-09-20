@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState, type ClipboardEvent, type R
 import { useDraggable } from '@dnd-kit/core';
 import { Copy, GripVertical, LayoutTemplate, Move, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { getSupabaseClient } from '../../../src/lib/db';
+import { directionOf } from '../../../src/lib/i18n';
 import { globalCss, globalVars, googleFontFamilies, useGlobalStyles, useGoogleFonts } from '../lib/globals';
 import { findNode, locate } from '../lib/tree';
 import type { BuilderNode, ColumnNode, SectionNode } from '../lib/types';
@@ -219,6 +220,7 @@ export default function Canvas({ onOpenTemplates }: { onOpenTemplates: () => voi
   const { actions } = store;
   const doc = useEditor((state) => state.doc);
   const device = useEditor((state) => state.device);
+  const locale = useEditor((state) => state.locale);
   const page = useEditor((state) => state.page);
   const title = useEditor((state) => state.title);
   const globals = useGlobalStyles();
@@ -272,6 +274,11 @@ export default function Canvas({ onOpenTemplates }: { onOpenTemplates: () => voi
           <div
             className={`rwpb-root ${styles.canvasRoot}`}
             data-rwpb-canvas-root=""
+            // The canvas shows the language being edited, while the editor's own UI stays in the
+            // admin language — so an RTL page is designed right-to-left without flipping the
+            // panels around it. lang matters too: it decides the font and digit shaping.
+            dir={directionOf(locale)}
+            lang={locale}
             data-rwpb-container="root"
             data-rwpb-accepts="section"
             onMouseOver={onMouseOver}

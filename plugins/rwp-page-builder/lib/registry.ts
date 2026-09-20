@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react';
+import { applyFilters } from '../../../src/core/hooks';
 import type { CssRules } from './style';
 import type { Device, StyleBag, WidgetNode } from './types';
 
@@ -85,13 +86,22 @@ const changed = () => {
   listeners.forEach((listener) => listener());
 };
 
-/** Other plugins can add widgets too (see plugins/rwp-shop/builder). The returned function removes it. */
+/**
+ * Other plugins can add widgets too (see plugins/rwp-shop/builder). The returned function
+ * removes it.
+ *
+ * Every definition passes through the `builder_widget_register` filter first, so a plugin can
+ * relabel, recategorise or extend someone else's widget without forking it. Returning null from
+ * that filter refuses the widget outright — which is how a site hides widgets it does not want.
+ */
 export function registerWidget(definition: WidgetDefinition): () => void {
-  widgets.set(definition.type, definition);
+  const filtered = applyFilters<WidgetDefinition | null>('builder_widget_register', definition, definition.type);
+  if (!filtered) return () => {};
+  widgets.set(filtered.type, filtered);
   changed();
   return () => {
-    if (widgets.get(definition.type) !== definition) return;
-    widgets.delete(definition.type);
+    if (widgets.get(filtered.type) !== filtered) return;
+    widgets.delete(filtered.type);
     changed();
   };
 }

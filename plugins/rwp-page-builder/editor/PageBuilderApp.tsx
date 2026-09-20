@@ -3,7 +3,7 @@ import { getSupabaseClient } from '../../../src/lib/db';
 import { fetchProfile } from '../../../src/lib/profiles';
 import { canAccessAdmin, hasCapability, type UserRole } from '../../../src/lib/roles';
 import type { RwpRouteProps } from '../../../src/lib/plugin-api';
-import { loadBuilderPage } from '../lib/api';
+import { loadBuilderPage, localeDocuments, pageLocale, supportsTranslations } from '../lib/api';
 import { autosaveKey } from '../lib/keys';
 import { emptyDocument, type BuilderDocument, type BuilderPage } from '../lib/types';
 import { parseDocument } from '../render/BuilderRenderer';
@@ -30,10 +30,16 @@ type LoadState =
 
 function initialState(page: BuilderPage, role: UserRole, savedDoc: BuilderDocument, doc: BuilderDocument, title: string): EditorState {
   const seo = seoFieldsFromPage(page);
+  const locale = pageLocale(page);
+  // What the database holds, per language. The page's own language comes from builder_data.
+  const savedDocs = localeDocuments(page, savedDoc);
+  const otherDocs = { ...savedDocs };
+  delete otherDocs[locale];
   return {
     // A page opened in the builder for the first time switches to full width, as builder layouts expect.
     page, doc, title, status: page.status === 'published' ? 'published' : 'draft', layout: page.is_builder_enabled ? page.layout || 'full' : 'full',
-    savedDoc, savedTitle: page.title, savedStatus: page.status === 'published' ? 'published' : 'draft',
+    locale, otherDocs, savedDocs, canTranslate: supportsTranslations(page),
+    savedTitle: page.title, savedStatus: page.status === 'published' ? 'published' : 'draft',
     savedLayout: page.is_builder_enabled ? page.layout || 'full' : page.layout || 'boxed',
     // One object for both, so the page starts clean; editing replaces seo and makes it dirty.
     seo, savedSeo: seo,

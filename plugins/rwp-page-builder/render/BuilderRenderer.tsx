@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { getSupabaseClient } from '../../../src/lib/db';
 import { loadSettings } from '../../../src/lib/settings';
+import { useTranslation } from '../../../src/context/I18nContext';
 import type { Page } from '../../../src/lib/types';
 import type { RwpContentRendererProps } from '../../../src/lib/plugin-api';
 import { globalCss, googleFontFamilies, useGlobalStyles, useGoogleFonts } from '../lib/globals';
@@ -132,10 +133,26 @@ export default function BuilderRenderer({ doc, page, contextPage, children }: Bu
   );
 }
 
+/**
+ * The layout for the language the visitor is reading in.
+ *
+ * A page keeps its own language's layout in builder_data and the rest in builder_data_i18n, so a
+ * site with one language never pays for this. When the active language has no layout of its own
+ * the default one is shown: a half-translated site is still a working site, and `dir` on <html>
+ * already mirrors it. Re-renders when the language changes, because useTranslation subscribes to
+ * the i18n store.
+ */
+export function useLocalizedDocument(page: Pick<BuilderPage, 'builder_data' | 'builder_data_i18n'> | null): BuilderDocument | null {
+  const { locale } = useTranslation();
+  const translated = page?.builder_data_i18n?.[locale];
+  const source = translated || page?.builder_data;
+  return useMemo(() => parseDocument(source), [source]);
+}
+
 /** Registered with rwp content.registerRenderer: replaces the body of builder-enabled pages. */
 export function BuilderPageContent({ page, comments }: RwpContentRendererProps) {
   const builderPage = page as Page & BuilderPage;
-  const doc = useMemo(() => parseDocument(builderPage.builder_data), [builderPage.builder_data]);
+  const doc = useLocalizedDocument(builderPage);
   if (!doc) return null;
   return (
     <BuilderRenderer doc={doc} page={builderPage}>

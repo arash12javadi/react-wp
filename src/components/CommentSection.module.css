@@ -211,6 +211,7 @@
 
 @media (max-width: 640px) {
   .item {
-    margin-left: 0 !important;
+    /* Overrides the inline margin-inline-start the component sets per nesting depth. */
+    margin-inline-start: 0 !important;
   }
 }

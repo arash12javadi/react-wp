@@ -66,6 +66,7 @@ const coreNavigation: AdminNavItem[] = [
       { id: 'general', label: 'General', icon: '🎛️' },
       { id: 'uploads', label: 'Uploads', icon: '📤' },
       { id: 'seo', label: 'SEO', icon: '🔍' },
+      { id: 'languages', label: 'Languages', icon: '🗣️' },
       { id: 'roles', label: 'Roles', icon: '🛡️' },
       { id: 'backup', label: 'Backup', icon: '💾' },
     ],

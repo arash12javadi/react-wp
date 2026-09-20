@@ -1,4 +1,5 @@
 import type { ComponentType, ReactNode } from 'react';
+import { addAction, addFilter, applyFilters, doAction, DEFAULT_PRIORITY } from '../core/hooks';
 import type { Page } from './types';
 
 export type RwpActionName =
@@ -174,11 +175,12 @@ export interface RwpTemplateProvider {
 
 export interface RwpPluginContext {
   actions: {
-    add: (name: RwpActionName, callback: (...args: unknown[]) => void) => () => void;
+    /** `priority` works like WordPress's: lower runs first, 10 is the default. */
+    add: (name: RwpActionName, callback: (...args: unknown[]) => void, priority?: number) => () => void;
     do: (name: RwpActionName, ...args: unknown[]) => void;
   };
   filters: {
-    add: <T>(name: RwpFilterName, callback: (value: T, ...args: unknown[]) => T) => () => void;
+    add: <T>(name: RwpFilterName, callback: (value: T, ...args: unknown[]) => T, priority?: number) => () => void;
     apply: <T>(name: RwpFilterName, value: T, ...args: unknown[]) => T;
   };
   admin: {
@@ -254,11 +256,6 @@ export interface RwpInstalledPlugin extends RwpPlugin {
   active: boolean;
 }
 
-type ActionCallback = (...args: unknown[]) => void;
-type FilterCallback = (value: unknown, ...args: unknown[]) => unknown;
-
-const actions = new Map<RwpActionName, Set<ActionCallback>>();
-const filters = new Map<RwpFilterName, Set<FilterCallback>>();
 const adminPages = new Map<string, RwpAdminPage>();
 const dashboardWidgets = new Map<string, RwpDashboardWidget>();
 const setupChecks = new Map<string, RwpSetupCheck>();
@@ -279,13 +276,6 @@ const subscribers = new Set<() => void>();
 
 const notifySubscribers = () => subscribers.forEach((subscriber) => subscriber());
 
-function addTo<T>(map: Map<string, Set<T>>, name: string, callback: T) {
-  const callbacks = map.get(name) || new Set<T>();
-  callbacks.add(callback);
-  map.set(name, callbacks);
-  return () => callbacks.delete(callback);
-}
-
 export const rwp: RwpPluginContext & {
   registerPlugin: (plugin: RwpPlugin) => () => void;
   activatePlugin: (id: string) => boolean;
@@ -303,20 +293,16 @@ export const rwp: RwpPluginContext & {
   getTemplateProvider: () => RwpTemplateProvider | null;
   getPlugins: () => RwpInstalledPlugin[];
 } = {
+  // Thin wrappers over the one registry in src/core/hooks.ts. A plugin written against either
+  // API therefore sees the same callbacks; two registries would silently split them.
   actions: {
-    add: (name, callback) => addTo(actions, name, callback),
-    do: (name, ...args) => actions.get(name)?.forEach((callback) => callback(...args)),
+    add: (name, callback, priority = DEFAULT_PRIORITY) => addAction(name, callback, priority),
+    do: (name, ...args) => doAction(name, ...args),
   },
   filters: {
-    add: <T,>(name: RwpFilterName, callback: (value: T, ...args: unknown[]) => T) =>
-      addTo(filters, name, callback as FilterCallback),
-    apply: <T,>(name: RwpFilterName, value: T, ...args: unknown[]) => {
-      let filtered = value;
-      filters.get(name)?.forEach((callback) => {
-        filtered = callback(filtered, ...args) as T;
-      });
-      return filtered;
-    },
+    add: <T,>(name: RwpFilterName, callback: (value: T, ...args: unknown[]) => T, priority = DEFAULT_PRIORITY) =>
+      addFilter<T>(name, callback, priority),
+    apply: <T,>(name: RwpFilterName, value: T, ...args: unknown[]) => applyFilters<T>(name, value, ...args),
   },
   admin: {
     registerPage: (page) => {

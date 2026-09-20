@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors, type DragStartEvent } from '@dnd-kit/core';
 import { Layers, LayoutGrid, Palette, SearchCheck, Settings2 } from 'lucide-react';
+import { HookSlot } from '../../../src/core/HookSlot';
 import { findNode } from '../lib/tree';
 import { autosaveKey } from '../lib/keys';
 import Canvas from './Canvas';
@@ -25,6 +26,9 @@ const panelTabs: Array<{ id: SidePanel; label: string; icon: typeof Layers }> = 
   { id: 'page', label: 'Page settings', icon: Settings2 },
   { id: 'seo', label: 'SEO', icon: SearchCheck },
 ];
+
+const builtinPanels: SidePanel[] = ['widgets', 'navigator', 'globals', 'page', 'seo', 'edit'];
+const isBuiltinPanel = (panel: SidePanel) => builtinPanels.includes(panel);
 
 const isTyping = (target: EventTarget | null) => {
   const element = target as HTMLElement | null;
@@ -195,15 +199,21 @@ export default function PageBuilderLayout() {
                   <span>{label}</span>
                 </button>
               ))}
+              {/* A plugin adds a tab by rendering its own button here and calling setPanel. */}
+              <HookSlot name="builder_sidebar_tabs" args={{ panel, setPanel: actions.setPanel }} />
             </div>
             <div className={styles.sidebarBody}>
-              {panel === 'edit' && selectedId && selectedExists
-                ? <InspectorPanel nodeId={selectedId} onSaveTemplate={(nodeId) => setTemplates({ kind: 'save-section', nodeId })} />
-                : panel === 'navigator' ? <Navigator onSaveTemplate={(nodeId) => setTemplates({ kind: 'save-section', nodeId })} />
-                  : panel === 'globals' ? <GlobalStylesPanel />
-                    : panel === 'page' ? <PageSettingsPanel />
-                      : panel === 'seo' ? <SeoPanel />
-                        : <WidgetPanel />}
+              {/* …and its panel body here, shown when its own id is the active panel. */}
+              <HookSlot name="builder_sidebar_panel" args={{ panel, setPanel: actions.setPanel }} />
+              {/* A plugin's panel id is not one of ours, so the built-in chain stays out of its way. */}
+              {!isBuiltinPanel(panel) ? null
+                : panel === 'edit' && selectedId && selectedExists
+                  ? <InspectorPanel nodeId={selectedId} onSaveTemplate={(nodeId) => setTemplates({ kind: 'save-section', nodeId })} />
+                  : panel === 'navigator' ? <Navigator onSaveTemplate={(nodeId) => setTemplates({ kind: 'save-section', nodeId })} />
+                    : panel === 'globals' ? <GlobalStylesPanel />
+                      : panel === 'page' ? <PageSettingsPanel />
+                        : panel === 'seo' ? <SeoPanel />
+                          : <WidgetPanel />}
             </div>
           </aside>
           <Canvas onOpenTemplates={() => setTemplates({ kind: 'insert' })} />

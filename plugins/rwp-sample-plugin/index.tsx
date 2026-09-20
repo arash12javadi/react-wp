@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { defineRwpPlugin } from '../../src/lib/plugin-api';
+import { registerHookExamples } from './hooksAndI18nExample';
 import manifest from './manifest.json';
 
 function SampleAdminPage() {
@@ -67,11 +68,15 @@ export const samplePluginCleanup = defineRwpPlugin(manifest, ({ admin, filters, 
   makeHomeRed();
   const removeRedAction = actions.add('rwp_public_loaded', makeHomeRed);
 
+  // Layout zones, content filters, builder hooks and translations — see hooksAndI18nExample.tsx.
+  const removeHookExamples = registerHookExamples();
+
   return () => {
     removePage();
     removeWidget();
     removeTitleFilter();
     removeRedAction();
+    removeHookExamples();
 
     document
       .getElementById('rwp-sample-plugin-red-background')

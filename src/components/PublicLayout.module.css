@@ -1,9 +1,15 @@
+/*
+ * Logical properties throughout (inset-inline, padding-inline, border-inline-start,
+ * text-align: start), so `dir="rtl"` on <html> mirrors the whole chrome with no RTL stylesheet.
+ * Anything that must NOT mirror — a user's explicit "align left", media — stays physical.
+ */
+
 .site {
   min-height: 100vh;
   background: #f9fafb;
   color: #374151;
-  text-align: left;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  text-align: start;
+  font-family: var(--rwp-font-family, system-ui, -apple-system, "Segoe UI", sans-serif);
 }
 
 .adminBar {
@@ -120,7 +126,7 @@
   position: absolute;
   z-index: 5;
   top: 100%;
-  left: 0;
+  inset-inline-start: 0;
   min-width: 190px;
   padding: 6px;
   border: 1px solid #e5e7eb;
@@ -191,8 +197,7 @@
     position: absolute;
     z-index: 2;
     top: 100%;
-    left: 20px;
-    right: 20px;
+    inset-inline: 20px;
     flex-direction: column;
     align-items: stretch;
     gap: 0;
@@ -215,9 +220,10 @@
   .submenu {
     display: grid;
     position: static;
-    padding: 0 0 0 14px;
+    padding: 0;
+    padding-inline-start: 14px;
     border: 0;
-    border-left: 2px solid #e5e7eb;
+    border-inline-start: 2px solid #e5e7eb;
     border-radius: 0;
     box-shadow: none;
   }

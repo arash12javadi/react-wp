@@ -146,7 +146,7 @@
 .rwpt-rules {
   margin: 0 0 24px;
   padding: 14px 16px;
-  border-left: 4px solid #2271b1;
+  border-inline-start: 4px solid #2271b1;
   border-radius: 6px;
   background: #f8fafc;
 }
@@ -173,9 +173,8 @@
 .rwpt-preview-banner {
   position: fixed;
   z-index: 1000;
-  right: 16px;
+  inset-inline: 16px;
   bottom: 16px;
-  left: 16px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;

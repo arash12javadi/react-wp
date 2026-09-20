@@ -3,6 +3,7 @@ import styles from './PublicLayout.module.css';
 import AdminToolbar from './AdminToolbar';
 import { ThemeChromeProvider, ThemeFooter, ThemeHeader, ThemePreviewBanner, useThemeDocument, type ThemeChrome } from './theme/ThemeLayoutRenderer';
 import { loadWidgetAreas } from '../lib/widgets';
+import { HookSlot } from '../core/HookSlot';
 import SiteTemplate from './SiteTemplate';
 import type { UserRole } from '../lib/roles';
 import type { SiteBranding } from '../lib/settings';
@@ -78,10 +79,19 @@ export default function PublicLayout({
             editLink={editLink}
           />
         )}
+        {/*
+          The four zones a plugin can render into around the chrome. They sit outside
+          SiteTemplate so they behave the same whether the header comes from the Theme Editor
+          or from a Page Builder template.
+        */}
+        <HookSlot name="before_header" args={{ layout }} />
         {/* A published Page Builder header or footer template replaces the Theme Editor's. */}
         <SiteTemplate types={['header']} layoutWidth={layout} fallback={<ThemeHeader layoutWidth={layout} />} />
+        <HookSlot name="after_header" args={{ layout }} />
         {children}
+        <HookSlot name="before_footer" args={{ layout }} />
         <SiteTemplate types={['footer']} layoutWidth={layout} fallback={<ThemeFooter layoutWidth={layout} />} />
+        <HookSlot name="after_footer" args={{ layout }} />
         <ThemePreviewBanner />
       </div>
     </ThemeChromeProvider>

@@ -11,6 +11,7 @@ const descriptions: Record<string, [string, string]> = {
   general: ['General', 'What the public site shows, whose media each role sees, excerpts, and menu profile links.'],
   uploads: ['Uploads', 'File size and image dimension rules, and how much storage each role or person may use.'],
   seo: ['SEO', 'Meta keywords in the page editor, and tracking scripts such as Google Tag Manager.'],
+  languages: ['Languages', 'The languages this site offers, the defaults for visitors and for the admin, and the public language switcher.'],
   roles: ['Roles', 'Extra capabilities for Subscribers and Contributors.'],
   backup: ['Backup', 'Download the whole site as one file, or restore a backup onto this site.'],
 };

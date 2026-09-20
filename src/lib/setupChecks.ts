@@ -4,6 +4,7 @@ import { hasCapability, type Capability, type UserRole } from './roles';
 import { rwp, type RwpSetupLevel, type RwpSetupNotice } from './rwp';
 import { defaultSettings, loadSettings } from './settings';
 import { appSettingsMigration } from './appSettings';
+import { currentI18nSettings, i18nMigration } from './i18n';
 import { themeMigration } from './theme';
 
 /**
@@ -18,19 +19,23 @@ export interface SetupNotice extends RwpSetupNotice {
 export const levelOrder: Record<RwpSetupLevel, number> = { required: 0, recommended: 1, optional: 2 };
 
 const missingTable = (message: string) => /schema cache|does not exist|PGRST205|42P01/i.test(message);
+/** A table that exists without a column a later migration adds. PostgREST reports 42703. */
+const missingColumn = (message: string) => /42703|column .* does not exist|Could not find the '.*' column|schema cache/i.test(message);
 
 const can = (role: UserRole, capability: Capability) => hasCapability(role, capability);
 
 async function adminNotices(): Promise<RwpSetupNotice[]> {
   const notices: RwpSetupNotice[] = [];
   const supabase = getSupabaseClient();
-  const [settings, mediaConfig, menuRow, quotaProbe, detailsProbe, themeProbe] = await Promise.all([
+  const [settings, mediaConfig, menuRow, quotaProbe, detailsProbe, themeProbe, localeProbe] = await Promise.all([
     loadSettings(),
     fetch('/api/media-config').then((response) => (response.ok ? response.json() as Promise<{ cloudinary: boolean; imagekit: boolean }> : null)).catch(() => null),
     supabase.from('options').select('option_name').eq('option_name', 'menu_links').maybeSingle(),
     supabase.from('rwp_quota_overrides').select('email', { count: 'exact', head: true }),
     supabase.from('profile_details').select('id', { count: 'exact', head: true }),
     supabase.from('theme_settings').select('id', { count: 'exact', head: true }),
+    // A missing column, not a missing table: PostgREST answers 42703 / "column … does not exist".
+    supabase.from('pages').select('locale', { count: 'exact', head: true }),
   ]);
 
   if (quotaProbe.error && missingTable(describeDbError(quotaProbe.error))) {
@@ -71,6 +76,23 @@ async function adminNotices(): Promise<RwpSetupNotice[]> {
       steps: [
         'Open Supabase → SQL Editor → New query.',
         `Paste the whole of ${themeMigration} and click Run. It is safe to run again.`,
+        'Reload this page.',
+      ],
+      action: { label: 'Open Supabase', href: 'https://supabase.com/dashboard/projects' },
+    });
+  }
+
+  // Only worth raising once the site actually offers more than one language: a single-language
+  // site loses nothing by not having run it.
+  if (localeProbe.error && missingColumn(describeDbError(localeProbe.error)) && currentI18nSettings().supported_languages.length > 1) {
+    notices.push({
+      id: 'migration-20260929',
+      level: 'required',
+      title: 'Run the multilingual database migration',
+      description: 'The language switcher and translated text already work, but pages cannot hold a separate Page Builder layout per language until it has run, so every language shows the same layout.',
+      steps: [
+        'Open Supabase → SQL Editor → New query.',
+        `Paste the whole of ${i18nMigration} and click Run. It is safe to run again.`,
         'Reload this page.',
       ],
       action: { label: 'Open Supabase', href: 'https://supabase.com/dashboard/projects' },

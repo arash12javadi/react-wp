@@ -115,12 +115,16 @@ export const blockDefinitions: BlockDefinition[] = [
   },
   {
     type: 'header-actions', label: 'Header action buttons', icon: '🔘', areas: ['header'], unique: true,
-    description: 'Register and log in links, plus buttons plugins add to the header (such as the cart).',
-    defaults: { show_register: true, show_login: true, show_plugin_items: true },
+    description: 'Register and log in links, the language switcher, plus buttons plugins add to the header (such as the cart).',
+    defaults: { show_register: true, show_login: true, show_plugin_items: true, show_language_switcher: true },
     fields: [
       { key: 'show_register', label: 'Show Register', kind: 'checkbox', help: 'Only when registration is open under Settings → Accounts.' },
       { key: 'show_login', label: 'Show Log in / account', kind: 'checkbox' },
       { key: 'show_plugin_items', label: 'Show plugin buttons', kind: 'checkbox' },
+      {
+        key: 'show_language_switcher', label: 'Show the language switcher', kind: 'checkbox',
+        help: 'Only when the site offers more than one language and Settings → Languages allows it.',
+      },
     ],
   },
   {

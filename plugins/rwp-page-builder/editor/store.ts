@@ -5,11 +5,18 @@ import {
   canContain, cloneWithNewIds, duplicateNode, findNode, insertNode, isDescendant, locate, moveNode, newId, parentKindOf,
   rebalanceColumns, removeNode, ROOT_ID, sectionDepth, updateNode,
 } from '../lib/tree';
-import type { BuilderDocument, BuilderNode, BuilderPage, ColumnNode, Device, SectionNode, WidgetNode } from '../lib/types';
+import type {
+  BuilderDocument, BuilderNode, BuilderPage, ColumnNode, Device, LocaleDocuments, SectionNode, WidgetNode,
+} from '../lib/types';
 import type { SeoFields } from '../../../src/components/SeoPanel';
 import { applyCopyChanges, type CopyChange } from '../services/geminiSectionOpt';
 
-export type SidePanel = 'widgets' | 'navigator' | 'globals' | 'page' | 'seo' | 'edit';
+/**
+ * The built-in sidebar panels. A plugin may use its own id here (it adds the tab and the panel
+ * body through the `builder_sidebar_tabs` / `builder_sidebar_panel` slots), which is why this is
+ * open-ended rather than a closed union.
+ */
+export type SidePanel = 'widgets' | 'navigator' | 'globals' | 'page' | 'seo' | 'edit' | (string & {});
 
 /** The page's SEO columns, edited in the SEO tab and saved with the layout. */
 export type BuilderSeoFields = SeoFields;
@@ -63,7 +70,18 @@ export interface EditorState {
   title: string;
   status: string;
   layout: string;
-  savedDoc: BuilderDocument;
+  /**
+   * The language being edited. `doc` is its layout; the other languages sit in otherDocs until
+   * you switch to them. Keeping one active document means undo, the canvas and every panel stay
+   * exactly as they were — only which layout they point at changes.
+   */
+  locale: string;
+  /** Working layouts for the other languages. Never contains `locale`. */
+  otherDocs: LocaleDocuments;
+  /** What the database holds, per locale. Compared by identity to decide what is unsaved. */
+  savedDocs: LocaleDocuments;
+  /** False until the database has pages.builder_data_i18n; the editor is then single-language. */
+  canTranslate: boolean;
   savedTitle: string;
   savedStatus: string;
   savedLayout: string;
@@ -122,8 +140,21 @@ export function useEditor<T>(selector: (state: EditorState) => T): T {
   return useSyncExternalStore(store.subscribe, () => selector(store.getState()));
 }
 
+/** Every language's working layout, including the one being edited. This is what gets saved. */
+export const workingLayouts = (state: EditorState): LocaleDocuments => ({ ...state.otherDocs, [state.locale]: state.doc });
+
+/** True when any language's layout differs from what was loaded, or a language was added. */
+export const layoutsDirty = (state: EditorState): boolean => {
+  const working = workingLayouts(state);
+  const codes = new Set([...Object.keys(working), ...Object.keys(state.savedDocs)]);
+  for (const code of codes) {
+    if (working[code] !== state.savedDocs[code]) return true;
+  }
+  return false;
+};
+
 export const isDirty = (state: EditorState) =>
-  state.doc !== state.savedDoc || state.title !== state.savedTitle || state.status !== state.savedStatus || state.layout !== state.savedLayout
+  layoutsDirty(state) || state.title !== state.savedTitle || state.status !== state.savedStatus || state.layout !== state.savedLayout
   || state.seo !== state.savedSeo;
 
 // Node factories -----------------------------------------------------------------------------------
@@ -213,6 +244,41 @@ function createActions(store: BaseStore) {
       (state.hoveredPath.join() === path.join() ? {} : { hoveredPath: path })),
 
     setDevice: (device: Device) => store.setState({ device }),
+
+    /**
+     * Switches which language's layout is on the canvas. The one being left is stashed with its
+     * edits intact, so switching back and forth loses nothing.
+     *
+     * A language with no layout yet starts as a copy of the one on screen, because that is what
+     * translating a page means in practice: the same design with translated text. The copy keeps
+     * the original node ids on purpose — form recipients are stored per form id, so all languages
+     * of one form share a single row of private settings.
+     *
+     * Undo history is per language and is cleared on a switch: a stack that mixed two layouts
+     * would undo edits the person cannot see.
+     */
+    setEditorLocale: (next: string) => store.setState((state) => {
+      if (!next || next === state.locale) return {};
+      const stashed: LocaleDocuments = { ...state.otherDocs, [state.locale]: state.doc };
+      const target = stashed[next];
+      delete stashed[next];
+      return {
+        locale: next,
+        doc: target || (JSON.parse(JSON.stringify(state.doc)) as BuilderDocument),
+        otherDocs: stashed,
+        past: [], future: [], coalesce: null, selectedId: null,
+        panel: state.panel === 'edit' ? 'widgets' : state.panel,
+      };
+    }),
+
+    /** Throws away one language's layout. The page's own language cannot be removed. */
+    removeLocale: (code: string) => store.setState((state) => {
+      if (code === state.locale) return {};
+      const remaining = { ...state.otherDocs };
+      delete remaining[code];
+      return { otherDocs: remaining };
+    }),
+
     setSeoField: <K extends keyof SeoFields>(key: K, value: SeoFields[K]) =>
       store.setState((state) => (state.seo[key] === value ? {} : { seo: { ...state.seo, [key]: value } })),
     setPanel: (panel: SidePanel) => store.setState({ panel }),

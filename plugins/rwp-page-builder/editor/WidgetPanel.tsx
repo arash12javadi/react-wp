@@ -1,8 +1,9 @@
 import { useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import { Lock, Search } from 'lucide-react';
+import { useApplyFilters } from '../../../src/core/HookSlot';
 import { Icon } from '../lib/icons';
-import { categoryLabels, categoryOrder, getWidgets, subscribeWidgets, widgetsVersion } from '../lib/registry';
+import { categoryLabels, categoryOrder, getWidgets, subscribeWidgets, widgetsVersion, type WidgetDefinition } from '../lib/registry';
 import { useEditor, useStore, type DragItem } from './store';
 import styles from './editor.module.css';
 
@@ -48,7 +49,11 @@ export default function WidgetPanel() {
   const [notice, setNotice] = useState('');
   // Plugins (e.g. the shop) add and remove widgets when they are switched on or off.
   const version = useSyncExternalStore(subscribeWidgets, widgetsVersion, widgetsVersion);
-  const widgets = useMemo(() => (version >= 0 ? getWidgets() : []), [version]);
+  const registered = useMemo(() => (version >= 0 ? getWidgets() : []), [version]);
+  // Lets a plugin (or a site) hide, reorder or relabel what the panel offers without touching
+  // the registry itself. Filtered here rather than in getWidgets() so the panel re-renders when
+  // a plugin adds its filter late.
+  const widgets = useApplyFilters<WidgetDefinition[]>('builder_widgets', registered);
 
   const grouped = useMemo(() => {
     const term = query.trim().toLowerCase();

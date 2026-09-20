@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { loadWidgetAreas, type WidgetAreas } from '../lib/widgets';
 import type { Post } from '../lib/types';
 import { useTheme } from '../lib/theme';
+import { useTranslation } from '../context/I18nContext';
+import { HookSlot } from '../core/HookSlot';
 import WidgetRenderer from './WidgetRenderer';
 import { ThemeSidebarBlocks } from './theme/ThemeLayoutRenderer';
 import styles from './PublicHome.module.css';
@@ -20,6 +22,7 @@ interface PublicSidebarProps {
 export default function PublicSidebar({ recentPosts = [], search, onSearch }: PublicSidebarProps) {
   const [areas, setAreas] = useState<WidgetAreas | null>(null);
   const { theme } = useTheme();
+  const { t } = useTranslation();
 
   useEffect(() => {
     loadWidgetAreas()
@@ -40,10 +43,10 @@ export default function PublicSidebar({ recentPosts = [], search, onSearch }: Pu
       <div className="rwpt-widget-stack">
         {onSearch && (
           <div className={styles.widget}>
-            <h2>Search</h2>
-            <label htmlFor="public-search" className={styles.srOnly}>Search posts</label>
+            <h2>{t('header.search', 'Search')}</h2>
+            <label htmlFor="public-search" className={styles.srOnly}>{t('header.searchPosts', 'Search posts…')}</label>
             <input id="public-search" type="search" value={search}
-              onChange={(event) => onSearch(event.target.value)} placeholder="Search posts…" />
+              onChange={(event) => onSearch(event.target.value)} placeholder={t('header.searchPosts', 'Search posts…')} />
           </div>
         )}
         {recentPosts.length > 0 && (
@@ -54,7 +57,7 @@ export default function PublicSidebar({ recentPosts = [], search, onSearch }: Pu
         )}
         <div className={styles.widget}>
           <h2>Meta</h2>
-          <ul><li><a href="/admin">Log in</a></li></ul>
+          <ul><li><a href="/admin">{t('header.login', 'Log in')}</a></li></ul>
         </div>
       </div>
     );
@@ -63,6 +66,8 @@ export default function PublicSidebar({ recentPosts = [], search, onSearch }: Pu
   return (
     <aside className={className} aria-label="Sidebar">
       <ThemeSidebarBlocks renderWidgetArea={renderWidgetArea} />
+      {/* Plugin widgets, below whatever the Theme Editor placed. */}
+      <HookSlot name="sidebar_widgets" wrapper={(children) => <div className="rwpt-widget-stack">{children}</div>} />
     </aside>
   );
 }

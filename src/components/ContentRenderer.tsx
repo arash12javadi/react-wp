@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { rwp } from '../lib/rwp';
+import { useApplyFilters } from '../core/HookSlot';
 
 export const sanitizeHtml = (html: string) => {
   const template = document.createElement('template');
@@ -73,9 +74,24 @@ const buildMarkup = (html: string): { markup: string; nodes: ReactNode[] } => {
   return { markup: template.innerHTML, nodes };
 };
 
-export default function ContentRenderer({ html, className }: { html: string; className?: string }) {
+export interface ContentRendererProps {
+  html: string;
+  className?: string;
+  /**
+   * Runs the HTML through the `the_content` filter first (WordPress's hook of the same name).
+   * Off for chrome that happens to be HTML — Theme Editor custom HTML blocks, area code — so a
+   * content filter does not also rewrite the header.
+   */
+  applyContentFilters?: boolean;
+}
+
+export default function ContentRenderer({ html, className, applyContentFilters = true }: ContentRendererProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const { markup, nodes } = useMemo(() => buildMarkup(html), [html]);
+  // Filtered before sanitizing, never after: whatever a filter returns still has to survive
+  // sanitizeHtml, or a plugin could smuggle a <script> into every page through this hook.
+  const filteredHtml = useApplyFilters<string>('the_content', html);
+  const source = applyContentFilters ? filteredHtml : html;
+  const { markup, nodes } = useMemo(() => buildMarkup(source), [source]);
   const [hosts, setHosts] = useState<HTMLElement[]>([]);
 
   useEffect(() => {

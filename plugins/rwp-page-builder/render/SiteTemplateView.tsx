@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import type { RwpTemplateRenderProps } from '../../../src/lib/plugin-api';
 import { liveTemplate } from '../lib/siteTemplates';
 import type { BuilderPage } from '../lib/types';
-import BuilderRenderer, { parseDocument } from './BuilderRenderer';
+import BuilderRenderer, { useLocalizedDocument } from './BuilderRenderer';
 import { TemplateProvider, type TemplateContextValue } from './context';
 
 /**
@@ -11,7 +11,8 @@ import { TemplateProvider, type TemplateContextValue } from './context';
  */
 export default function SiteTemplateView({ type, post, archive, layoutWidth }: RwpTemplateRenderProps) {
   const template = liveTemplate(type);
-  const doc = useMemo(() => parseDocument(template?.builder_data), [template]);
+  // Header, footer and archive templates are translated the same way page layouts are.
+  const doc = useLocalizedDocument(template || null);
   const context = useMemo<TemplateContextValue>(() => ({ type, archive, layoutWidth }), [type, archive, layoutWidth]);
   if (!template || !doc) return null;
   return (

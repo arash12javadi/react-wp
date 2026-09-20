@@ -6,6 +6,7 @@ import layoutStyles from '../PublicLayout.module.css';
 import homeStyles from '../PublicHome.module.css';
 import ContentRenderer from '../ContentRenderer';
 import LoginButton from '../LoginButton';
+import LanguageSwitcher from '../LanguageSwitcher';
 import WidgetRenderer from '../WidgetRenderer';
 import { getSupabaseClient } from '../../lib/db';
 import { injectSnippet, useAppSettings } from '../../lib/appSettings';
@@ -268,9 +269,14 @@ function HeaderActions({ block }: { block: ThemeBlock }) {
   const items = block.settings.show_plugin_items ? rwp.getHeaderItems() : [];
   const register = showAuthLinks && block.settings.show_register && !signedIn && canRegister;
   const login = showAuthLinks && block.settings.show_login;
-  if (!items.length && !register && !login) return null;
+  // Layouts saved before the language switcher existed have no such setting, so it is opt-out,
+  // not opt-in: otherwise every site with a saved theme would silently lose the switcher.
+  // LanguageSwitcher itself renders nothing for a one-language site or when the setting is off.
+  const languages = block.settings.show_language_switcher !== false;
+  if (!items.length && !register && !login && !languages) return null;
   return (
     <span className={`${layoutStyles.authLinks} rwp-header-actions`}>
+      {languages && <LanguageSwitcher />}
       {items.map(({ id, component: Item }) => <ThemeErrorBoundary key={id} label={`Header item ${id}`}><Item /></ThemeErrorBoundary>)}
       {register && <a href="/register">Register</a>}
       {login && <LoginButton variant="button" />}
@@ -369,10 +375,10 @@ export function ChromeBlock({ block, area, renderWidgetArea }: ChromeBlockProps)
     case 'search': return <Titled area={area} title={text(settings.title)}><SearchBar block={block} /></Titled>;
     case 'social-icons': return <Titled area={area} title={text(settings.title)}><SocialLinks block={block} /></Titled>;
     case 'menu': return <Titled area={area} title={text(settings.title)}><MenuLinks menuId={text(settings.menu_id)} /></Titled>;
-    case 'custom-html': return <Titled area={area} title={text(settings.title)}><ContentRenderer html={text(settings.html)} /></Titled>;
+    case 'custom-html': return <Titled area={area} title={text(settings.title)}><ContentRenderer html={text(settings.html)} applyContentFilters={false} /></Titled>;
     case 'text': return <p className="rwpt-text">{fill(settings.text)}</p>;
     case 'copyright': return <span className="rwpt-copyright">{fill(settings.text)}</span>;
-    case 'area-code': return <ContentRenderer html={areaCode(theme, area)} />;
+    case 'area-code': return <ContentRenderer html={areaCode(theme, area)} applyContentFilters={false} />;
     case 'widget-area': {
       const source = settings.source === 'footer' ? 'footer' : 'sidebar';
       if (renderWidgetArea) return <>{renderWidgetArea(source)}</>;
