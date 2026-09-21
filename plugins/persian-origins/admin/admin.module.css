@@ -1,0 +1,277 @@
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 1100px;
+}
+
+.intro h2 {
+  margin: 0 0 4px;
+  color: #111827;
+}
+
+.intro p {
+  margin: 0;
+  color: #64748b;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.heading {
+  margin: 0 0 4px;
+  color: #111827;
+  font-size: 1rem;
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.filters input {
+  flex: 1;
+  min-width: 200px;
+}
+
+/* Two classes, so it beats the settings form's full-width `.form select`. */
+.filters select {
+  width: auto;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.table th,
+.table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid #f1f5f9;
+  text-align: start;
+  vertical-align: top;
+}
+
+.table th {
+  color: #64748b;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.table small {
+  color: #94a3b8;
+}
+
+.missing {
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: #b45309;
+  background: #fef3c7;
+  font-size: 0.74rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.linkButton {
+  border: 0;
+  padding: 0;
+  color: #4f46e5;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+}
+
+.back {
+  align-self: flex-start;
+  border: 0;
+  padding: 0;
+  color: #4f46e5;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.editorHead {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.inlineLabel select {
+  width: auto;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fieldLabel {
+  color: #334155;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.original {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px 14px;
+  background: #f8fafc;
+}
+
+.original summary {
+  color: #4f46e5;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.twoColumns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px 16px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+}
+
+.row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.category {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 16px;
+  background: #fff;
+}
+
+@media (max-width: 640px) {
+  .category {
+    grid-template-columns: 1fr;
+  }
+}
+
+.categoryMedia {
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  overflow: hidden;
+  border-radius: 10px;
+  color: #fff;
+  background: linear-gradient(135deg, #4f46e5, #0ea5e9);
+  font-size: 2rem;
+  font-weight: 800;
+}
+
+.categoryMedia img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.categoryBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.categoryBody label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #334155;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.categoryBody input {
+  box-sizing: border-box;
+  border: 1px solid #dbe1ea;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font: inherit;
+  font-weight: 400;
+}
+
+.categoryBody small {
+  color: #94a3b8;
+}
+
+.sourceCell {
+  max-width: 420px;
+  color: #1e293b;
+  overflow-wrap: anywhere;
+}
+
+.phraseInput {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 220px;
+  border: 1px solid #dbe1ea;
+  border-radius: 6px;
+  padding: 7px 9px;
+  font: inherit;
+}
+
+.note {
+  display: block;
+  margin-top: 4px;
+}
+
+.actionsCell {
+  white-space: nowrap;
+}
+
+.actionsCell .linkButton + .linkButton {
+  margin-inline-start: 12px;
+}
+
+.linkButton:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.danger {
+  color: #dc2626;
+}
+
+.pagination {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  font-size: 0.84rem;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

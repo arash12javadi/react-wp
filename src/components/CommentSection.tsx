@@ -91,11 +91,12 @@ function CommentItem({
           {options.showAvatars && (node.author?.avatar_url
             ? <img className={styles.avatar} src={node.author.avatar_url} alt="" />
             : <span className={styles.avatarFallback} aria-hidden="true">{name.charAt(0).toUpperCase()}</span>)}
-          <span className={styles.author}>{name}</span>
+          {/* data-rwp-user-content: written by a visitor, so page translators must leave it alone. */}
+          <span className={styles.author} data-rwp-user-content="">{name}</span>
           <span className={styles.date}>{formatDate(node.created_at)}</span>
           {pending && <span className={styles.pendingTag}>Awaiting approval</span>}
         </header>
-        <p className={styles.content}>{node.content}</p>
+        <p className={styles.content} data-rwp-user-content="">{node.content}</p>
         <div className={styles.actions}>
           {options.allowReplies && currentUserId && (
             <button type="button" onClick={() => setReplyingTo(replyingTo === node.id ? null : node.id)}>

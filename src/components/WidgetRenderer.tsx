@@ -8,6 +8,8 @@ import ContentRenderer from './ContentRenderer';
 import styles from './PublicHome.module.css';
 import { useAppSettings } from '../lib/appSettings';
 import { MenuLabel, resolveMenuLinks, useMenuViewer, type DynamicMenuLink } from '../lib/dynamicMenu';
+import { translateTerm } from '../lib/translations';
+import { useTranslation } from '../context/I18nContext';
 
 type MenuItemRow = DynamicMenuLink;
 
@@ -33,12 +35,14 @@ function RecentPostsWidget({ widget }: { widget: Widget }) {
 }
 
 function CategoriesWidget({ widget }: { widget: Widget }) {
+  // Re-renders on a language switch, which is what translateTerm() relies on.
+  const { t, formatNumber } = useTranslation();
   const [categories, setCategories] = useState<Array<Category & { count: number }>>([]);
   useEffect(() => {
     const load = async () => {
       const supabase = getSupabaseClient();
       const [{ data: cats }, { data: pages }] = await Promise.all([
-        supabase.from('categories').select('id,name,slug').order('name'),
+        supabase.from('categories').select('id,name,slug,description').order('name'),
         supabase.from('pages').select('category_id').eq('status', 'published'),
       ]);
       const counts = new Map<string, number>();
@@ -50,15 +54,19 @@ function CategoriesWidget({ widget }: { widget: Widget }) {
     void load();
   }, []);
 
-  if (categories.length === 0) return <p className={styles.muted}>No categories yet.</p>;
+  if (categories.length === 0) return <p className={styles.muted}>{t('widgets.noCategories', 'No categories yet.')}</p>;
   return (
     <ul>
-      {categories.map((category) => (
-        <li key={category.id}>
-          <a href={`/?category=${category.slug}`}>{category.name}</a>
-          {widget.settings.showCounts ? ` (${category.count})` : ''}
-        </li>
-      ))}
+      {categories.map((category) => {
+        // category.<slug>.name / .description under Settings → Translations, else the stored text.
+        const description = translateTerm('category', category, 'description');
+        return (
+          <li key={category.id}>
+            <a href={`/?category=${category.slug}`} title={description || undefined}>{translateTerm('category', category)}</a>
+            {widget.settings.showCounts ? ` (${formatNumber(category.count)})` : ''}
+          </li>
+        );
+      })}
     </ul>
   );
 }

@@ -108,6 +108,16 @@ core must not import plugin code. The plugin starts it on activation and returns
 so deactivating the plugin removes every style, script and hook the snippets added. Anything
 else that wants the same behaviour can call `startSnippetRuntime()` or mount `<SnippetInjector />`.
 
+## Persian Origins plugin
+
+`persian-origins` makes every page, post and category bilingual (English and Persian by default)
+and switches the whole site instantly: text, direction, fonts and theme. Every other word on the
+page (menus, header, footer, widgets, buttons, messages) is translated as Site text. Mark anything
+a visitor wrote with `data-rwp-user-content` so it is never translated. Activate it under Plugins,
+which installs `plugins/persian-origins/schema.sql`. See the "Persian Origins" section of the root
+README. Fonts go in `plugins/persian-origins/assets/fonts/<language>/<family>/` (see the README
+there) and are discovered at build time.
+
 Other plugins can add builder widgets with `registerWidget` from
 `plugins/rwp-page-builder/lib/registry.ts`: a definition is `{ type, label, icon, category,
 defaults, controls, View, css }`. `controls` is plain data (the editor renders it), `View`

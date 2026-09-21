@@ -16,6 +16,9 @@ const fa: TranslationDictionary = {
   'language.change': 'تغییر زبان',
   'language.current': 'زبان فعلی: {language}',
   'language.chooseLanguage': 'یک زبان انتخاب کنید',
+  'language.name.en': 'انگلیسی',
+  'language.name.fa': 'فارسی',
+  'language.name.ar': 'عربی',
 
   'content.readMore': 'ادامهٔ مطلب',
   'content.published': 'منتشر شده در {date}',
@@ -32,6 +35,9 @@ const fa: TranslationDictionary = {
   'archive.nothingFound': 'چیزی پیدا نشد.',
   'archive.previous': 'قبلی',
   'archive.next': 'بعدی',
+  'archive.thisAuthor': 'این نویسنده',
+
+  'widgets.noCategories': 'هنوز دسته‌ای وجود ندارد.',
 
   'comments.title': 'دیدگاه‌ها',
   'comments.count': '{count} دیدگاه',

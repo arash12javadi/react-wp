@@ -7,6 +7,7 @@ import { appSettingsMigration } from './appSettings';
 import { currentI18nSettings, i18nMigration } from './i18n';
 import { themeMigration } from './theme';
 import { capabilityGrantsMigration } from './capabilityGrants';
+import { translationsMigration } from './translations';
 
 /**
  * The Dashboard's setup checklist: what is still missing for this site to work fully, with
@@ -28,7 +29,7 @@ const can = (role: UserRole, capability: Capability) => hasCapability(role, capa
 async function adminNotices(): Promise<RwpSetupNotice[]> {
   const notices: RwpSetupNotice[] = [];
   const supabase = getSupabaseClient();
-  const [settings, mediaConfig, menuRow, quotaProbe, detailsProbe, themeProbe, localeProbe, grantsProbe] = await Promise.all([
+  const [settings, mediaConfig, menuRow, quotaProbe, detailsProbe, themeProbe, localeProbe, grantsProbe, translationsProbe] = await Promise.all([
     loadSettings(),
     fetch('/api/media-config').then((response) => (response.ok ? response.json() as Promise<{ cloudinary: boolean; imagekit: boolean }> : null)).catch(() => null),
     supabase.from('options').select('option_name').eq('option_name', 'menu_links').maybeSingle(),
@@ -38,7 +39,23 @@ async function adminNotices(): Promise<RwpSetupNotice[]> {
     // A missing column, not a missing table: PostgREST answers 42703 / "column … does not exist".
     supabase.from('pages').select('locale', { count: 'exact', head: true }),
     supabase.from('rwp_role_capabilities').select('role', { count: 'exact', head: true }),
+    supabase.from('rwp_translations').select('id', { count: 'exact', head: true }),
   ]);
+
+  if (translationsProbe.error && missingTable(describeDbError(translationsProbe.error))) {
+    notices.push({
+      id: 'migration-20261003',
+      level: currentI18nSettings().supported_languages.length > 1 ? 'required' : 'recommended',
+      title: 'Run the translations database migration',
+      description: 'Settings → Translations cannot save until it has run. The site keeps using the bundled strings meanwhile.',
+      steps: [
+        'Open Supabase → SQL Editor → New query.',
+        `Paste the whole of ${translationsMigration} and click Run. It is safe to run again.`,
+        'Reload this page.',
+      ],
+      action: { label: 'Open Supabase', href: 'https://supabase.com/dashboard/projects' },
+    });
+  }
 
   if (grantsProbe.error && missingTable(describeDbError(grantsProbe.error))) {
     notices.push({

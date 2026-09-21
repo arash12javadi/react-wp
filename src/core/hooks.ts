@@ -50,6 +50,13 @@ const notify = () => {
  */
 export const getHookVersion = () => version;
 
+/**
+ * Re-renders everything that reads hooks (useApplyFilters, <HookSlot>) without changing the
+ * registry. For a filter whose output depends on data that arrived after the first render, such
+ * as a translation loaded for the page on screen: without it the old result stays on the page.
+ */
+export const refreshFilters = () => notify();
+
 export const subscribeHooks = (listener: () => void): (() => void) => {
   listeners.add(listener);
   return () => { listeners.delete(listener); };
@@ -208,7 +215,7 @@ export type SlotName = (typeof slotNames)[number];
 export const coreFilterNames = [
   /** The HTML of a page or post body, before it is sanitized and rendered. */
   'the_content',
-  /** (translated, key, locale) — the final string for one translation key. */
+  /** (translated, key, locale, vars) — the final string for one key, after Settings → Translations and the bundled dictionaries. */
   'i18n_translate_key',
   /** The active locale code, before it is applied to the document. */
   'i18n_locale',

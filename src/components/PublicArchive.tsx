@@ -3,6 +3,8 @@ import { describeDbError, getSupabaseClient } from '../lib/db';
 import { resolveExcerpt } from '../lib/excerpt';
 import type { RwpArchive } from '../lib/rwp';
 import { applyDocumentTitle, loadSettings } from '../lib/settings';
+import { translateTerm } from '../lib/translations';
+import { useTranslation } from '../context/I18nContext';
 import PublicChrome from './PublicChrome';
 import SiteTemplate from './SiteTemplate';
 import LiveSearch from './LiveSearch';
@@ -36,6 +38,7 @@ export const archiveTemplateTypes = (archive: RwpArchive) =>
 function DefaultArchive({ archive }: { archive: RwpArchive }) {
   const pageNumber = Math.max(1, Math.floor(Number(new URLSearchParams(window.location.search).get('paged')) || 1));
   const [state, setState] = useState<{ title: string; posts: ArchivePost[]; pages: number; error: string; loading: boolean }>({ title: '', posts: [], pages: 1, error: '', loading: true });
+  const { locale, t } = useTranslation();
 
   const archiveKey = JSON.stringify(archive);
   useEffect(() => {
@@ -50,15 +53,16 @@ function DefaultArchive({ archive }: { archive: RwpArchive }) {
         .eq('status', 'published').eq('is_post', true).order('created_at', { ascending: false })
         .range((pageNumber - 1) * perPage, pageNumber * perPage - 1);
       if (archive.kind === 'search') {
-        title = archive.term ? `Search results for “${archive.term}”` : 'Search';
+        title = archive.term ? t('archive.searchResults', 'Search results for “{term}”', { term: archive.term }) : t('header.search', 'Search');
         query = query.ilike('title', `%${archive.term.replace(/[\\%_]/g, (char) => `\\${char}`)}%`);
       } else if (archive.kind === 'category') {
-        const { data: category } = await supabase.from('categories').select('id,name').eq('slug', archive.slug).maybeSingle();
-        title = `Category: ${category?.name || archive.slug}`;
+        const { data: category } = await supabase.from('categories').select('id,name,slug').eq('slug', archive.slug).maybeSingle();
+        // The name comes from Settings → Translations (category.<slug>.name) when one is saved.
+        title = t('archive.category', 'Category: {name}', { name: category ? translateTerm('category', category) : archive.slug });
         query = query.eq('category_id', category?.id || '00000000-0000-0000-0000-000000000000');
       } else if (archive.kind === 'author') {
         const { data: names } = await supabase.rpc('builder_author_names', { p_ids: [archive.id] });
-        title = `Posts by ${(names as Array<{ display_name: string }> | null)?.[0]?.display_name || 'this author'}`;
+        title = t('archive.author', 'Posts by {name}', { name: (names as Array<{ display_name: string }> | null)?.[0]?.display_name || t('archive.thisAuthor', 'this author') });
         query = query.eq('author_id', archive.id);
       } else {
         const from = new Date(Date.UTC(archive.year, (archive.month || 1) - 1, 1));
@@ -78,7 +82,8 @@ function DefaultArchive({ archive }: { archive: RwpArchive }) {
     };
     load().catch((loadError: unknown) => active && setState((current) => ({ ...current, error: describeDbError(loadError), loading: false })));
     return () => { active = false; };
-  }, [archiveKey, pageNumber]);
+    // `locale`: the title is translated while loading, so a language switch loads it again.
+  }, [archiveKey, pageNumber, locale, t]);
 
   const href = (page: number) => {
     const params = new URLSearchParams(window.location.search);

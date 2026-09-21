@@ -1,0 +1,19 @@
+{
+  "id": "persian-origins",
+  "name": "Persian Origins — Bilingual Content",
+  "version": "1.0.0",
+  "author": "Arash Javadi",
+  "description": "English and Persian versions of every page, post and category, switched instantly on the public site, with a light/dark theme, per-language fonts, text size controls, a category grid and a continue-reading button.",
+  "entry": "./index.tsx",
+  "database": {
+    "schema": "./schema.sql",
+    "uninstall": "./uninstall.sql",
+    "tables": ["po_content_translations", "po_category_meta", "po_user_preferences"],
+    "options": ["po\\_%"],
+    "retains": [
+      "Category names and descriptions in other languages stay under Settings → Translations (core's rwp_translations), where core widgets and archive titles read them.",
+      "Category images stay in the Media Library; only the link from a category to its image is removed.",
+      "Fonts in plugins/persian-origins/assets/fonts are removed with the plugin folder, not by the data wipe."
+    ]
+  }
+}

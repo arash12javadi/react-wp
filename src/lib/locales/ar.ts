@@ -16,6 +16,9 @@ const ar: TranslationDictionary = {
   'language.change': 'تغيير اللغة',
   'language.current': 'اللغة الحالية: {language}',
   'language.chooseLanguage': 'اختر لغة',
+  'language.name.en': 'الإنجليزية',
+  'language.name.fa': 'الفارسية',
+  'language.name.ar': 'العربية',
 
   'content.readMore': 'اقرأ المزيد',
   'content.published': 'نُشر في {date}',
@@ -32,6 +35,9 @@ const ar: TranslationDictionary = {
   'archive.nothingFound': 'لم يُعثر على شيء.',
   'archive.previous': 'السابق',
   'archive.next': 'التالي',
+  'archive.thisAuthor': 'هذا الكاتب',
+
+  'widgets.noCategories': 'لا توجد تصنيفات بعد.',
 
   'comments.title': 'التعليقات',
   'comments.count': '{count} تعليقات',

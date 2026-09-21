@@ -37,6 +37,7 @@ import { useAdminStatus } from './lib/adminStatus';
 import { rwp } from './lib/rwp';
 import { HookSlot } from './core/HookSlot';
 import { initI18n } from './lib/i18n';
+import { initDatabaseTranslations } from './lib/translations';
 import styles from './Dashboard.module.css';
 
 // Its own chunk: the Overview, Updates and Guide are only ever needed inside the admin.
@@ -405,7 +406,10 @@ export default function App() {
           // Also before the first render. The locale decides dir="rtl" on <html> and the body
           // font, so resolving it later would paint an RTL site left-to-right first. Plugins are
           // already initialised above, so their dictionaries and i18n filters are in place.
-          initI18n(isAdminRoute ? 'admin' : 'public').catch(() => undefined),
+          // Then the Settings → Translations strings for that locale, for the same reason: text
+          // must not change from the bundled wording to the edited one after the first paint.
+          initI18n(isAdminRoute ? 'admin' : 'public').catch(() => undefined)
+            .then(() => initDatabaseTranslations()).catch(() => undefined),
           // Before anything renders too: capability checks depend on the grants added under
           // Settings → Roles, for the role and for the signed-in person.
           loadCapabilityGrants().catch(() => undefined),

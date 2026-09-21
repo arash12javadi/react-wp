@@ -27,7 +27,7 @@ export {
 // The hook registry, for plugins that want priorities or hook names core does not declare.
 export {
   addAction, addFilter, applyFilters, doAction, removeAction, removeFilter,
-  hasAction, hasFilter, listHooks, DEFAULT_PRIORITY,
+  hasAction, hasFilter, listHooks, refreshFilters, DEFAULT_PRIORITY,
   type SlotName,
 } from '../core/hooks';
 
@@ -40,7 +40,8 @@ export {
 // Translations and text direction.
 export {
   registerPluginTranslations, isRtlLocale, directionOf, getLocale, getDirection, setLocale,
-  formatDate, formatNumber, t, translate,
+  formatDate, formatNumber, t, translate, getSurface, subscribeLocale, localeDefinition, currentI18nSettings,
+  lookupTranslation,
   type LocaleDefinition, type TextDirection, type TranslationDictionary,
 } from './i18n';
 export { useTranslation, useDirection } from '../context/I18nContext';

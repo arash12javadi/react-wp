@@ -7,6 +7,7 @@ import {
   initI18n, localeDefinition, setLocale as setActiveLocale, subscribeLocale, supportedLocales,
   translate, type I18nSettings, type I18nSurface, type LocaleDefinition, type TextDirection,
 } from '../lib/i18n';
+import { initDatabaseTranslations } from '../lib/translations';
 
 /**
  * The React face of src/lib/i18n.ts.
@@ -30,7 +31,7 @@ export interface I18nContextValue {
   setLocale: (code: string) => void;
   formatDate: typeof formatDate;
   formatNumber: typeof formatNumber;
-  /** False until the settings have loaded and the final locale is known. */
+  /** False until the settings, the final locale and its Settings → Translations strings have loaded. */
   ready: boolean;
 }
 
@@ -47,7 +48,11 @@ export function I18nProvider({ children, surface = 'public' }: { children: React
 
   useEffect(() => {
     let mounted = true;
-    void initI18n(surface).finally(() => { if (mounted) setReady(true); });
+    // Ready once the Settings → Translations strings are in too (a no-op when boot loaded them).
+    void initI18n(surface)
+      .then(() => initDatabaseTranslations())
+      .catch(() => undefined)
+      .finally(() => { if (mounted) setReady(true); });
     return () => { mounted = false; };
   }, [surface]);
 

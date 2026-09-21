@@ -254,6 +254,30 @@ export function registerPluginTranslations(
 /** Every key currently known for a locale. Used by the admin to report translation coverage. */
 export const translationKeys = (code: string): string[] => Object.keys(dictionaries.get(code) || {});
 
+/** Every key any bundled or plugin dictionary knows, in any language. */
+export const allTranslationKeys = (): string[] => [...new Set([...dictionaries.values()].flatMap(Object.keys))];
+
+/** The bundled or plugin string for one key, ignoring database strings. The admin shows it as the default. */
+export const bundledTranslation = (code: string, key: string): string | undefined => dictionaries.get(code)?.[key];
+
+/**
+ * Strings from the rwp_translations table (Settings → Translations), per locale. Kept apart from
+ * `dictionaries` so they always win over core and plugin strings, whatever order things load in,
+ * and so replacing them never deletes a bundled string. src/lib/translations.ts fills this.
+ */
+const databaseStrings = new Map<string, TranslationDictionary>();
+
+export const setDatabaseTranslations = (code: string, entries: TranslationDictionary) => {
+  databaseStrings.set(code, entries);
+  notifyListeners();
+};
+
+type MissingKeyHandler = (key: string, shown: string, locale: string, surface: I18nSurface) => void;
+let missingKeyHandler: MissingKeyHandler | null = null;
+
+/** Called by translate() for a key the active locale has no string for. One handler; null removes it. */
+export const setMissingKeyHandler = (handler: MissingKeyHandler | null) => { missingKeyHandler = handler; };
+
 // Active locale ---------------------------------------------------------------------------------
 
 export type I18nSurface = 'public' | 'admin';
@@ -271,6 +295,7 @@ const notifyListeners = () => {
 };
 
 export const getLocale = (): string => activeLocale;
+export const getSurface = (): I18nSurface => activeSurface;
 export const getDirection = (): TextDirection => directionOf(activeLocale);
 export const getLocaleVersion = (): number => stateVersion;
 
@@ -417,7 +442,16 @@ const interpolate = (template: string, vars?: Record<string, string | number>): 
   return template.replace(/\{(\w+)\}/g, (match, name: string) => (name in vars ? String(vars[name]) : match));
 };
 
-const lookup = (code: string, key: string): string | undefined => dictionaries.get(code)?.[key];
+/** A database string for the locale, then the bundled or plugin one. */
+const lookup = (code: string, key: string): string | undefined =>
+  databaseStrings.get(code)?.[key] ?? dictionaries.get(code)?.[key];
+
+/**
+ * The string for a key in one locale only: a database string, else a bundled or plugin one, else
+ * undefined. No fallback, no filter and no missing-key report, so a caller can ask "is there a
+ * translation?" for thousands of keys without side effects (Persian Origins' page translation).
+ */
+export const lookupTranslation = (code: string, key: string): string | undefined => lookup(code, key);
 
 /**
  * Translates one key for the active locale.
@@ -426,18 +460,22 @@ const lookup = (code: string, key: string): string | undefined => dictionaries.g
  *   t('comments.count', '{count} comments', { count: 3 })
  *
  * Resolution order: active locale -> site default -> English -> the fallback you passed -> the key
- * itself. The key is the last resort on purpose: a visible `header.login` on the page is a much
- * clearer bug report than an empty element.
+ * itself. Within each locale, a string edited under Settings → Translations beats the bundled one.
+ * The key is the last resort on purpose: a visible `header.login` on the page is a much clearer
+ * bug report than an empty element.
  *
  * The result goes through the `i18n_translate_key` filter, which is how a plugin overrides core
  * wording without shipping a whole dictionary.
  */
 export function translate(key: string, fallback?: string, vars?: Record<string, string | number>): string {
-  const found = lookup(activeLocale, key)
+  const own = lookup(activeLocale, key);
+  const found = own
     ?? lookup(settings.default_site_language, key)
     ?? lookup('en', key)
     ?? fallback
     ?? key;
+  // Reported before the filter: a plugin filling the gap does not make the key translated.
+  if (own === undefined && missingKeyHandler) missingKeyHandler(key, found, activeLocale, activeSurface);
   const filtered = applyFilters<string>('i18n_translate_key', found, key, activeLocale, vars);
   return interpolate(filtered, vars);
 }

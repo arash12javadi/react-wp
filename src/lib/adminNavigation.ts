@@ -67,6 +67,7 @@ const coreNavigation: AdminNavItem[] = [
       { id: 'uploads', label: 'Uploads', icon: '📤' },
       { id: 'seo', label: 'SEO', icon: '🔍' },
       { id: 'languages', label: 'Languages', icon: '🗣️' },
+      { id: 'translations', label: 'Translations', icon: '🔤' },
       { id: 'roles', label: 'Roles', icon: '🛡️' },
       { id: 'backup', label: 'Backup', icon: '💾' },
       // Settings already requires manage_options, which only Administrators and Super Admins

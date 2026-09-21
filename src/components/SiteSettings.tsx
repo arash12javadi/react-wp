@@ -1,6 +1,7 @@
 import SiteSettingsPanel from './settings/SiteSettingsPanel';
 import AccountsPanel from './settings/AccountsPanel';
 import RolesPanel from './settings/RolesPanel';
+import TranslationsPanel from './settings/TranslationsPanel';
 import BackupPanel from './settings/BackupPanel';
 import ResetSitePanel from './settings/ResetSitePanel';
 import AppSettings, { isAppSettingsTab } from './AppSettings';
@@ -14,6 +15,7 @@ const descriptions: Record<string, [string, string]> = {
   uploads: ['Uploads', 'File size and image dimension rules, and how much storage each role or person may use.'],
   seo: ['SEO', 'Meta keywords in the page editor, and tracking scripts such as Google Tag Manager.'],
   languages: ['Languages', 'The languages this site offers, the defaults for visitors and for the admin, and the public language switcher.'],
+  translations: ['Translations', 'Reword any interface string, translate it into the languages this site offers, and import or export them for a translator.'],
   roles: ['Roles', 'Add capabilities to a role, or to one person on top of their role.'],
   backup: ['Backup', 'Download the whole site as one file, or restore a backup onto this site.'],
   advanced: ['Advanced', 'Destructive operations. Everything on this screen is permanent.'],
@@ -32,6 +34,7 @@ export default function SiteSettings({ tab, onBrandingChange }: { tab: string; o
 
       {tab === 'accounts' ? <AccountsPanel />
         : tab === 'roles' ? <RolesPanel />
+        : tab === 'translations' ? <TranslationsPanel />
         : tab === 'backup' ? <BackupPanel />
           : tab === 'advanced' ? <ResetSitePanel />
             // One AppSettings instance for its sections, so unsaved changes survive switching between them.

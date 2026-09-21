@@ -48,6 +48,10 @@ export default function LanguageSwitcher({ variant = 'dropdown', showFlags = fal
   if (locales.length < 2) return null;
 
   const active = locales.find((entry) => entry.code === locale) || locales[0];
+  // Each language is listed in its own language (so people can find theirs); the hint names it in
+  // the interface language: "Persian" on an English page, "فارسی" once language.name.fa is
+  // translated under Settings → Translations.
+  const hint = (entry: LocaleDefinition) => t(`language.name.${entry.code}`, entry.name);
 
   const choose = (code: string) => {
     setLocale(code);
@@ -63,6 +67,7 @@ export default function LanguageSwitcher({ variant = 'dropdown', showFlags = fal
             key={entry.code}
             type="button"
             lang={entry.code}
+            title={hint(entry)}
             className={entry.code === active.code ? styles.inlineActive : styles.inlineOption}
             aria-current={entry.code === active.code ? 'true' : undefined}
             onClick={() => choose(entry.code)}
@@ -100,6 +105,7 @@ export default function LanguageSwitcher({ variant = 'dropdown', showFlags = fal
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={t('language.current', 'Current language: {language}', { language: active.nativeName })}
+        title={t('language.change', 'Change language')}
         onClick={() => setOpen((value) => !value)}
         onKeyDown={(event) => {
           if (event.key === 'ArrowDown' && !open) {
@@ -126,6 +132,7 @@ export default function LanguageSwitcher({ variant = 'dropdown', showFlags = fal
                 lang={entry.code}
                 dir={entry.dir}
                 aria-selected={selected}
+                title={hint(entry)}
                 className={selected ? styles.optionSelected : styles.option}
                 onClick={() => choose(entry.code)}
               >

@@ -18,6 +18,10 @@ const en = {
   'language.change': 'Change language',
   'language.current': 'Current language: {language}',
   'language.chooseLanguage': 'Choose a language',
+  // A language's name in the interface language (the switcher's hover hint). One per bundled locale.
+  'language.name.en': 'English',
+  'language.name.fa': 'Persian',
+  'language.name.ar': 'Arabic',
 
   // Public content
   'content.readMore': 'Read more',
@@ -36,6 +40,10 @@ const en = {
   'archive.nothingFound': 'Nothing was found.',
   'archive.previous': 'Previous',
   'archive.next': 'Next',
+  'archive.thisAuthor': 'this author',
+
+  // Sidebar widgets
+  'widgets.noCategories': 'No categories yet.',
 
   // Comments
   'comments.title': 'Comments',
