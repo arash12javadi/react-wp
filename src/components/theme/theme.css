@@ -13,14 +13,56 @@
 .rwpt-row > .rwpt-align-center { margin-inline: auto; }
 .rwpt-row > .rwpt-align-right { margin-left: auto; }
 
+/* Header and footer rows with aligned blocks: left, center and right zones (RowBlocks). */
+.rwpt-zones {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 24px;
+  min-width: 0;
+}
+
+.rwpt-zone {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  min-width: 0;
+}
+
+.rwpt-zone-end { margin-inline-start: auto; }
+
+.rwpt-zones-centered {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+.rwpt-zones-centered .rwpt-zone-end { justify-content: flex-end; }
+
 .rwpt-block.rwpt-align-left { text-align: left; }
 .rwpt-block.rwpt-align-center { text-align: center; }
 .rwpt-block.rwpt-align-right { text-align: right; }
 
+/*
+ * The header and its menus sit above everything on the page. Page Builder sections, sliders and
+ * cards create their own stacking layers (z-index up to 9000 for the reading-progress bar), and
+ * dropdowns drawn inside a lower layer disappear behind the content under them. 9800 stays below
+ * the full-screen overlays (off-canvas 9990, search overlay 9995, lightbox 10000), which must
+ * cover the header to work. A Page Builder header template gets the same layer in builder.css.
+ */
+.rwp-header {
+  position: relative;
+  z-index: 9800;
+}
+
 .rwp-header.rwpt-sticky {
   position: sticky;
   top: 0;
-  z-index: 30;
+  z-index: 9800;
+}
+
+.rwp-header .rwp-nav,
+.rwp-header .rwp-nav > div > div {
+  z-index: 9801;
 }
 
 .rwpt-sidebar-sticky {
@@ -205,6 +247,9 @@
   .rwpt-hide-mobile { display: none !important; }
 
   .rwp-header.rwpt-row { flex-wrap: wrap; gap: 16px; }
+  .rwpt-zones,
+  .rwpt-zones-centered { display: flex; flex-wrap: wrap; gap: 16px; }
+  .rwpt-zone { flex-wrap: wrap; gap: 16px; }
 
   .rwpt-footer-grid.rwpt-columns-fixed,
   .rwpt-grid.rwpt-sidebar-left,

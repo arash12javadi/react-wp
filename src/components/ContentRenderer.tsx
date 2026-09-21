@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { rwp } from '../lib/rwp';
 import { useApplyFilters } from '../core/HookSlot';
@@ -93,15 +93,24 @@ export default function ContentRenderer({ html, className, applyContentFilters =
   const source = applyContentFilters ? filteredHtml : html;
   const { markup, nodes } = useMemo(() => buildMarkup(source), [source]);
   const [hosts, setHosts] = useState<HTMLElement[]>([]);
+  const written = useRef<{ element: HTMLElement | null; markup: string }>({ element: null, markup: '' });
 
-  useEffect(() => {
-    if (!containerRef.current) return;
-    setHosts(Array.from(containerRef.current.querySelectorAll<HTMLElement>('[data-rwp-sc]')));
-  }, [markup]);
+  // The HTML is written here, not with dangerouslySetInnerHTML. With that, the hosts found after
+  // the first commit were later replaced by fresh copies, so every portal rendered into a detached
+  // element: an empty [rwp_login_form] and no error anywhere. Now the HTML is written only when
+  // the markup (or the element) changes, and the hosts are found in the same step, so they are
+  // always the ones on the page. Checked after every commit, before paint, so nothing flashes.
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    if (!container || (written.current.element === container && written.current.markup === markup)) return;
+    container.innerHTML = markup;
+    written.current = { element: container, markup };
+    setHosts(Array.from(container.querySelectorAll<HTMLElement>('[data-rwp-sc]')));
+  });
 
   return (
     <div className={className}>
-      <div ref={containerRef} dangerouslySetInnerHTML={{ __html: markup }} />
+      <div ref={containerRef} />
       {hosts.map((host) => {
         const index = Number(host.dataset.rwpSc);
         return nodes[index] === undefined ? null : createPortal(nodes[index], host, String(index));

@@ -5,8 +5,8 @@ import { ThemeChromeProvider, ThemeFooter, ThemeHeader, ThemePreviewBanner, useT
 import { loadWidgetAreas } from '../lib/widgets';
 import { HookSlot } from '../core/HookSlot';
 import SiteTemplate from './SiteTemplate';
-import type { UserRole } from '../lib/roles';
-import type { SiteBranding } from '../lib/settings';
+import { canAccessAdmin, type UserRole } from '../lib/roles';
+import type { AdminToolbarMode, SiteBranding } from '../lib/settings';
 import type { DynamicMenuLink } from '../lib/dynamicMenu';
 
 export type MenuLink = DynamicMenuLink;
@@ -26,6 +26,11 @@ interface PublicLayoutProps {
   layout?: string;
   showAuthLinks?: boolean;
   canRegister?: boolean;
+  /** Who sees the admin toolbar (Settings → Accounts). */
+  toolbar?: AdminToolbarMode;
+  /** A page's own "Show header & navigation" / "Show footer" switches. */
+  showHeader?: boolean;
+  showFooter?: boolean;
 }
 
 const defaultLinks: MenuLink[] = [
@@ -48,8 +53,12 @@ export default function PublicLayout({
   layout,
   showAuthLinks = true,
   canRegister = true,
+  toolbar = 'everyone',
+  showHeader = true,
+  showFooter = true,
 }: PublicLayoutProps) {
   const [widgets, setWidgets] = useState<ThemeChrome['widgets']>(null);
+  const showToolbar = Boolean(adminEmail) && (toolbar === 'everyone' || (toolbar === 'admins' && canAccessAdmin(role)));
   useThemeDocument();
 
   useEffect(() => {
@@ -69,7 +78,7 @@ export default function PublicLayout({
   return (
     <ThemeChromeProvider value={chrome}>
       <div className={`${styles.site} rwp-site`}>
-        {adminEmail && (
+        {showToolbar && (
           <AdminToolbar
             email={adminEmail}
             role={role}
@@ -86,11 +95,11 @@ export default function PublicLayout({
         */}
         <HookSlot name="before_header" args={{ layout }} />
         {/* A published Page Builder header or footer template replaces the Theme Editor's. */}
-        <SiteTemplate types={['header']} layoutWidth={layout} fallback={<ThemeHeader layoutWidth={layout} />} />
+        {showHeader && <SiteTemplate types={['header']} layoutWidth={layout} fallback={<ThemeHeader layoutWidth={layout} />} />}
         <HookSlot name="after_header" args={{ layout }} />
         {children}
         <HookSlot name="before_footer" args={{ layout }} />
-        <SiteTemplate types={['footer']} layoutWidth={layout} fallback={<ThemeFooter layoutWidth={layout} />} />
+        {showFooter && <SiteTemplate types={['footer']} layoutWidth={layout} fallback={<ThemeFooter layoutWidth={layout} />} />}
         <HookSlot name="after_footer" args={{ layout }} />
         <ThemePreviewBanner />
       </div>

@@ -1,5 +1,6 @@
 import SiteSettingsPanel from './settings/SiteSettingsPanel';
 import AccountsPanel from './settings/AccountsPanel';
+import RolesPanel from './settings/RolesPanel';
 import BackupPanel from './settings/BackupPanel';
 import ResetSitePanel from './settings/ResetSitePanel';
 import AppSettings, { isAppSettingsTab } from './AppSettings';
@@ -7,13 +8,13 @@ import type { SiteBranding } from '../lib/settings';
 import styles from './SiteSettings.module.css';
 
 const descriptions: Record<string, [string, string]> = {
-  site: ['Site', 'The site title, tagline, logo, icon and front page.'],
-  accounts: ['Accounts', 'Control who can register, what they become, and how they sign in.'],
+  site: ['Site', 'The site title, tagline, logo, icon, front page, and the profile and dashboard pages for signed-in people.'],
+  accounts: ['Accounts', 'Who can register and what they become, the sign-in pages, where signing in and out leads, and the admin toolbar.'],
   general: ['General', 'What the public site shows, whose media each role sees, excerpts, and menu profile links.'],
   uploads: ['Uploads', 'File size and image dimension rules, and how much storage each role or person may use.'],
   seo: ['SEO', 'Meta keywords in the page editor, and tracking scripts such as Google Tag Manager.'],
   languages: ['Languages', 'The languages this site offers, the defaults for visitors and for the admin, and the public language switcher.'],
-  roles: ['Roles', 'Extra capabilities for Subscribers and Contributors.'],
+  roles: ['Roles', 'Add capabilities to a role, or to one person on top of their role.'],
   backup: ['Backup', 'Download the whole site as one file, or restore a backup onto this site.'],
   advanced: ['Advanced', 'Destructive operations. Everything on this screen is permanent.'],
 };
@@ -30,9 +31,10 @@ export default function SiteSettings({ tab, onBrandingChange }: { tab: string; o
       </div>
 
       {tab === 'accounts' ? <AccountsPanel />
+        : tab === 'roles' ? <RolesPanel />
         : tab === 'backup' ? <BackupPanel />
           : tab === 'advanced' ? <ResetSitePanel />
-            // One AppSettings instance for its four sections, so unsaved changes survive switching between them.
+            // One AppSettings instance for its sections, so unsaved changes survive switching between them.
             : isAppSettingsTab(tab) ? <AppSettings tab={tab} />
               : <SiteSettingsPanel onBrandingChange={onBrandingChange} />}
     </section>

@@ -25,10 +25,23 @@
   text-decoration: none;
 }
 
-.card h1 {
+.card h1,
+.card h2 {
   margin: 0;
   color: #111827;
   font-size: 1.5rem;
+}
+
+/* Inside a page chosen under Settings → Accounts: part of the content, not a full-screen card. */
+.inline {
+  margin: 24px auto;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 6%);
+}
+
+.panel {
+  box-sizing: border-box;
+  width: min(100%, 760px);
+  margin: 24px auto;
 }
 
 .subtitle {

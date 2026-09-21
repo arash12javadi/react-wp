@@ -1,7 +1,8 @@
 import {
   Component, createContext, useContext, useEffect, useState,
-  type CSSProperties, type ErrorInfo, type FormEvent, type ReactNode,
+  type CSSProperties, type ErrorInfo, type ReactNode,
 } from 'react';
+import LiveSearch from '../LiveSearch';
 import layoutStyles from '../PublicLayout.module.css';
 import homeStyles from '../PublicHome.module.css';
 import ContentRenderer from '../ContentRenderer';
@@ -14,9 +15,9 @@ import { MenuLabel, resolveMenuLinks, useMenuViewer, type DynamicMenuLink, type 
 import { rwp } from '../../lib/rwp';
 import { brandParts, type SiteBranding } from '../../lib/settings';
 import {
-  areaHasType, cleanUrl, exitThemePreview, fillPlaceholders, getBlockDefinition, isThemePreview, socialNetworks,
+  areaHasType, cleanUrl, exitThemePreview, fillPlaceholders, getBlockDefinition, isThemePreview, rowZones, socialNetworks,
   themeStylesheet, useTheme,
-  type ThemeAreaId, type ThemeBlock, type ThemeSettings,
+  type RowZone, type ThemeAreaId, type ThemeBlock, type ThemeSettings,
 } from '../../lib/theme';
 import type { Widget, WidgetType } from '../../lib/widgets';
 import './theme.css';
@@ -285,17 +286,11 @@ function HeaderActions({ block }: { block: ThemeBlock }) {
 }
 
 function SearchBar({ block }: { block: ThemeBlock }) {
-  const [term, setTerm] = useState(() => new URLSearchParams(window.location.search).get('s') || '');
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (term.trim()) window.location.href = `/?s=${encodeURIComponent(term.trim())}`;
-  };
+  // Blocks saved before the button existed have no button_text, and get the button too.
+  const button = typeof block.settings.button_text === 'string' ? block.settings.button_text : 'Go';
   return (
-    <form className="rwpt-search" role="search" onSubmit={submit}>
-      <label className={homeStyles.srOnly} htmlFor={`search-${block.id}`}>Search posts</label>
-      <input id={`search-${block.id}`} type="search" value={term} onChange={(event) => setTerm(event.target.value)}
-        placeholder={text(block.settings.placeholder) || 'Search posts…'} />
-    </form>
+    <LiveSearch className="rwpt-search" inputId={`search-${block.id}`} buttonLabel={button}
+      placeholder={text(block.settings.placeholder) || 'Search posts…'} />
   );
 }
 
@@ -407,6 +402,36 @@ export function AreaBlocks({ area, blocks, renderWidgetArea }: { area: ThemeArea
   );
 }
 
+type Zone = RowZone;
+
+/**
+ * A header or footer row. With any block aligned explicitly, the blocks go into three zones, so
+ * "Right" really means the right edge. It used to push the block with margin-left: auto, and two
+ * right-aligned blocks (a menu and a search box) split the free space between them, leaving the
+ * second one stranded in the middle or next to the logo. Rows where every block uses the theme
+ * default render exactly as before.
+ */
+function RowBlocks({ area, blocks }: { area: ThemeAreaId; blocks: ThemeBlock[] }) {
+  const visible = blocks.filter((block) => block.style.visible);
+  if (!visible.some((block) => block.style.align !== 'inherit')) return <AreaBlocks area={area} blocks={blocks} />;
+  const zones = rowZones(visible, document.documentElement.dir === 'rtl');
+  const inZone = (zone: Zone) => visible.filter((_block, index) => zones[index] === zone);
+  const center = inZone('center');
+  return (
+    <div className={`rwpt-zones${center.length ? ' rwpt-zones-centered' : ''}`}>
+      {(['start', 'center', 'end'] as const).map((zone) => {
+        const items = zone === 'center' ? center : inZone(zone);
+        if (!items.length && zone === 'center') return null;
+        return (
+          <div key={zone} className={`rwpt-zone rwpt-zone-${zone}`}>
+            <AreaBlocks area={area} blocks={items} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // Areas ------------------------------------------------------------------------------------------
 
 const widthClass = (layout: string | undefined, base: string, wide: string, full: string) =>
@@ -422,7 +447,7 @@ export function ThemeHeader({ layoutWidth }: { layoutWidth?: string }) {
   ].filter(Boolean).join(' ');
   return (
     <header className={classes}>
-      <AreaBlocks area="header" blocks={header.containers[0]?.blocks || []} />
+      <RowBlocks area="header" blocks={header.containers[0]?.blocks || []} />
       <UnplacedAreaCode area="header" />
     </header>
   );
@@ -458,7 +483,7 @@ export function ThemeFooter({ layoutWidth }: { layoutWidth?: string }) {
         </div>
       )}
       <footer className={`${footerClass} rwp-footer rwpt-row`}>
-        <AreaBlocks area="footer" blocks={bottom} />
+        <RowBlocks area="footer" blocks={bottom} />
         <UnplacedAreaCode area="footer" />
       </footer>
     </>

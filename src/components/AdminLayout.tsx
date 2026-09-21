@@ -16,6 +16,8 @@ interface AdminLayoutProps {
   branding: SiteBranding;
   role: UserRole;
   onViewSite: () => void;
+  /** While a page or post is open in the editor: its public address ("View page" / "Preview page"). */
+  viewPage?: { href: string; label: string };
   /** Shown as a count bubble next to Dashboard, like WordPress's update counts. */
   dashboardBadge?: number;
 }
@@ -31,6 +33,7 @@ export default function AdminLayout({
   branding,
   role,
   onViewSite,
+  viewPage,
   dashboardBadge = 0,
 }: AdminLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -51,6 +54,7 @@ export default function AdminLayout({
         role={role}
         view="admin"
         onViewSite={onViewSite}
+        viewPage={viewPage}
         onProfile={() => onNavigate('profile')}
         onLogout={onLogout}
       />

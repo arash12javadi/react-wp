@@ -104,7 +104,7 @@ Plugins behave like WordPress: a plugin is installed while its folder exists. A 
 
 ### Per-plugin database tables
 
-A fresh install creates the **core CMS only** — thirteen tables in [`supabase/schema.sql`](./supabase/schema.sql). It no longer creates the twenty `shop_*` tables, the four page-builder tables or `code_snippets`, because a site that never enables those plugins has no use for them.
+A fresh install creates the **core CMS only** — fifteen tables in [`supabase/schema.sql`](./supabase/schema.sql). It no longer creates the twenty `shop_*` tables, the four page-builder tables or `code_snippets`, because a site that never enables those plugins has no use for them.
 
 Instead, a plugin that needs tables ships its own `schema.sql` and declares it in `manifest.json`:
 
@@ -166,7 +166,7 @@ This migration moves user roles out of `auth.users.raw_user_meta_data` and into 
 
 The migration backfills existing users from their old metadata, so the administrator created at install time keeps that role. New sign-ups always start as `subscriber`.
 
-Roles and their capabilities are defined in [`src/lib/roles.ts`](./src/lib/roles.ts) and mirrored into SQL by `public.user_has_cap()`. **If you change one, change the other** — the TypeScript map drives the admin UI, and the SQL function drives what the database actually permits.
+Roles and their capabilities are defined in [`src/lib/roles.ts`](./src/lib/roles.ts) and mirrored into SQL by `public.user_has_cap()`. **If you change one, change the other** — the TypeScript map drives the admin UI, and the SQL function drives what the database actually permits. Capabilities added under Settings → Roles are data (two tables both sides read), not code, so they need no such change.
 
 Administrators can view every user and change roles under the **Users** admin section. Creating and deleting accounts is not exposed in the admin UI, because the Supabase admin API requires a secret key that must never reach the browser; use the Supabase dashboard for that.
 
@@ -221,7 +221,7 @@ curl -s http://localhost:3000/your-slug | grep -i "og:title"
 
 Run [`supabase/migrations/20260914_auth_defaults.sql`](./supabase/migrations/20260914_auth_defaults.sql) for an existing installation.
 
-The site has public `/login` and `/register` pages with email and password, plus optional Google and Facebook buttons. `/admin` no longer carries its own sign-in form; visiting it while signed out redirects to `/login?redirect=/admin`.
+The site has public `/login` and `/register` pages with email and password, plus optional Google and Facebook buttons. `/admin` no longer carries its own sign-in form; visiting it while signed out redirects to `/login?redirect=/admin`. Which page those addresses show is chosen under Settings → Accounts (see [Account pages, redirects and capability grants](#account-pages-redirects-and-capability-grants)).
 
 **New accounts get the role set under Settings → Accounts, and that is applied by the database, not the browser.** The `handle_new_user` trigger reads `default_user_role` from `options` and ignores whatever the sign-up request contains, because that payload is entirely attacker-controlled — accepting a role from it would restore the escalation path that [`public.profiles`](#roles-capabilities-and-the-media-library) exists to close. The trigger also refuses `administrator` and `super_admin` outright, so the dropdown offers Subscriber, Contributor, Author and Editor only. Promote accounts beyond that by hand under **Users**.
 
@@ -236,7 +236,7 @@ await supabase.auth.signUp({ email: 't@example.com', password: 'secret123', opti
 The toggles under Settings → Accounts only decide whether the buttons appear. Supabase performs the OAuth handshake, so each provider must also be set up there or the button returns an error:
 
 1. **Authentication → Providers** — enable Google or Facebook and paste in the client ID and secret from Google Cloud Console or Meta for Developers.
-2. **Authentication → URL Configuration** — add `http://localhost:3000/login` and your production equivalent to **Redirect URLs**. A missing entry here is the usual cause of a redirect mismatch on the first attempt.
+2. **Authentication → URL Configuration** — add `http://localhost:3000/login` and your production equivalent to **Redirect URLs** (and `/lost-password`, for password reset emails). A missing entry here is the usual cause of a redirect mismatch on the first attempt.
 
 #### The `[rwp_login]` shortcode
 
@@ -351,18 +351,16 @@ Everything happens in the browser and in Supabase, so this also works on Vercel.
 
 ### App Settings
 
-Run [`supabase/migrations/20260920_app_settings.sql`](./supabase/migrations/20260920_app_settings.sql) for an existing installation. Safe to re-run. These settings are now under **Settings → General, Uploads, SEO and Roles** in the admin (administrators only); one Save button covers all four.
+Run [`supabase/migrations/20260920_app_settings.sql`](./supabase/migrations/20260920_app_settings.sql) for an existing installation. Safe to re-run. These settings are now under **Settings → General, Uploads, SEO and Languages** in the admin (administrators only); one Save button covers all of them. Roles moved to its own screen in 20261001 (see [Account pages, redirects and capability grants](#account-pages-redirects-and-capability-grants)).
 
 - **General** — show or hide titles on pages and posts and publish dates on posts (a hidden title stays in the page for screen readers); limit Authors, Contributors and Subscribers to media they uploaded; excerpt length in words or characters (moved here from Settings → Site); and the target of the `#profile_url#` menu placeholder.
 - **Uploads** — maximum file size, minimum and maximum image dimensions, a disk quota per role, and per-person overrides by email address.
 - **SEO** — a Meta keywords field in the page editor, and header and body tracking scripts such as Google Tag Manager.
-- **Roles** — let Subscribers upload or write draft posts, and let Contributors upload or publish.
 
 Menus gained two things under **Menus → Edit** on each item: labels and URLs can use `#profile_name#`, `#profile_avatar#`, `#profile_both#` and `#profile_url#`, and each item chooses what logged-out visitors see (the item, nothing, or another label and link). Items with a profile placeholder are hidden from logged-out visitors unless given a replacement. This is presentation only: the menu is public data, so hiding a link does not protect the page behind it.
 
-**What the database enforces, and what it cannot.** The settings are one JSON document in the `rwp_app_settings` option. Three parts of it are enforced in SQL, not just in the UI:
+**What the database enforces, and what it cannot.** The settings are one JSON document in the `rwp_app_settings` option. Two parts of it are enforced in SQL, not just in the UI (role grants used to be a third; they are now their own tables):
 
-- **Role grants** are read by `public.user_has_cap()`, so every existing policy honours them. Only those four grants exist; nothing above Author can be handed out from settings.
 - **Media scoping** goes through `rwp_can_manage_media()`, used by both the media update/delete policies and `/api/media-delete`. That endpoint used to delete whatever provider file id the browser sent, so any uploader could delete anyone's file; it now takes only the library row id and reads the provider id from the database.
 - **Upload rules and quotas** are checked by the `media_enforce_upload_rules` trigger when a file is added to the library. It also sets `uploaded_by` to the caller, so an upload cannot be attributed to someone else to dodge their quota, and it stops size and owner fields being edited afterwards.
 
@@ -373,6 +371,36 @@ The upload limit is not a hard limit on what reaches Cloudinary. Files go straig
 **Tracking scripts** are written into the HTML by `server/seo.mjs` on `npm start`, so tag managers load before the app. The server also adds `<meta name="rwp-scripts">`, and the browser only injects the scripts itself when that marker is missing (Vercel, `npm run dev`), so pageviews are not counted twice. Neither path runs on `/admin` or `/builder/…`. Pasted code passes through [`src/lib/scriptSanitizer.js`](./src/lib/scriptSanitizer.js), which keeps only `<script>`, `<noscript>` with an iframe or image, `<link>` and `<meta>`, with https URLs, and lists anything it removed before you save. That keeps a snippet from breaking the page markup; it cannot make the JavaScript itself safe, which is why only administrators can save it.
 
 Deliberately not included from the legacy theme: a toggle for like/follow buttons (React-WP has no like or follow system), a switch for thumbnail generation (Cloudinary and ImageKit generate sizes on request, so nothing is generated at upload), and a comments scoping toggle (comments were already limited: only Editors and above can open the Comments screen, and everyone else sees only approved comments and their own).
+
+### Account pages, redirects and capability grants
+
+Run [`supabase/migrations/20261001_account_pages_capabilities.sql`](./supabase/migrations/20261001_account_pages_capabilities.sql) for an existing installation. Safe to re-run. New installations get it from `supabase/schema.sql`.
+
+**Default content no longer needs the Page Builder.** The first time an administrator opens the admin, core ([`src/lib/defaultContent.ts`](./src/lib/defaultContent.ts)) asks `rwp_install_default_content` for two groups, each installed once and recorded in the `rwp_default_content` option so deleted pages are not recreated:
+
+- **site** — Home (made the front page), Blog (the posts page), Sample Page, Sample Post (in an "Uncategorized" category), Privacy Policy and Cookie Policy. **Only on a site with no pages yet**, so upgrading never replaces a front page someone chose. With the Page Builder active, its `rwp_default_content` filter gives Home and Blog a layout and adds the site templates, in the same install.
+- **account** — Log In, Register, Lost Password, User Profile and Dashboard, each a normal page holding one shortcode and marked noindex. Existing sites get these too.
+
+**Account pages have fixed addresses.** `/login`, `/register`, `/lost-password`, `/profile` and `/dashboard` always show whatever Settings chose for them: the built-in screen, any page, a plugin screen (the shop offers My Account), or any other address. So every `Log in` link keeps working whichever page that is, and an unpublished or deleted choice falls back to the built-in screen instead of locking anyone out. The sign-in pages are chosen under **Settings → Accounts**, profile and dashboard under **Settings → Site** next to the home page; each picker has View, Edit page and Create page buttons.
+
+With the Page Builder active, these pages are built from its **Account Form** widget (Site category), whose screen, heading, texts, button, redirect and links are edited in the builder; pages that still hold only their default shortcode are converted the next time an administrator opens the admin, and pages you have edited are left alone. The forms are also shortcodes, so a classic page can put anything around them: `[rwp_login_form]`, `[rwp_register_form]`, `[rwp_lost_password_form]` (title, subtitle, button, redirect, links, social attributes), `[rwp_user_profile]` and `[rwp_user_dashboard]`. Plugins add dashboard cards with `addSlotContent('user_dashboard', …)` and `DashboardCard`, and offer addresses in the pickers with the `rwp_account_page_choices` filter.
+
+**Password reset now works end to end.** The email links to `/lost-password`, where the same form asks for the new password. Add `https://your-site/lost-password` to Supabase's Redirect URLs; without it Supabase sends people to the Site URL, and the app forwards them to `/lost-password` itself.
+
+**Settings → Accounts** also sets where signing in leads when the link did not ask for a page (default: the admin for roles that can use it, the user dashboard for everyone else), where signing out leads (default: stay on the page), and who sees the public admin toolbar (everyone signed in, only admin users, or nobody). `?redirect=` only accepts paths on this site, so it cannot be used as an open redirect.
+
+**Settings → Roles adds any capability to a role, or to one person.** The four fixed toggles that lived in `rwp_app_settings` are gone; the migration copies any that were on into `rwp_role_capabilities` and removes the old key. Grants for one person live in `rwp_user_capabilities`, readable only by that person and by `list_users`. `public.user_has_cap()` reads both tables, so a grant is enforced by every policy, and [`src/lib/capabilityGrants.ts`](./src/lib/capabilityGrants.ts) loads them before the first render so the admin matches. **Only an Administrator or Super Admin can write either table**, checked on `profiles.role` rather than a capability: otherwise granting `manage_options` to a role would let that role grant itself the rest. Changing roles and Reset Website check `profiles.role` too, so no grant reaches them. Granting `manage_options`, `activate_plugins`, `edit_users` or `promote_users` asks first, because they amount to running the site.
+
+**Pages & Posts has a Category column.** Choosing a category for a page turns it into a post in that category (the blog and archives only list posts), "Page" turns a post back, and the same choice is a bulk action for the selected rows. A filter above the table shows one category.
+
+### Header zones, live search and per-page header/footer
+
+Run [`supabase/migrations/20261002_page_header_footer.sql`](./supabase/migrations/20261002_page_header_footer.sql) for an existing installation (only needed to hide a header or footer). Safe to re-run.
+
+- **Header and footer blocks go Left, Center or Right.** Choose the side under *Place on* in the Theme Editor's Block library before adding a block, or later under the block's *Side of the row*. Blocks on one side keep their canvas order; *Auto* stays next to the block before it. Right used to be `margin-left: auto`, so two right-aligned blocks split the free space and a search box could end up stuck by the logo.
+- **The header and its menus are always on top** of page content (z-index 9800), so dropdowns are never hidden behind a section, slider or card. Full-screen overlays (off-canvas, search overlay, lightbox) still cover it.
+- **Search boxes** (Theme Editor Search block, Search widget, archives, the builder's WordPress Search widget) have a Go button and list matching pages and posts as visitors type; arrow keys and Enter pick a result.
+- **Pages & Posts → Show on this page**: header & navigation, sidebar, footer and comments, all on for new content.
 
 ### Dashboard, admin navigation, logo and profile details
 

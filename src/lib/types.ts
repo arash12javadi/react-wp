@@ -34,6 +34,9 @@ export interface Page {
   display_layout: 'grid' | 'list' | string;
   layout: 'boxed' | 'wide' | 'full' | string;
   show_sidebar: boolean;
+  /** Missing before the 20261002 migration, which means shown. */
+  show_header?: boolean;
+  show_footer?: boolean;
   seo_title?: string | null;
   meta_description?: string | null;
   focus_keyword?: string | null;

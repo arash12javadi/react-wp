@@ -3,6 +3,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type CSSPrope
 import { createPortal } from 'react-dom';
 import ContentRenderer from '../../../../src/components/ContentRenderer';
 import { getSupabaseClient } from '../../../../src/lib/db';
+import { signOutAndRedirect } from '../../../../src/lib/account';
 import { alignControl, colorControl, headingTags, linkControl, opts, typographyControl } from '../../lib/controls';
 import { resolveText } from '../../lib/dynamic';
 import { Icon } from '../../lib/icons';
@@ -758,7 +759,7 @@ export const loginForm: WidgetDefinition = {
       return (
         <p className="rwpb-login-status">
           You are logged in as <strong>{session.email}</strong>.{' '}
-          <button type="button" className="rwpb-link-button" onClick={async () => { await getSupabaseClient().auth.signOut(); window.location.reload(); }}>Log out</button>
+          <button type="button" className="rwpb-link-button" onClick={() => void signOutAndRedirect()}>Log out</button>
         </p>
       );
     }
@@ -781,7 +782,7 @@ export const loginForm: WidgetDefinition = {
         </div>
         {(Boolean(settings.showLostPassword) || (Boolean(settings.showRegister) && canRegister)) && (
           <p className="rwpb-login-links">
-            {Boolean(settings.showLostPassword) && <a href={`/login?redirect=${encodeURIComponent(here)}`}>Lost your password?</a>}
+            {Boolean(settings.showLostPassword) && <a href={`/lost-password?redirect=${encodeURIComponent(here)}`}>Lost your password?</a>}
             {Boolean(settings.showRegister) && canRegister && <a href={`/register?redirect=${encodeURIComponent(here)}`}>Register</a>}
           </p>
         )}

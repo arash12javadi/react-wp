@@ -2,15 +2,24 @@
   "format": "rwp-update-feed",
   "version": 1,
   "app": {
-    "version": "1.0.0",
-    "released": "2026-09-15",
+    "version": "1.1.0",
+    "released": "2026-10-01",
     "notes": [
-      "New Dashboard with a setup checklist, update checks and a guide for new users.",
-      "WordPress-style submenus in the admin sidebar; App Settings merged into Settings; Products moved under Shop.",
-      "Optional header logo, and optional extra profile details.",
-      "Fixed: the browser tab showed \"react-wp\" instead of the site title."
+      "New sites start with a Home page set as the front page, a Blog, a Sample Post, and Log In, Register, Lost Password, User Profile and Dashboard pages.",
+      "Settings → Site chooses the user profile and dashboard pages; Settings → Accounts chooses the sign-in pages, where signing in and out leads, and who sees the admin toolbar.",
+      "Settings → Roles adds any capability to a role or to one person.",
+      "Pages & Posts has a Category column: giving a page a category makes it a post.",
+      "Fixed: password reset links now let people choose a new password.",
+      "Fixed: shortcodes in page content (sign-in forms, [rwp_login] …) could render nothing.",
+      "Page Builder: new Account Form widget; the account pages are built with it.",
+      "Search boxes list results as you type and have a Go button.",
+      "Theme Editor: choose Left, Center or Right when adding a header or footer block; Right now really sticks to the right.",
+      "Pages can hide the header and footer; the header and its menus always stay above page content."
     ],
-    "migrations": ["supabase/migrations/20260921_profile_details.sql"],
+    "migrations": [
+      "supabase/migrations/20261001_account_pages_capabilities.sql",
+      "supabase/migrations/20261002_page_header_footer.sql"
+    ],
     "download_url": "https://github.com/arash12javadi/react-wp/archive/refs/heads/main.zip",
     "changelog_url": "https://github.com/arash12javadi/react-wp/commits/main"
   },

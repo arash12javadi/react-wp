@@ -5,13 +5,15 @@ import {
   type HeaderDisplay, type SiteBranding, type SiteSettings,
 } from '../../lib/settings';
 import { rwp } from '../../lib/rwp';
+import { accountPages } from '../../lib/account';
 import MediaManager from '../MediaManager';
+import AccountPagePicker, { type PickerPage } from './AccountPagePicker';
 import styles from '../SiteSettings.module.css';
 
-interface PageOption {
-  id: number;
-  title: string;
-}
+type PageOption = PickerPage;
+
+// Chosen here like the home page; the sign-in pages are under Settings → Accounts.
+const memberPages = accountPages.filter((page) => page.key === 'profile' || page.key === 'dashboard');
 
 export default function SiteSettingsPanel({ onBrandingChange }: { onBrandingChange?: (branding: SiteBranding) => void }) {
   const [form, setForm] = useState<SiteSettings>(defaultSettings);
@@ -28,7 +30,7 @@ export default function SiteSettingsPanel({ onBrandingChange }: { onBrandingChan
     try {
       const [settings, { data }] = await Promise.all([
         loadSettings(),
-        getSupabaseClient().from('pages').select('id,title').eq('is_post', false).order('title'),
+        getSupabaseClient().from('pages').select('id,title,status').eq('is_post', false).or('status.is.null,status.neq.trash').order('title'),
       ]);
       setForm(settings);
       setPages((data || []) as PageOption[]);
@@ -75,6 +77,10 @@ export default function SiteSettingsPanel({ onBrandingChange }: { onBrandingChan
         posts_page_id: form.posts_page_id,
         posts_per_page: form.posts_per_page,
         home_layout: form.home_layout,
+        profile_page_id: form.profile_page_id,
+        profile_page_url: form.profile_page_url.trim(),
+        dashboard_page_id: form.dashboard_page_id,
+        dashboard_page_url: form.dashboard_page_url.trim(),
       });
       setForm(saved);
       applySiteIcon(saved.site_icon);
@@ -205,6 +211,20 @@ export default function SiteSettingsPanel({ onBrandingChange }: { onBrandingChan
               : 'Only needed when the front page is a static page.'}
           </span>
         </label>
+
+        {memberPages.map((definition) => (
+          <AccountPagePicker
+            key={definition.key}
+            definition={definition}
+            pageId={form[`${definition.key}_page_id` as 'profile_page_id']}
+            url={form[`${definition.key}_page_url` as 'profile_page_url']}
+            pages={pages}
+            onChange={(pageId, url) => setForm((current) => ({
+              ...current, [`${definition.key}_page_id`]: pageId, [`${definition.key}_page_url`]: url,
+            }))}
+            onPageCreated={(page) => setPages((current) => [...current, page].sort((a, b) => a.title.localeCompare(b.title)))}
+          />
+        ))}
 
         <label>
           Home and archive width

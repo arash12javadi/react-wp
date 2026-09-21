@@ -427,6 +427,156 @@
   white-space: nowrap;
 }
 
+.badgeMuted {
+  border-radius: 999px;
+  padding: 1px 7px;
+  color: #475569;
+  background: #f1f5f9;
+  font-size: 0.66rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Header and footer rows: Left / Center / Right lanes, laid out like the live row. */
+.lanes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.lane {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  min-height: 92px;
+  padding: 8px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  transition: border-color 120ms, background 120ms;
+}
+
+.laneActive {
+  border-style: solid;
+  border-color: #6366f1;
+  background: #eef2ff;
+}
+
+.laneLabel {
+  color: #475569;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.lane_center .laneLabel { text-align: center; }
+.lane_end .laneLabel { text-align: right; }
+
+.laneBlocks {
+  display: grid;
+  gap: 6px;
+}
+
+.laneEmpty {
+  margin: 0;
+  padding: 14px 8px;
+  color: #94a3b8;
+  font-size: 0.74rem;
+  text-align: center;
+}
+
+/* In a lane a card is narrow: title on top, then the side picker, then the actions. */
+.laneBlocks .blockCard {
+  flex-wrap: wrap;
+}
+
+.laneBlocks .blockCardMain {
+  flex: 1 1 100%;
+}
+
+.sidePicker {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 3px;
+  padding: 5px 6px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.sidePicker button {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+  padding: 3px 4px;
+  color: #475569;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.sidePicker button:hover {
+  border-color: #6366f1;
+  color: #4f46e5;
+}
+
+.sidePicker .sideActive {
+  border-color: #4f46e5;
+  color: #fff;
+  background: #4f46e5;
+}
+
+.laneBlocks .blockCardActions {
+  border-top: 1px solid #f1f5f9;
+  border-left: 0;
+}
+
+@media (max-width: 1100px) {
+  .lanes { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Block library: which side of the row new header/footer blocks go to. */
+.placeOn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 10px;
+}
+
+.placeOn > span {
+  margin-inline-end: 4px;
+  color: #475569;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.placeOn button {
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  padding: 3px 9px;
+  color: #334155;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.placeOn button:hover {
+  border-color: #4f46e5;
+}
+
+.placeOn .placeOnActive {
+  border-color: #4f46e5;
+  color: #fff;
+  background: #4f46e5;
+}
+
 .blockCardActions {
   display: flex;
   align-items: center;

@@ -18,11 +18,16 @@ import AuthPage from './components/AuthPage';
 import PublicChrome from './components/PublicChrome';
 import PublicArchive, { archiveFromPath } from './components/PublicArchive';
 import { preloadSiteTemplates } from './components/SiteTemplate';
-import { canAccessAdmin } from './lib/roles';
+import { canAccessAdmin, canManageSettings } from './lib/roles';
+import { loadCapabilityGrants } from './lib/capabilityGrants';
+import { installDefaultContent } from './lib/defaultContent';
+import { pageViewLink } from './lib/contentBulk';
+import { accountPageByPath, accountTarget, signOutAndRedirect, type AccountPageKey } from './lib/account';
 import { useCurrentProfile } from './lib/profiles';
 import { describeDbError, resolveSupabaseConfig, tryGetSupabaseClient } from './lib/db';
 import {
-  applyDocumentTitle, applySiteIcon, brandingFrom, defaultSettings, loadSettings, placeholderTitle, type SiteBranding,
+  applyDocumentTitle, applySiteIcon, brandingFrom, defaultSettings, loadSettings, placeholderTitle,
+  type SiteBranding, type SiteSettings as SiteSettingsValue,
 } from './lib/settings';
 import { defaultAppSettings, injectTrackingScripts, loadAppSettings } from './lib/appSettings';
 import { buildAdminNavigation, resolveAdminLocation } from './lib/adminNavigation';
@@ -38,6 +43,29 @@ import styles from './Dashboard.module.css';
 const Dashboard = lazy(() => import('./components/dashboard/Dashboard'));
 // Its own chunk too: dnd-kit and the code editor never reach the public bundle.
 const ThemeEditor = lazy(() => import('./components/theme/ThemeEditor'));
+// The built-in profile and dashboard, for /profile and /dashboard while no page is chosen for them.
+const UserProfile = lazy(() => import('./components/auth/UserAccount').then((module) => ({ default: module.UserProfile })));
+const UserDashboard = lazy(() => import('./components/auth/UserAccount').then((module) => ({ default: module.UserDashboard })));
+
+// Read at import, before the Supabase client consumes and clears the hash of a reset-password link.
+const arrivedFromRecoveryLink = /type=recovery/.test(window.location.hash);
+
+const authModes: Partial<Record<AccountPageKey, 'login' | 'register' | 'lost_password'>> = {
+  login: 'login', register: 'register', lost_password: 'lost_password',
+};
+
+/** What an account path shows when no page is chosen for it, or the chosen one is gone. */
+function BuiltinAccountScreen({ page }: { page: AccountPageKey }) {
+  const mode = authModes[page];
+  if (mode) return <AuthPage mode={mode} />;
+  return (
+    <PublicChrome>
+      <main style={{ padding: '0 16px' }}>
+        <Suspense fallback={<p role="status">Loading…</p>}>{page === 'profile' ? <UserProfile /> : <UserDashboard />}</Suspense>
+      </main>
+    </PublicChrome>
+  );
+}
 
 const readPluginIds = (value: string | null | undefined): string[] => {
   if (!value) return [];
@@ -93,6 +121,7 @@ const checkDatabaseWithRetry = async (): Promise<SupabaseClient | null> => {
 };
 
 interface PublicRouting {
+  settings: SiteSettingsValue;
   homePageId: string;
   postsPageSlug: string;
   /** A posts page designed with the Page Builder shows its own layout instead of the theme's post index. */
@@ -113,8 +142,10 @@ const loadPublicRouting = async (supabase: SupabaseClient): Promise<PublicRoutin
     postsPageSlug = data?.slug || '';
     postsPageHasLayout = Boolean(data && rwp.getContentRenderer(data as import('./lib/types').Page));
   }
-  return { homePageId: settings.home_page_id, postsPageSlug, postsPageHasLayout };
+  return { settings, homePageId: settings.home_page_id, postsPageSlug, postsPageHasLayout };
 };
+
+const emptyRouting: PublicRouting ={ settings: defaultSettings, homePageId: '', postsPageSlug: '', postsPageHasLayout: false };
 
 function SimpleSection({ title, description }: { title: string; description: string }) {
   return (
@@ -241,7 +272,10 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
 
   // Once the signed-in role is known; plugins use it for one-time setup such as default pages.
   useEffect(() => {
-    if (ready && canAccessAdmin(role)) rwp.actions.do('rwp_admin_ready', role);
+    if (!ready || !canAccessAdmin(role)) return;
+    // Home (the front page), Sample Post, the account pages…, once per site (src/lib/defaultContent.ts).
+    if (canManageSettings(role)) void installDefaultContent();
+    rwp.actions.do('rwp_admin_ready', role);
   }, [ready, role]);
 
   if (connectionError) {
@@ -271,11 +305,8 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
     window.scrollTo(0, 0);
   };
 
-  const logout = async () => {
-    await supabase.auth.signOut();
-    rwp.actions.do('rwp_user_logged_out');
-    setSession(null);
-  };
+  // Settings → Accounts decides where this goes; staying put means the sign-in screen for /admin.
+  const logout = () => signOutAndRedirect();
 
   let content;
   const pluginPage = rwp.getAdminPages().find((page) => page.id === section);
@@ -337,6 +368,7 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
       role={role}
       dashboardBadge={status.badge}
       onViewSite={() => { window.location.href = '/'; }}
+      viewPage={editingPage ? pageViewLink(editingPage) : undefined}
     >
       {/* Plugins add banners, notices or extra tools around any admin screen. */}
       <HookSlot name="admin_before_content" args={{ section, subsection, role }} />
@@ -348,7 +380,7 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
 
 export default function App() {
   const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
-  const [routing, setRouting] = useState<PublicRouting>({ homePageId: '', postsPageSlug: '', postsPageHasLayout: false });
+  const [routing, setRouting] = useState<PublicRouting>(emptyRouting);
   const [checkingDatabase, setCheckingDatabase] = useState(true);
   const isAdminRoute = window.location.pathname.replace(/\/+$/, '') === '/admin';
   const reconfigure = () => {
@@ -368,13 +400,27 @@ export default function App() {
       }
       try {
         await initializePlugins(client);
-        // Before anything renders: capability checks depend on the role grants in here.
         const appSettings = await loadAppSettings().catch(() => defaultAppSettings);
-        // Also before the first render. The locale decides dir="rtl" on <html> and the body
-        // font, so resolving it later would paint an RTL site left-to-right first. Plugins are
-        // already initialised above, so their dictionaries and i18n filters are in place.
-        await initI18n(isAdminRoute ? 'admin' : 'public').catch(() => undefined);
+        await Promise.all([
+          // Also before the first render. The locale decides dir="rtl" on <html> and the body
+          // font, so resolving it later would paint an RTL site left-to-right first. Plugins are
+          // already initialised above, so their dictionaries and i18n filters are in place.
+          initI18n(isAdminRoute ? 'admin' : 'public').catch(() => undefined),
+          // Before anything renders too: capability checks depend on the grants added under
+          // Settings → Roles, for the role and for the signed-in person.
+          loadCapabilityGrants().catch(() => undefined),
+        ]);
         const path = window.location.pathname;
+        // A reset-password link whose address is missing from Supabase's Redirect URLs lands on
+        // the Site URL instead; the session it carries still belongs on the new-password screen.
+        if (arrivedFromRecoveryLink && path !== '/lost-password') {
+          // The client has stored the session by now (getSession above waited for it), so the
+          // new-password form finds it. No early return: that would flash the Setup Wizard.
+          window.location.replace('/lost-password');
+        }
+        client.auth.onAuthStateChange((event) => {
+          if (event === 'PASSWORD_RECOVERY' && window.location.pathname !== '/lost-password') window.location.href = '/lost-password';
+        });
         if (!isAdminRoute && !path.startsWith('/builder/')) {
           injectTrackingScripts(appSettings.seo);
           // Loaded before the first render so the saved layout does not flash in after the default one.
@@ -383,7 +429,7 @@ export default function App() {
           // Before the first render too, so a designed header or 404 never flashes in after the default.
           await preloadSiteTemplates();
         }
-        const publicRouting = await loadPublicRouting(client).catch(() => ({ homePageId: '', postsPageSlug: '', postsPageHasLayout: false }));
+        const publicRouting = await loadPublicRouting(client).catch(() => emptyRouting);
         if (mounted) {
           setRouting(publicRouting);
           setSupabase(client);
@@ -413,8 +459,22 @@ export default function App() {
 
   const pathname = window.location.pathname.replace(/^\/+|\/+$/g, '');
 
-  if (pathname === 'login') return <AuthPage mode="login" />;
-  if (pathname === 'register') return <AuthPage mode="register" />;
+  // /login, /register, /lost-password, /profile and /dashboard show what Settings chose for them,
+  // so every link on the site keeps working whichever page (or plugin screen) that is.
+  const accountPage = accountPageByPath(pathname);
+  if (accountPage) {
+    const target = accountTarget(routing.settings, accountPage.key);
+    if (target.kind === 'url') {
+      // Keeps ?redirect= so the other screen can still send people back.
+      const query = window.location.search;
+      window.location.replace(query && !target.url.includes('?') ? `${target.url}${query}` : target.url);
+      return <div className={styles.loadingScreen} role="status">Redirecting…</div>;
+    }
+    const builtin = <BuiltinAccountScreen page={accountPage.key} />;
+    return target.kind === 'page'
+      ? <PublicContent pageId={target.pageId} onReconfigure={reconfigure} fallback={builtin} />
+      : builtin;
+  }
 
   // Plugin routes are checked before page slugs, so a plugin owns its paths outright.
   const pluginRoute = pathname ? rwp.matchRoute(`/${pathname}`) : null;

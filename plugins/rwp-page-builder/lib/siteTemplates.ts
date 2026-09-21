@@ -8,6 +8,7 @@
  * No editor code here: the public site imports this.
  */
 import { describeDbError, getSupabaseClient } from '../../../src/lib/db';
+import { accountIdKey, accountPages, type AccountPageKey } from '../../../src/lib/account';
 import { newId } from './tree';
 import { getWidget } from './registry';
 import type { BuilderDocument, BuilderPage, ColumnNode, SectionNode, WidgetNode } from './types';
@@ -213,9 +214,27 @@ const templateItem = (type: string) => {
   return { key: type, title: slot.label, template_type: type, builder_data: starterDocument(slot) };
 };
 
-const policyText = (name: string) => `<p><strong>This is a starting point, not legal advice.</strong> Replace it with a ${name} that fits your site and the laws that apply to you.</p>`;
+interface DefaultItem { key: string; builder_data?: unknown; [field: string]: unknown }
 
-function siteDefaults() {
+/**
+ * The layout an account page starts with: one Account Form widget for its screen. The page keeps
+ * its shortcode as classic content too, so it still works with the Page Builder switched off.
+ */
+export const accountPageLayout = (key: AccountPageKey): BuilderDocument => buildDocument([
+  { columns: [[{ type: 'account-form', settings: { screen: key } }]] },
+]);
+
+/**
+ * Core creates the default pages (src/lib/defaultContent.ts); this filter on
+ * `rwp_default_content` gives Home, Blog and the account pages a layout, and adds the site templates.
+ */
+export function withSiteDefaults(items: DefaultItem[], group: unknown): DefaultItem[] {
+  if (group === 'account') {
+    return items.map((item) => (accountPages.some((page) => page.key === item.key)
+      ? { ...item, builder_data: accountPageLayout(item.key as AccountPageKey) }
+      : item));
+  }
+  if (group !== 'site') return items;
   const home = buildDocument([
     { columns: [[
       { type: 'heading', settings: { title: '{{site.title}}', tag: 'h1' } },
@@ -231,18 +250,9 @@ function siteDefaults() {
     { type: 'heading', settings: { title: 'Blog', tag: 'h1' } },
     { type: 'archive-posts', settings: { limit: 9, pagination: 'numbers' } },
   ]] }]);
+  const layouts: Record<string, unknown> = { home, blog };
   return [
-    { key: 'home', title: 'Home', slug: 'home', builder_data: home },
-    { key: 'blog', title: 'Blog', slug: 'blog', builder_data: blog },
-    { key: 'sample', title: 'Sample Page', slug: 'sample-page', content: '<p>This is an example page. Unlike a post, a page stays in one place and shows up in your site navigation. Edit it under Pages &amp; Posts, or delete it.</p>' },
-    {
-      key: 'privacy', title: 'Privacy Policy', slug: 'privacy-policy',
-      content: `${policyText('privacy policy')}<h2>Who we are</h2><p>Our website address is this site.</p><h2>What personal data we collect</h2><p>When you register, comment or place an order we store the details you enter. Our server logs may record your IP address.</p><h2>Cookies</h2><p>See our <a href="/cookie-policy">Cookie Policy</a>.</p><h2>Your rights</h2><p>You can ask to receive or delete the personal data we hold about you.</p>`,
-    },
-    {
-      key: 'cookie', title: 'Cookie Policy', slug: 'cookie-policy',
-      content: `${policyText('cookie policy')}<h2>What cookies are</h2><p>Cookies and similar browser storage keep you signed in and remember your cart.</p><h2>How we use them</h2><p>We use them to run the site. If you add analytics or advertising scripts, list them here.</p>`,
-    },
+    ...items.map((item) => (layouts[item.key] ? { ...item, builder_data: layouts[item.key] } : item)),
     ...['header', 'footer', 'page', 'single_post', '404', 'search', 'archive'].map(templateItem),
   ];
 }
@@ -252,11 +262,11 @@ const shopDefaults = () => ['shop', 'product', 'product_category', 'cart', 'chec
 const installing = new Set<string>();
 
 /**
- * Creates the default pages and templates once per group (recorded in the database, so deleted
- * defaults are not recreated). Everything is published straight away. Failures are logged, never
- * shown: they must not get in the way of the dashboard.
+ * Creates the default shop templates once (recorded in the database, so deleted defaults are not
+ * recreated). Everything is published straight away. Failures are logged, never shown: they must
+ * not get in the way of the dashboard.
  */
-export async function installDefaultContent(group: 'site' | 'shop'): Promise<void> {
+export async function installDefaultContent(group: 'shop'): Promise<void> {
   if (installing.has(group)) return;
   installing.add(group);
   try {
@@ -267,7 +277,7 @@ export async function installDefaultContent(group: 'site' | 'shop'): Promise<voi
       // An unreadable marker is rewritten by the install below.
     }
     const { error } = await getSupabaseClient().rpc('rwp_install_default_content', {
-      p_group: group, p_items: group === 'site' ? siteDefaults() : shopDefaults(), p_reading: group === 'site',
+      p_group: group, p_items: shopDefaults(), p_reading: false,
     });
     if (error) {
       console.warn(templateError(error, `Installing the default ${group} pages`).message);
@@ -276,6 +286,43 @@ export async function installDefaultContent(group: 'site' | 'shop'): Promise<voi
   } catch (error) {
     console.warn(`Installing the default ${group} pages failed: ${describeDbError(error)}`);
     installing.delete(group);
+  }
+}
+
+let upgrading = false;
+
+/**
+ * Account pages created before this layout existed (or while the builder was off) hold only
+ * `<p>[shortcode]</p>`. Those, and only those, get the Account Form layout, so they open in the
+ * builder ready to design. A page someone has edited is left alone. Logged, never shown.
+ */
+export async function upgradeAccountPages(): Promise<void> {
+  if (upgrading) return;
+  upgrading = true;
+  try {
+    const supabase = getSupabaseClient();
+    const { data: options } = await supabase.from('options').select('option_name,option_value')
+      .in('option_name', accountPages.map((page) => accountIdKey(page.key)));
+    const chosen = new Map(((options || []) as Array<{ option_name: string; option_value: string }>)
+      .filter((row) => /^\d+$/.test(row.option_value))
+      .map((row) => [Number(row.option_value), accountPages.find((page) => accountIdKey(page.key) === row.option_name)!]));
+    if (!chosen.size) return;
+    const { data: rows, error } = await supabase.from('pages').select('id,content,is_builder_enabled,builder_data')
+      .in('id', [...chosen.keys()]).eq('is_builder_enabled', false);
+    if (error) throw error;
+    for (const row of (rows || []) as Array<{ id: number; content: string | null; builder_data: unknown }>) {
+      const page = chosen.get(row.id);
+      const untouched = page && (row.content || '').replace(/\s+/g, '') === `<p>${page.shortcode}</p>`.replace(/\s+/g, '') && !row.builder_data;
+      if (!page || !untouched) continue;
+      const { error: updateError } = await supabase.from('pages')
+        .update({ builder_data: accountPageLayout(page.key), is_builder_enabled: true, updated_at: new Date().toISOString() })
+        .eq('id', row.id).eq('is_builder_enabled', false).select('id');
+      if (updateError) console.warn(`Giving the ${page.title} page its Page Builder layout failed: ${describeDbError(updateError)}`);
+    }
+  } catch (error) {
+    console.warn(`Giving the account pages their Page Builder layout failed: ${describeDbError(error)}`);
+  } finally {
+    upgrading = false;
   }
 }
 

@@ -1,0 +1,151 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.heading {
+  margin: 0 0 4px;
+  color: #111827;
+  font-size: 1rem;
+}
+
+.role {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.role > strong {
+  color: #334155;
+  font-size: 0.88rem;
+}
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 10px;
+  color: #475569;
+  background: #f1f5f9;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.granted {
+  color: #3730a3;
+  background: #e0e7ff;
+}
+
+.granted button {
+  border: 0;
+  padding: 0 2px;
+  color: inherit;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.granted button:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
+.addRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Two classes, so it beats the settings form's full-width `.form select`. */
+.editor .addRow select {
+  flex: 1;
+  width: auto;
+  min-width: 220px;
+}
+
+.users {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 2fr;
+  gap: 16px;
+}
+
+@media (max-width: 720px) {
+  .users {
+    grid-template-columns: 1fr;
+  }
+}
+
+.userList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.userList ul {
+  max-height: 360px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  list-style: none;
+}
+
+.userList li + li {
+  border-top: 1px solid #f1f5f9;
+}
+
+.userList li button {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  border: 0;
+  padding: 9px 12px;
+  color: #1e293b;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  text-align: start;
+}
+
+.userList li button:hover {
+  background: #f8fafc;
+}
+
+.userList li button.selected {
+  background: #eef2ff;
+  box-shadow: inset 3px 0 0 #4f46e5;
+}
+
+.userList small {
+  color: #64748b;
+  font-size: 0.74rem;
+  overflow-wrap: anywhere;
+}
+
+.userDetail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}

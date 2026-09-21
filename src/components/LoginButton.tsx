@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getSupabaseClient } from '../lib/db';
+import { loginHref, signOutAndRedirect } from '../lib/account';
 import styles from './LoginButton.module.css';
 
 interface LoginButtonProps {
@@ -40,15 +41,12 @@ export default function LoginButton({ label, variant = 'button' }: LoginButtonPr
       <button
         type="button"
         className={className}
-        onClick={async () => {
-          await getSupabaseClient().auth.signOut();
-          window.location.reload();
-        }}
+        onClick={() => void signOutAndRedirect()}
       >
         {label || 'Log out'}
       </button>
     );
   }
 
-  return <a className={className} href={`/login?redirect=${encodeURIComponent(window.location.pathname)}`}>{label || 'Log in'}</a>;
+  return <a className={className} href={loginHref()}>{label || 'Log in'}</a>;
 }

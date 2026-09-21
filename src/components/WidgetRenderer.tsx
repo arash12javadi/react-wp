@@ -3,6 +3,7 @@ import { getSupabaseClient } from '../lib/db';
 import type { Category } from '../lib/types';
 import type { Widget } from '../lib/widgets';
 import LoginButton from './LoginButton';
+import LiveSearch from './LiveSearch';
 import ContentRenderer from './ContentRenderer';
 import styles from './PublicHome.module.css';
 import { useAppSettings } from '../lib/appSettings';
@@ -11,19 +12,7 @@ import { MenuLabel, resolveMenuLinks, useMenuViewer, type DynamicMenuLink } from
 type MenuItemRow = DynamicMenuLink;
 
 function SearchWidget({ widget }: { widget: Widget }) {
-  const [term, setTerm] = useState('');
-  return (
-    <form onSubmit={(event) => { event.preventDefault(); if (term.trim()) window.location.href = `/?s=${encodeURIComponent(term.trim())}`; }}>
-      <label className={styles.srOnly} htmlFor={`search-${widget.id}`}>Search posts</label>
-      <input
-        id={`search-${widget.id}`}
-        type="search"
-        value={term}
-        onChange={(event) => setTerm(event.target.value)}
-        placeholder={String(widget.settings.placeholder || 'Search posts…')}
-      />
-    </form>
-  );
+  return <LiveSearch inputId={`search-${widget.id}`} placeholder={String(widget.settings.placeholder || 'Search posts…')} />;
 }
 
 function RecentPostsWidget({ widget }: { widget: Widget }) {

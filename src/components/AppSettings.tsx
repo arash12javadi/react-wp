@@ -5,7 +5,7 @@ import {
   type AppSettings as AppSettingsValue, type DiskUsageRow, type QuotaOverride,
 } from '../lib/appSettings';
 import { menuPlaceholders } from '../lib/dynamicMenu';
-import { capabilityGrantDefinitions, capabilityLabels, roleLabels, type CapabilityGrants } from '../lib/roles';
+import { roleLabels } from '../lib/roles';
 import { defaultSettings, loadSettings, saveSettings, type SiteSettings } from '../lib/settings';
 import { formatBytes } from '../lib/uploads';
 import { sanitizeTrackingHtml } from '../lib/scriptSanitizer.js';
@@ -18,17 +18,11 @@ import { rwp } from '../lib/rwp';
 import settingsStyles from './SiteSettings.module.css';
 import styles from './AppSettings.module.css';
 
-type Tab = 'general' | 'uploads' | 'seo' | 'roles' | 'languages';
+// Roles has its own screen (settings/RolesPanel): its changes save one at a time, not with this form.
+type Tab = 'general' | 'uploads' | 'seo' | 'languages';
 
 export const isAppSettingsTab = (value: string): value is Tab =>
-  ['general', 'uploads', 'seo', 'roles', 'languages'].includes(value);
-
-const grantHelp: Record<keyof CapabilityGrants, string> = {
-  subscriber_upload_files: 'Subscribers can open the admin Media screen and upload, within their disk quota.',
-  subscriber_edit_posts: 'Subscribers can write posts and delete their own. Drafts only: publishing still needs an Author or above.',
-  contributor_upload_files: 'Contributors can upload media, within their disk quota.',
-  contributor_publish_posts: 'Contributors can publish their own posts without review.',
-};
+  ['general', 'uploads', 'seo', 'languages'].includes(value);
 
 type Setter = <S extends keyof AppSettingsValue, K extends keyof AppSettingsValue[S]>(
   section: S, key: K, value: AppSettingsValue[S][K],
@@ -292,7 +286,7 @@ function LanguageFields({ value, onChange }: { value: I18nSettings; onChange: (n
   );
 }
 
-/** Settings → General, Uploads, SEO, Roles and Languages. The sidebar picks the section. */
+/** Settings → General, Uploads, SEO and Languages. The sidebar picks the section. */
 export default function AppSettings({ tab }: { tab: Tab }) {
   const [form, setForm] = useState<AppSettingsValue>(defaultAppSettings);
   const [excerpt, setExcerpt] = useState<Pick<SiteSettings, 'excerpt_length' | 'excerpt_unit'>>({
@@ -361,7 +355,7 @@ export default function AppSettings({ tab }: { tab: Tab }) {
       setForm(saved);
       setLanguages(savedLanguages);
       rwp.actions.do('rwp_settings_saved', { app_settings: saved, i18n: savedLanguages, ...excerpt });
-      setFeedback('Settings saved (General, Uploads, SEO, Roles and Languages are saved together).');
+      setFeedback('Settings saved (General, Uploads, SEO and Languages are saved together).');
     } catch (saveError: unknown) {
       setError(saveError instanceof Error ? saveError.message : 'Could not save settings.');
     } finally {
@@ -445,8 +439,9 @@ export default function AppSettings({ tab }: { tab: Tab }) {
                       placeholder={defaultAppSettings.menu.profile_url} />
                     <span className={settingsStyles.help}>
                       Where <code>#profile_url#</code> in a menu item links to. <code>{'{id}'}</code> is replaced with the
-                      visitor&rsquo;s user id, e.g. <code>/author/{'{id}'}</code> for a plugin route. The admin Profile screen
-                      only opens for roles that can use the admin; point Subscribers at a public page instead.
+                      visitor&rsquo;s user id, e.g. <code>/author/{'{id}'}</code> for a plugin route. The default,{' '}
+                      <code>/profile</code>, shows the User profile page chosen under <strong>Settings → Site</strong> and
+                      works for every role.
                     </span>
                   </label>
                   <ul className={settingsStyles.steps}>
@@ -543,28 +538,6 @@ export default function AppSettings({ tab }: { tab: Tab }) {
             )}
 
             {tab === 'languages' && <LanguageFields value={languages} onChange={setLanguages} />}
-
-            {tab === 'roles' && (
-              <fieldset className={settingsStyles.fieldset}>
-                <legend>Extra capabilities</legend>
-                {(Object.keys(capabilityGrantDefinitions) as Array<keyof CapabilityGrants>).map((key) => {
-                  const { role, capabilities } = capabilityGrantDefinitions[key];
-                  return (
-                    <div key={key} className={styles.grant}>
-                      <Toggle checked={form.roles[key]} onChange={(value) => set('roles', key, value)}>
-                        {roleLabels[role]}: {capabilities.map((capability) => capabilityLabels[capability]).join(' and ')}
-                      </Toggle>
-                      <span className={settingsStyles.help}>{grantHelp[key]}</span>
-                    </div>
-                  );
-                })}
-                <span className={settingsStyles.help}>
-                  Enforced by the database (<code>user_has_cap</code>), not just this screen. Only these four can be
-                  granted here; anything beyond them means changing the person&rsquo;s role under <strong>Users</strong>.
-                  People who are signed in pick up a change the next time they load a page.
-                </span>
-              </fieldset>
-            )}
 
             <div className={settingsStyles.actions}>
               <button type="submit" className={settingsStyles.saveButton} disabled={saving}>

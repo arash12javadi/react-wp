@@ -5,7 +5,8 @@ import {
 } from '@dnd-kit/core';
 import {
   areaHasType, blocksForArea, containerDirection, containerLabel, createBlock, findBlock, getBlockDefinition, maxFooterColumns,
-  type AnyAreaLayout, type BlockDefinition, type BlockField, type ThemeAreaId, type ThemeBlock, type ThemeContainer, type ThemeLayout,
+  rowZones,
+  type AnyAreaLayout, type RowZone, type BlockDefinition, type BlockField, type ThemeAreaId, type ThemeBlock, type ThemeContainer, type ThemeLayout,
 } from '../../lib/theme';
 import { validateMarkup } from '../../lib/themeValidation';
 import CodeEditor from './CodeEditor';
@@ -18,14 +19,36 @@ export interface MenuOption {
 }
 
 type DragData = { kind: 'new'; blockType: BlockDefinition['type']; label: string } | { kind: 'block'; blockId: string; label: string };
-type DropData = { kind: 'container'; containerId: string } | { kind: 'block'; containerId: string; blockId: string };
-interface DropHint { containerId: string; index: number }
+type DropData =
+  | { kind: 'container'; containerId: string }
+  | { kind: 'block'; containerId: string; blockId: string }
+  /** One of a row's Left / Center / Right lanes. */
+  | { kind: 'lane'; containerId: string; zone: RowZone };
+/** `zone` is set for drops into a row: the block then goes to that side. */
+interface DropHint { containerId: string; index: number; zone?: RowZone }
 
-// A block's own droppable sits inside its container's, so prefer blocks: they carry the position.
+const laneLabels: Record<RowZone, string> = { start: 'Left', center: 'Center', end: 'Right' };
+const zoneAlign: Record<RowZone, ThemeBlock['style']['align']> = { start: 'left', center: 'center', end: 'right' };
+const rowLanes: RowZone[] = ['start', 'center', 'end'];
+
+// Blocks sit inside lanes, which sit inside containers: prefer the most specific, since blocks
+// carry the exact position and lanes the side.
 const collisionDetection: CollisionDetection = (args) => {
   const hits = pointerWithin(args);
   const onBlocks = hits.filter((hit) => String(hit.id).startsWith('drop-block:'));
-  return onBlocks.length ? onBlocks : hits;
+  if (onBlocks.length) return onBlocks;
+  const onLanes = hits.filter((hit) => String(hit.id).startsWith('lane:'));
+  return onLanes.length ? onLanes : hits;
+};
+
+/** Where a block dropped at the end of a lane goes in its container, so it lands after that side's blocks. */
+const laneEndIndex = (blocks: ThemeBlock[], zones: RowZone[], zone: RowZone) => {
+  const order = rowLanes.indexOf(zone);
+  let index = zone === 'end' ? blocks.length : 0;
+  zones.forEach((item, position) => {
+    if (rowLanes.indexOf(item) <= order) index = Math.max(index, position + 1);
+  });
+  return index;
 };
 
 const stripTags = (html: string) => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -48,6 +71,14 @@ const summarize = (block: ThemeBlock, menus: MenuOption[]): string => {
 };
 
 // Library ----------------------------------------------------------------------------------------
+
+const placeOptions: Array<[ThemeBlock['style']['align'], string, string]> = [
+  ['inherit', 'Auto', 'Next to the block before it'],
+  ['left', '⇤ Left', 'The left side of the row'],
+  ['center', 'Center', 'The middle of the row'],
+  ['right', 'Right ⇥', 'The right side of the row'],
+];
+
 
 function LibraryItem({ definition, disabled, onAdd }: { definition: BlockDefinition; disabled: boolean; onAdd: () => void }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -73,13 +104,16 @@ function LibraryItem({ definition, disabled, onAdd }: { definition: BlockDefinit
 // Canvas -----------------------------------------------------------------------------------------
 
 function BlockCard({
-  block, area, containerId, index, count, selected, menus, onSelect, dispatch,
+  block, area, containerId, prevIndex, nextIndex, zone, selected, menus, onSelect, dispatch,
 }: {
   block: ThemeBlock;
   area: ThemeAreaId;
   containerId: string;
-  index: number;
-  count: number;
+  /** Container positions of the neighbours it swaps with (in a row: within its own lane), or null at an end. */
+  prevIndex: number | null;
+  nextIndex: number | null;
+  /** The lane it sits in, for blocks in a header or footer row. */
+  zone?: RowZone;
   selected: boolean;
   menus: MenuOption[];
   onSelect: (id: string) => void;
@@ -88,9 +122,10 @@ function BlockCard({
   const definition = getBlockDefinition(block.type)!;
   const draggable = useDraggable({ id: `block:${block.id}`, data: { kind: 'block', blockId: block.id, label: definition.label } as DragData });
   const droppable = useDroppable({ id: `drop-block:${block.id}`, data: { kind: 'block', containerId, blockId: block.id } as DropData });
-  const row = containerDirection(area, containerId) === 'row';
+  const row = Boolean(zone);
   const summary = summarize(block, menus);
-  const move = (offset: number) => dispatch({ type: 'moveBlock', area, blockId: block.id, containerId, index: offset < 0 ? index - 1 : index + 2 });
+  const move = (target: number) => dispatch({ type: 'moveBlock', area, blockId: block.id, containerId, index: target });
+  const setSide = (side: RowZone) => dispatch({ type: 'updateBlock', area, blockId: block.id, style: { align: zoneAlign[side] } });
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'Enter' || event.key === ' ') {
@@ -122,15 +157,40 @@ function BlockCard({
           {summary && <small>{summary}</small>}
         </span>
         <span className={styles.badges}>
+          {row && block.style.align === 'inherit' && <span className={styles.badgeMuted} title="Follows the block before it. Pick a side to pin it.">Auto</span>}
           {!block.style.visible && <span className={styles.badge}>Hidden</span>}
           {block.style.hide_mobile && <span className={styles.badge}>Not on mobile</span>}
           {block.style.hide_desktop && <span className={styles.badge}>Mobile only</span>}
         </span>
       </div>
+      {zone && (
+        <div className={styles.sidePicker} role="group" aria-label={`Side of the row for ${definition.label}`}>
+          {rowLanes.map((side) => (
+            <button key={side} type="button" aria-pressed={zone === side} title={`Put it on the ${laneLabels[side].toLowerCase()}`}
+              className={zone === side ? styles.sideActive : undefined} onClick={() => setSide(side)}>
+              {side === 'start' ? '⇤ Left' : side === 'center' ? '◎ Center' : 'Right ⇥'}
+            </button>
+          ))}
+        </div>
+      )}
       <div className={styles.blockCardActions}>
-        <button type="button" onClick={() => move(-1)} disabled={index === 0} aria-label={`Move ${definition.label} ${row ? 'left' : 'up'}`}>{row ? '←' : '↑'}</button>
-        <button type="button" onClick={() => move(1)} disabled={index === count - 1} aria-label={`Move ${definition.label} ${row ? 'right' : 'down'}`}>{row ? '→' : '↓'}</button>
+        <button type="button" onClick={() => prevIndex !== null && move(prevIndex)} disabled={prevIndex === null} aria-label={`Move ${definition.label} ${row ? 'left' : 'up'}`}>{row ? '←' : '↑'}</button>
+        <button type="button" onClick={() => nextIndex !== null && move(nextIndex + 1)} disabled={nextIndex === null} aria-label={`Move ${definition.label} ${row ? 'right' : 'down'}`}>{row ? '→' : '↓'}</button>
         <button type="button" onClick={() => dispatch({ type: 'removeBlock', area, blockId: block.id })} aria-label={`Delete ${definition.label}`} className={styles.dangerIcon}>✕</button>
+      </div>
+    </div>
+  );
+}
+
+/** One side of a header or footer row. Dropping a block here puts it on this side. */
+function Lane({ containerId, zone, active, empty, children }: { containerId: string; zone: RowZone; active: boolean; empty: boolean; children: ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id: `lane:${containerId}:${zone}`, data: { kind: 'lane', containerId, zone } as DropData });
+  return (
+    <div ref={setNodeRef} className={`${styles.lane} ${styles[`lane_${zone}`]} ${isOver || active ? styles.laneActive : ''}`}>
+      <span className={styles.laneLabel}>{zone === 'start' ? '⇤ ' : ''}{laneLabels[zone]}{zone === 'end' ? ' ⇥' : ''}</span>
+      <div className={styles.laneBlocks}>
+        {children}
+        {empty && <p className={styles.laneEmpty}>Drop a block here to put it on the {laneLabels[zone].toLowerCase()}</p>}
       </div>
     </div>
   );
@@ -139,17 +199,25 @@ function BlockCard({
 function DropContainer({ area, container, hint, children, empty }: { area: ThemeAreaId; container: ThemeContainer; hint: DropHint | null; children: ReactNode; empty: boolean }) {
   const { setNodeRef, isOver } = useDroppable({ id: `container:${container.id}`, data: { kind: 'container', containerId: container.id } as DropData });
   const row = containerDirection(area, container.id) === 'row';
+  const allAuto = row && container.blocks.length > 1 && container.blocks.every((block) => block.style.align === 'inherit');
   return (
     <section
       ref={setNodeRef}
       className={`${styles.dropContainer} ${isOver || hint?.containerId === container.id ? styles.dropContainerActive : ''}`}
       aria-label={containerLabel(area, container.id)}
     >
-      <h4 className={styles.containerLabel}>{containerLabel(area, container.id)}{row ? ' · left to right' : ''}</h4>
-      <div className={row ? styles.blockRow : styles.blockColumn}>
-        {children}
-        {empty && <p className={styles.emptyDrop}>Drop blocks here, or use Add in the block library.</p>}
-      </div>
+      <h4 className={styles.containerLabel}>{containerLabel(area, container.id)}{row ? ' · drag blocks between the sides, or use ⇤ ◎ ⇥ on a block' : ''}</h4>
+      {allAuto && (
+        <p className={styles.help}>
+          Every block here is on Auto, so the site spreads them across the row. Pick a side for any block to pin it there.
+        </p>
+      )}
+      {row ? children : (
+        <div className={styles.blockColumn}>
+          {children}
+          {empty && <p className={styles.emptyDrop}>Drop blocks here, or use Add in the block library.</p>}
+        </div>
+      )}
     </section>
   );
 }
@@ -282,14 +350,19 @@ function Inspector({ area, layout, blockId, menus, dispatch, onClose }: {
 
       <fieldset className={styles.fieldset}>
         <legend>Style</legend>
-        <label htmlFor={`align-${block.id}`}>Alignment
+        <label htmlFor={`align-${block.id}`}>{containerDirection(area, containerId) === 'row' ? 'Side of the row' : 'Alignment'}
           <select id={`align-${block.id}`} value={block.style.align} onChange={(event) => setStyle({ align: event.target.value as ThemeBlock['style']['align'] })}>
-            <option value="inherit">Theme default</option>
+            <option value="inherit">{containerDirection(area, containerId) === 'row' ? 'Auto (next to the block before it)' : 'Theme default'}</option>
             <option value="left">Left</option>
             <option value="center">Center</option>
             <option value="right">Right</option>
           </select>
-          {containerDirection(area, containerId) === 'row' && <span className={styles.help}>In a row, Right pushes this block and everything after it to the right.</span>}
+          {containerDirection(area, containerId) === 'row' && (
+            <span className={styles.help}>
+              Blocks on the same side keep their order from the canvas. Right sticks to the right edge however many blocks
+              are there; Auto stays beside the block before it.
+            </span>
+          )}
         </label>
         <label htmlFor={`padding-${block.id}`}>Padding (px)
           <input id={`padding-${block.id}`} type="number" min={0} max={200} value={block.style.padding}
@@ -435,6 +508,8 @@ export default function VisualBuilder({ area, layout, menus, dispatch }: {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragData | null>(null);
   const [hint, setHint] = useState<DropHint | null>(null);
+  const [placeAlign, setPlaceAlign] = useState<ThemeBlock['style']['align']>('inherit');
+  const rowArea = area === 'header' || area === 'footer';
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const library = useMemo(() => blocksForArea(area), [area]);
   const selected = selectedId && findBlock(layout, selectedId) ? selectedId : null;
@@ -444,14 +519,17 @@ export default function VisualBuilder({ area, layout, menus, dispatch }: {
     if (!event.over || !data) return null;
     const container = layout.containers.find((item) => item.id === data.containerId);
     if (!container) return null;
+    const row = containerDirection(area, container.id) === 'row';
+    const zones = row ? rowZones(container.blocks) : [];
     if (data.kind === 'container') return { containerId: container.id, index: container.blocks.length };
+    if (data.kind === 'lane') return { containerId: container.id, index: laneEndIndex(container.blocks, zones, data.zone), zone: data.zone };
     const index = container.blocks.findIndex((item) => item.id === data.blockId);
     const start = event.activatorEvent as PointerEvent;
-    const x = (start?.clientX ?? 0) + event.delta.x;
     const y = (start?.clientY ?? 0) + event.delta.y;
     const { rect } = event.over;
-    const before = containerDirection(area, container.id) === 'row' ? x < rect.left + rect.width / 2 : y < rect.top + rect.height / 2;
-    return { containerId: container.id, index: before ? index : index + 1 };
+    // Blocks are stacked top to bottom in columns and inside each lane of a row alike.
+    const before = y < rect.top + rect.height / 2;
+    return { containerId: container.id, index: before ? index : index + 1, ...(row ? { zone: zones[index] } : {}) };
   };
 
   const onDragStart = (event: DragStartEvent) => {
@@ -461,7 +539,7 @@ export default function VisualBuilder({ area, layout, menus, dispatch }: {
 
   const onDragMove = (event: DragMoveEvent) => {
     const next = dropTarget(event);
-    if (next?.containerId !== hint?.containerId || next?.index !== hint?.index) setHint(next);
+    if (next?.containerId !== hint?.containerId || next?.index !== hint?.index || next?.zone !== hint?.zone) setHint(next);
   };
 
   const onDragEnd = (event: DragEndEvent) => {
@@ -470,20 +548,30 @@ export default function VisualBuilder({ area, layout, menus, dispatch }: {
     setDrag(null);
     setHint(null);
     if (!item || !target) return;
+    // A drop into a row's lane pins the block to that side.
+    const align = target.zone ? zoneAlign[target.zone] : undefined;
     if (item.kind === 'new') {
-      const block = createBlock(item.blockType);
-      dispatch({ type: 'addBlock', area, block, containerId: target.containerId, index: target.index });
+      const block = placed(item.blockType);
+      const withSide = align ? { ...block, style: { ...block.style, align } } : block;
+      dispatch({ type: 'addBlock', area, block: withSide, containerId: target.containerId, index: target.index });
       setSelectedId(block.id);
       return;
     }
     const found = findBlock(layout, item.blockId);
-    // Dropping a block just before or after itself changes nothing, so it must not add an undo step.
-    if (!found || (found.containerId === target.containerId && (target.index === found.index || target.index === found.index + 1))) return;
-    dispatch({ type: 'moveBlock', area, blockId: item.blockId, containerId: target.containerId, index: target.index });
+    // Dropping a block just before or after itself on the same side changes nothing, so it must not add an undo step.
+    const samePlace = found && found.containerId === target.containerId && (target.index === found.index || target.index === found.index + 1);
+    if (!found || (samePlace && (!align || found.block.style.align === align))) return;
+    dispatch({ type: 'moveBlock', area, blockId: item.blockId, containerId: target.containerId, index: target.index, align });
+  };
+
+  /** New blocks from the library get this side; Auto follows the block before them. */
+  const placed = (type: BlockDefinition['type']) => {
+    const block = createBlock(type);
+    return placeAlign === 'inherit' ? block : { ...block, style: { ...block.style, align: placeAlign } };
   };
 
   const addFromLibrary = (definition: BlockDefinition) => {
-    const block = createBlock(definition.type);
+    const block = placed(definition.type);
     const anchor = selected ? findBlock(layout, selected) : null;
     const container = anchor
       ? layout.containers.find((item) => item.id === anchor.containerId)!
@@ -492,16 +580,50 @@ export default function VisualBuilder({ area, layout, menus, dispatch }: {
     setSelectedId(block.id);
   };
 
+  const card = (block: ThemeBlock, containerId: string, prevIndex: number | null, nextIndex: number | null, zone?: RowZone) => (
+    <BlockCard block={block} area={area} containerId={containerId} prevIndex={prevIndex} nextIndex={nextIndex} zone={zone}
+      selected={selected === block.id} menus={menus} onSelect={setSelectedId} dispatch={dispatch} />
+  );
+  const dropLine = <div className={styles.dropLine} aria-hidden="true" />;
+
+  /** A header or footer row: its blocks in Left / Center / Right lanes, as the site lays them out. */
+  const renderRow = (container: ThemeContainer) => {
+    const zones = rowZones(container.blocks);
+    return (
+      <div className={styles.lanes}>
+        {rowLanes.map((zone) => {
+          const members = container.blocks.map((block, index) => ({ block, index })).filter(({ index }) => zones[index] === zone);
+          const hintHere = Boolean(drag && hint?.containerId === container.id && hint.zone === zone);
+          return (
+            <Lane key={zone} containerId={container.id} zone={zone} active={hintHere} empty={members.length === 0}>
+              {members.map(({ block, index }, position) => (
+                <Fragment key={block.id}>
+                  {hintHere && hint?.index === index && dropLine}
+                  {card(block, container.id, position > 0 ? members[position - 1].index : null,
+                    position < members.length - 1 ? members[position + 1].index : null, zone)}
+                </Fragment>
+              ))}
+              {hintHere && !members.some(({ index }) => index === hint?.index) && dropLine}
+            </Lane>
+          );
+        })}
+      </div>
+    );
+  };
+
   const renderContainer = (container: ThemeContainer) => (
     <DropContainer key={container.id} area={area} container={container} hint={drag ? hint : null} empty={container.blocks.length === 0}>
-      {container.blocks.map((block, index) => (
-        <Fragment key={block.id}>
-          {drag && hint?.containerId === container.id && hint.index === index && <div className={styles.dropLine} aria-hidden="true" />}
-          <BlockCard block={block} area={area} containerId={container.id} index={index} count={container.blocks.length}
-            selected={selected === block.id} menus={menus} onSelect={setSelectedId} dispatch={dispatch} />
-        </Fragment>
-      ))}
-      {drag && hint?.containerId === container.id && hint.index === container.blocks.length && <div className={styles.dropLine} aria-hidden="true" />}
+      {containerDirection(area, container.id) === 'row' ? renderRow(container) : (
+        <>
+          {container.blocks.map((block, index) => (
+            <Fragment key={block.id}>
+              {drag && hint?.containerId === container.id && hint.index === index && dropLine}
+              {card(block, container.id, index > 0 ? index - 1 : null, index < container.blocks.length - 1 ? index + 1 : null)}
+            </Fragment>
+          ))}
+          {drag && hint?.containerId === container.id && hint.index === container.blocks.length && dropLine}
+        </>
+      )}
     </DropContainer>
   );
 
@@ -515,6 +637,17 @@ export default function VisualBuilder({ area, layout, menus, dispatch }: {
         <aside className={styles.library} aria-labelledby="theme-library-heading">
           <h3 id="theme-library-heading">Block library</h3>
           <p className={styles.help}>Drag a block onto the canvas{selected ? ', or Add to place it after the selected block' : ', or use Add'}.</p>
+          {rowArea && (
+            <div className={styles.placeOn} role="radiogroup" aria-label="Side of the row for new blocks">
+              <span>Place on</span>
+              {placeOptions.map(([value, label, title]) => (
+                <button key={value} type="button" role="radio" aria-checked={placeAlign === value} title={title}
+                  className={placeAlign === value ? styles.placeOnActive : undefined} onClick={() => setPlaceAlign(value)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
           <ul>
             {library.map((definition) => (
               <LibraryItem key={definition.type} definition={definition}

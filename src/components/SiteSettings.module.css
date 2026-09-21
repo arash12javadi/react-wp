@@ -44,6 +44,24 @@
   min-width: 220px;
 }
 
+/* Two classes, so it beats `.form select { width: 100% }` further down. */
+.form .iconRow select {
+  flex: 1;
+  width: auto;
+  min-width: 220px;
+}
+
+/* Settings → Site / Accounts: one account page picker (AccountPagePicker). */
+.accountPage {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.accountPage a.secondaryButton {
+  text-decoration: none;
+}
+
 .iconPreview {
   width: 40px;
   height: 40px;

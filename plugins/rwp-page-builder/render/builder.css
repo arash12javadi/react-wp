@@ -36,7 +36,12 @@
 
 /* Site templates (Page Builder â†’ Templates). A sticky Theme Editor header cannot stick inside the
    template's own wrappers, so the whole header template sticks instead. */
-.rwpb-template-header:has(.rwpt-sticky) { position: sticky; top: 0; z-index: 50; }
+.rwpb-template-header:has(.rwpt-sticky) { position: sticky; top: 0; z-index: 9800; }
+/* Above every page section, so its nav and mega menu dropdowns are never hidden behind content.
+   Same layer as the Theme Editor header (src/components/theme/theme.css), below full-screen overlays. */
+.rwpb-template-header { position: relative; z-index: 9800; }
+.rwpb-template-header .rwpb-nav-sub,
+.rwpb-template-header .rwpb-mega-dropdown { z-index: 9801; }
 .rwpb-template-header .rwp-header.rwpt-sticky { position: static; }
 .rwpb-theme-part { width: 100%; }
 

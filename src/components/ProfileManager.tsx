@@ -4,7 +4,7 @@ import {
   emptyProfileDetails, explainProfileDetailsError, fetchProfile, fetchProfileDetails, saveProfileDetails, socialNetworks,
   type Profile, type ProfileDetails,
 } from '../lib/profiles';
-import { roleLabels, type UserRole } from '../lib/roles';
+import { canUploadMedia, roleLabels, type UserRole } from '../lib/roles';
 import MediaManager from './MediaManager';
 import styles from './ProfileManager.module.css';
 
@@ -17,7 +17,13 @@ const timezones: string[] = (() => {
   }
 })();
 
-export default function ProfileManager({ role }: { role: UserRole }) {
+/**
+ * The admin Profile screen, and the public [rwp_user_profile] shortcode (`embedded`), which is
+ * what the User profile page chosen under Settings → Site shows.
+ */
+export default function ProfileManager({ role, embedded = false }: { role: UserRole; embedded?: boolean }) {
+  // The media library needs upload_files; without it, an avatar is set by its address.
+  const canPickAvatar = canUploadMedia(role);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
@@ -178,9 +184,9 @@ export default function ProfileManager({ role }: { role: UserRole }) {
   if (loading) return <div className={styles.loading} role="status">Loading your profile…</div>;
 
   return (
-    <section className={styles.container} aria-labelledby="profile-heading">
+    <section className={`${styles.container} ${embedded ? 'rwp-user-profile' : ''}`} aria-labelledby="profile-heading">
       <div className={styles.intro}>
-        <h2 id="profile-heading">Profile</h2>
+        <h2 id="profile-heading">{embedded ? 'Your profile' : 'Profile'}</h2>
         <p>Your details as they appear across the site, plus your sign-in credentials.</p>
       </div>
 
@@ -198,9 +204,14 @@ export default function ProfileManager({ role }: { role: UserRole }) {
                   {(displayName || profile?.email || 'A').charAt(0).toUpperCase()}
                 </span>}
             <div className={styles.avatarActions}>
-              <button type="button" className={styles.secondary} onClick={() => setPickingAvatar(true)}>
-                Choose avatar
-              </button>
+              {canPickAvatar ? (
+                <button type="button" className={styles.secondary} onClick={() => setPickingAvatar(true)}>
+                  Choose avatar
+                </button>
+              ) : (
+                <input type="url" value={avatarUrl} aria-label="Avatar image address" placeholder="https://example.com/me.jpg"
+                  onChange={(event) => setAvatarUrl(event.target.value)} />
+              )}
               {avatarUrl && (
                 <button type="button" className={styles.linkButton} onClick={() => setAvatarUrl('')}>Remove</button>
               )}
@@ -322,7 +333,7 @@ export default function ProfileManager({ role }: { role: UserRole }) {
         )}
       </form>
 
-      {pickingAvatar && (
+      {pickingAvatar && canPickAvatar && (
         <MediaManager
           heading="Choose an avatar"
           onClose={() => setPickingAvatar(false)}

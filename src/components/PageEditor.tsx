@@ -6,6 +6,7 @@ import { defaultExcerptLength, makeExcerpt } from '../lib/excerpt';
 import { loadSettings, type SiteSettings } from '../lib/settings';
 import { appSettingsMigration, useAppSettings } from '../lib/appSettings';
 import { rwp } from '../lib/rwp';
+import { pageViewLink } from '../lib/contentBulk';
 import ClassicEditor from './ClassicEditor';
 import SeoPanel from './SeoPanel';
 import styles from './PostEditor.module.css';
@@ -18,11 +19,14 @@ interface PageEditorProps {
   role: UserRole;
 }
 
-const slugify = (value: string) => value.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '-').replace(/^-+|-+$/g, '');
+const pageChromeMigration = 'supabase/migrations/20261002_page_header_footer.sql';
+
+const slugify =(value: string) => value.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '-').replace(/^-+|-+$/g, '');
 const empty = {
   title: '', slug: '', content: '', excerpt: '', status: 'draft', is_post: false,
   category_id: '', featured_category_id: '', posts_limit: 6, display_layout: 'grid',
-  layout: 'boxed', show_sidebar: false, comments_open: true,
+  // All on for new content; each page can switch them off.
+  layout: 'boxed', show_sidebar: true, show_header: true, show_footer: true, comments_open: true,
   seo_title: '', meta_description: '', focus_keyword: '', canonical_url: '', noindex: false,
   og_title: '', og_description: '', og_image: '', twitter_card: 'summary_large_image',
   meta_keywords: '',
@@ -54,6 +58,8 @@ export default function PageEditor({ page, initialIsPost = false, onSaved, onCan
       category_id: page.category_id || '', featured_category_id: page.featured_category_id || '',
       posts_limit: page.posts_limit || 6, display_layout: page.display_layout || 'grid',
       layout: page.layout || 'boxed', show_sidebar: Boolean(page.show_sidebar),
+      // Rows from before the 20261002 migration have no such column: they always showed both.
+      show_header: page.show_header !== false, show_footer: page.show_footer !== false,
       comments_open: page.comments_open !== false,
       seo_title: page.seo_title || '', meta_description: page.meta_description || '',
       focus_keyword: page.focus_keyword || '', canonical_url: page.canonical_url || '',
@@ -87,20 +93,29 @@ export default function PageEditor({ page, initialIsPost = false, onSaved, onCan
       const supabase = getSupabaseClient();
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) throw new Error('You must be signed in to save content.');
-      const { meta_keywords: metaKeywords, ...fields } = form;
+      const { meta_keywords: metaKeywords, show_header: showHeader, show_footer: showFooter, ...fields } = form;
+      // Same idea for the header/footer switches (the 20261002 migration): a database without
+      // the columns only hears about them when one is switched off, and then says what to run.
+      const chromeColumns: { show_header?: boolean; show_footer?: boolean } = {};
+      const hasChromeColumns = Boolean(page && 'show_header' in page);
+      if (hasChromeColumns || !showHeader) chromeColumns.show_header = showHeader;
+      if (hasChromeColumns || !showFooter) chromeColumns.show_footer = showFooter;
       // Sent only when the field is in use, so saving still works on a database that predates
       // the meta_keywords column (the 20260920 migration).
       const keywordColumn: { meta_keywords?: string | null } = {};
       if (appSettings.seo.meta_keywords_enabled || Boolean(page && 'meta_keywords' in page)) {
         keywordColumn.meta_keywords = metaKeywords.trim() || null;
       }
-      const payload = { ...fields, ...keywordColumn, title, slug, content: form.content, excerpt: form.excerpt.trim(), category_id: form.is_post ? form.category_id || null : null, featured_category_id: form.featured_category_id || null, posts_limit: Math.max(1, Number(form.posts_limit) || 6), updated_at: new Date().toISOString(), author_id: userData.user.id };
+      const payload = { ...fields, ...keywordColumn, ...chromeColumns, title, slug, content: form.content, excerpt: form.excerpt.trim(), category_id: form.is_post ? form.category_id || null : null, featured_category_id: form.featured_category_id || null, posts_limit: Math.max(1, Number(form.posts_limit) || 6), updated_at: new Date().toISOString(), author_id: userData.user.id };
       const result = page
         ? await supabase.from('pages').update(payload).eq('id', page.id)
         : await supabase.from('pages').insert(payload);
       if (result.error) {
         if (result.error.message.includes('meta_keywords')) {
           throw new Error(`The pages table has no meta_keywords column yet, but meta keywords are enabled under Settings → SEO. Run ${appSettingsMigration} in the Supabase SQL Editor. (${result.error.message})`);
+        }
+        if (/show_header|show_footer/.test(result.error.message)) {
+          throw new Error(`The pages table has no show_header / show_footer columns yet, so the header and footer cannot be hidden. Run ${pageChromeMigration} in the Supabase SQL Editor, then save again. (${result.error.message})`);
         }
         if (result.error.message.includes('public.pages') || result.error.message.includes('relation "pages"')) {
           throw new Error('The pages table is missing. Run supabase/migrations/20260911_create_pages_categories.sql in the Supabase SQL Editor, then reload this page.');
@@ -121,7 +136,7 @@ export default function PageEditor({ page, initialIsPost = false, onSaved, onCan
   return (
     <section className={styles.container} aria-labelledby="page-editor-heading">
       <button type="button" className={styles.backButton} onClick={onCancel}>← Back to content</button>
-      <div className={styles.pageIntro}><h2 id="page-editor-heading">{page ? 'Edit content' : 'New content'}</h2><p>Create a static page or blog post from the same editor.</p>{page && rwp.getContentActions(page).map((action) => <a key={action.id} className={styles.secondaryButton} href={action.href(page)}>{action.label}</a>)}</div>
+      <div className={styles.pageIntro}><h2 id="page-editor-heading">{page ? 'Edit content' : 'New content'}</h2><p>Create a static page or blog post from the same editor.</p>{page && (() => { const link = pageViewLink(page); return <a className={styles.secondaryButton} href={link.href} target="_blank" rel="noreferrer">👁 {link.label}</a>; })()}{page && rwp.getContentActions(page).map((action) => <a key={action.id} className={styles.secondaryButton} href={action.href(page)}>{action.label}</a>)}</div>
       {error && <div className={styles.error} role="alert">{error}</div>}
       <form className={styles.form} onSubmit={submit}>
         <div className={styles.formMain}>
@@ -145,7 +160,10 @@ export default function PageEditor({ page, initialIsPost = false, onSaved, onCan
         </div>
         <aside className={styles.formAside}>
           <label>Slug<input value={form.slug} required onChange={(e) => { setSlugTouched(true); field('slug', e.target.value); }} /><span className={styles.help}>Lowercase letters, numbers, and hyphens.</span></label>
-          <label><span>Content type</span><span><input type="checkbox" checked={form.is_post} onChange={(e) => field('is_post', e.target.checked)} /> Treat as blog post</span></label>
+          <fieldset className={styles.checkGroup}>
+            <legend>Content type</legend>
+            <label className={styles.checkRow}><input type="checkbox" checked={form.is_post} onChange={(e) => field('is_post', e.target.checked)} /> Treat as blog post</label>
+          </fieldset>
           <label>Category<select value={form.category_id} onChange={(e) => { field('category_id', e.target.value); if (e.target.value) field('is_post', true); }}><option value="">No category</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
           {!form.is_post && <details open><summary>Embed post feed on this page</summary><label>Featured category<select value={form.featured_category_id} onChange={(e) => field('featured_category_id', e.target.value)}><option value="">All categories</option>{categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label><label>Posts limit<input type="number" min="1" value={form.posts_limit} onChange={(e) => field('posts_limit', Number(e.target.value))} /></label><label>Layout<select value={form.display_layout} onChange={(e) => field('display_layout', e.target.value)}><option value="grid">Grid</option><option value="list">List</option></select></label></details>}
           <label>Page width
@@ -156,8 +174,14 @@ export default function PageEditor({ page, initialIsPost = false, onSaved, onCan
             </select>
             <span className={styles.help}>Boxed is the standard reading column. Full width removes the side gutters.</span>
           </label>
-          <label><span>Sidebar</span><span><input type="checkbox" checked={form.show_sidebar} onChange={(e) => field('show_sidebar', e.target.checked)} /> Show sidebar</span></label>
-          <label><span>Discussion</span><span><input type="checkbox" checked={form.comments_open} onChange={(e) => field('comments_open', e.target.checked)} /> Allow comments</span></label>
+          <fieldset className={styles.checkGroup}>
+            <legend>Show on this page</legend>
+            <label className={styles.checkRow}><input type="checkbox" checked={form.show_header} onChange={(e) => field('show_header', e.target.checked)} /> Show header &amp; navigation</label>
+            <label className={styles.checkRow}><input type="checkbox" checked={form.show_sidebar} onChange={(e) => field('show_sidebar', e.target.checked)} /> Show sidebar</label>
+            <label className={styles.checkRow}><input type="checkbox" checked={form.show_footer} onChange={(e) => field('show_footer', e.target.checked)} /> Show footer</label>
+            <label className={styles.checkRow}><input type="checkbox" checked={form.comments_open} onChange={(e) => field('comments_open', e.target.checked)} /> Allow comments</label>
+            <span className={styles.help}>Turn the header and footer off for landing pages. The admin toolbar still shows for signed-in people.</span>
+          </fieldset>
           <label>Status<select value={form.status} disabled={!canPublishPosts(role)} onChange={(e) => field('status', e.target.value)}><option value="draft">Draft</option><option value="published">Published</option></select></label>
           <div className={styles.formActions}><button type="button" className={styles.secondaryButton} onClick={onCancel}>Cancel</button><button className={styles.primaryButton} disabled={loading}>{loading ? 'Saving…' : 'Save content'}</button></div>
         </aside>

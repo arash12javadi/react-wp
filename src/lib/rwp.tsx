@@ -32,7 +32,11 @@ export type RwpFilterName =
   | 'rwp_post_excerpt'
   | 'rwp_post_content'
   | 'rwp_page_content'
-  | 'rwp_admin_navigation';
+  | 'rwp_admin_navigation'
+  /** (items, group) — the default pages a new site gets; see src/lib/defaultContent.ts. */
+  | 'rwp_default_content'
+  /** (choices, key) — extra addresses offered for an account page, e.g. the shop's /my-account. */
+  | 'rwp_account_page_choices';
 
 export interface RwpAdminSubmenuItem {
   id: string;

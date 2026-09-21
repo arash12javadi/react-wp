@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { getSupabaseClient } from '../lib/db';
 import type { Page } from '../lib/types';
 import { fetchProfile } from '../lib/profiles';
@@ -15,6 +15,7 @@ import CommentSection from './CommentSection';
 import SiteTemplate from './SiteTemplate';
 import styles from './PublicHome.module.css';
 import { rwp } from '../lib/rwp';
+import { accountIdKey, accountPages, signOutAndRedirect } from '../lib/account';
 
 const defaultMenuLinks = [
   { label: 'Home', url: '/' },
@@ -25,9 +26,14 @@ interface PublicContentProps {
   slug?: string;
   pageId?: string;
   onReconfigure?: () => void;
+  /**
+   * Shown instead of "Page not found" when the page is missing or unpublished. The account paths
+   * (/login …) use it, so trashing the chosen Log In page never locks anyone out.
+   */
+  fallback?: ReactNode;
 }
 
-export default function PublicContent({ slug, pageId, onReconfigure }: PublicContentProps) {
+export default function PublicContent({ slug, pageId, onReconfigure, fallback }: PublicContentProps) {
   const [page, setPage] = useState<Page | null>(null);
   const [siteTitle, setSiteTitle] = useState('');
   const [settings, setSettings] = useState<SiteSettings>(defaultSettings);
@@ -40,17 +46,20 @@ export default function PublicContent({ slug, pageId, onReconfigure }: PublicCon
   const [loading, setLoading] = useState(true);
   const { settings: appSettings } = useAppSettings();
   const { theme } = useTheme();
+  const previewing = new URLSearchParams(window.location.search).has('preview');
 
   useEffect(() => {
     let mounted = true;
     const load = async () => {
       try {
         const supabase = getSupabaseClient();
-        const query = supabase.from('pages').select('*');
+        const byKey = pageId ? supabase.from('pages').select('*').eq('id', pageId) : supabase.from('pages').select('*').eq('slug', slug);
+        // ?preview=1 (the editor's "Preview page") also loads drafts. Row level security still
+        // decides: only the author and roles with edit_others_posts can read one, so visitors get
+        // "not found" exactly as without it. Trash never shows.
+        const query = previewing ? byKey.neq('status', 'trash') : byKey.eq('status', 'published');
         const [{ data, error: pageError }, { data: menuOption }, { data: sessionData }, settings, app] = await Promise.all([
-          pageId
-            ? query.eq('id', pageId).eq('status', 'published').maybeSingle()
-            : query.eq('slug', slug).eq('status', 'published').maybeSingle(),
+          query.maybeSingle(),
           supabase.from('options').select('option_value').eq('option_name', 'menu_links').maybeSingle(),
           supabase.auth.getSession(),
           loadSettings(),
@@ -98,7 +107,7 @@ export default function PublicContent({ slug, pageId, onReconfigure }: PublicCon
     };
     void load();
     return () => { mounted = false; };
-  }, [pageId, slug]);
+  }, [pageId, previewing, slug]);
 
   const canEdit = canManageAllPosts(role) || Boolean(page?.author_id && page.author_id === userId);
   const containerClass = page?.layout === 'full'
@@ -108,7 +117,9 @@ export default function PublicContent({ slug, pageId, onReconfigure }: PublicCon
   // A plugin (e.g. the page builder) can take over how a page's body is rendered.
   const renderer = page ? rwp.getContentRenderer(page) : null;
 
-  const comments = page && settings.comments_enabled ? (
+  // Log In, Profile, Dashboard…: a comment section under a sign-in form is only noise.
+  const isAccountPage = Boolean(page && accountPages.some((item) => settings[accountIdKey(item.key)] === String(page.id)));
+  const comments = page && settings.comments_enabled && !isAccountPage ? (
     <CommentSection
       pageId={page.id}
       commentsOpen={page.comments_open !== false}
@@ -142,6 +153,8 @@ export default function PublicContent({ slug, pageId, onReconfigure }: PublicCon
     } />
   ));
 
+  if (fallback && !loading && !page) return <>{fallback}</>;
+
   return (
     <PublicLayout
       siteTitle={siteTitle}
@@ -152,11 +165,17 @@ export default function PublicContent({ slug, pageId, onReconfigure }: PublicCon
       layout={page?.layout}
       showAuthLinks={settings.show_auth_links}
       canRegister={settings.users_can_register}
+      toolbar={settings.admin_toolbar}
+      showHeader={page?.show_header !== false}
+      showFooter={page?.show_footer !== false}
       editLink={page && canEdit ? (renderer?.editHref?.(page) || `/admin?section=content&edit=${page.id}`) : undefined}
       onViewAdmin={() => { window.location.href = '/admin'; }}
-      onLogout={async () => { await getSupabaseClient().auth.signOut(); setAdminEmail(undefined); setRole('subscriber'); }}
+      onLogout={() => void signOutAndRedirect(settings)}
     >
       <main className={containerClass}>
+        {page && page.status !== 'published' && (
+          <p className={styles.muted} role="status">Preview of a {page.status} {page.is_post ? 'post' : 'page'}: visitors cannot see it until it is published.</p>
+        )}
         {loading && <p className={styles.muted}>Loading…</p>}
         {error && <div className={styles.error} role="alert"><p>{error}</p>{onReconfigure && <button type="button" onClick={onReconfigure}>Reconfigure Supabase</button>}</div>}
         {!loading && !error && !page && (

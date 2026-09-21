@@ -196,6 +196,8 @@ export const slotNames = [
   'admin_before_content',
   'admin_after_content',
   'admin_sidebar_after_nav',
+  /** Cards on the visitors' dashboard ([rwp_user_dashboard]); args are { userId, role }. */
+  'user_dashboard',
   'builder_sidebar_tabs',
   'builder_topbar_actions',
 ] as const;
@@ -216,4 +218,8 @@ export const coreFilterNames = [
   'builder_widgets',
   /** The admin sidebar, as AdminNavItem[]. */
   'rwp_admin_navigation',
+  /** (items, group) — the default pages created on a new site (src/lib/defaultContent.ts). */
+  'rwp_default_content',
+  /** (choices, key) — addresses offered for an account page under Settings, e.g. /my-account. */
+  'rwp_account_page_choices',
 ] as const;

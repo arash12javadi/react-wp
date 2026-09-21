@@ -5,7 +5,7 @@ import { BuilderPageContent } from './render/BuilderRenderer';
 import SiteTemplateView from './render/SiteTemplateView';
 import { fetchServerStatus } from './lib/api';
 import { getWidget } from './lib/registry';
-import { installDefaultContent, liveTemplate, preloadLiveTemplates } from './lib/siteTemplates';
+import { installDefaultContent, liveTemplate, preloadLiveTemplates, upgradeAccountPages, withSiteDefaults } from './lib/siteTemplates';
 import { hasCapability, type UserRole } from '../../src/lib/roles';
 
 /**
@@ -35,7 +35,7 @@ const hasLayout = (page: object) => {
   return Boolean(record.is_builder_enabled && Array.isArray(record.builder_data?.content));
 };
 
-export const pageBuilderCleanup = defineRwpPlugin(manifest, ({ admin, routes, content, actions }) => {
+export const pageBuilderCleanup = defineRwpPlugin(manifest, ({ admin, routes, content, actions, filters }) => {
   const cleanups = [
     admin.registerPage({
       id: 'rwp-page-builder', label: 'Page Builder', icon: '🧱', capability: 'edit_posts', component: AdminScreen,
@@ -87,10 +87,13 @@ export const pageBuilderCleanup = defineRwpPlugin(manifest, ({ admin, routes, co
       has: (type) => Boolean(liveTemplate(type)),
       component: SiteTemplateView,
     }),
-    // Default pages and templates, created once and published, the first time someone who may create them opens the admin.
+    // Core creates the default site pages; this gives Home and Blog a layout and adds the templates.
+    filters.add('rwp_default_content', withSiteDefaults),
+    // Shop templates, created once and published, the first time someone who may create them opens the admin.
     actions.add('rwp_admin_ready', (role) => {
       const userRole = role as UserRole;
-      if (hasCapability(userRole, 'manage_options') && hasCapability(userRole, 'manage_shop')) void installDefaultContent('site');
+      // Default account pages made before the Account Form widget existed get its layout.
+      if (hasCapability(userRole, 'manage_options')) void upgradeAccountPages();
       // Shop widgets are registered by the shop plugin, so they exist only while it is active.
       if (hasCapability(userRole, 'manage_shop') && getWidget('shop-cart')) void installDefaultContent('shop');
     }),

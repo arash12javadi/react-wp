@@ -109,9 +109,13 @@ export const blockDefinitions: BlockDefinition[] = [
   },
   {
     type: 'search', label: 'Search bar', icon: '🔍', areas: ['header', 'footer', 'sidebar'],
-    description: 'Searches posts on the home page.',
-    defaults: { title: '', placeholder: 'Search posts…' },
-    fields: [titleField, { key: 'placeholder', label: 'Placeholder', kind: 'text' }],
+    description: 'Lists matching pages and posts as visitors type; Go opens the full search results.',
+    defaults: { title: '', placeholder: 'Search posts…', button_text: 'Go' },
+    fields: [
+      titleField,
+      { key: 'placeholder', label: 'Placeholder', kind: 'text' },
+      { key: 'button_text', label: 'Button text (empty hides it)', kind: 'text' },
+    ],
   },
   {
     type: 'header-actions', label: 'Header action buttons', icon: '🔘', areas: ['header'], unique: true,
@@ -311,7 +315,29 @@ export const containerLabel = (area: ThemeAreaId, containerId: string): string =
 };
 
 /** Header and the footer's bottom bar lay blocks out in a row; everything else stacks. */
-export const containerDirection = (area: ThemeAreaId, containerId: string): 'row' | 'column' =>
+export type RowZone = 'start' | 'center' | 'end';
+
+/**
+ * Which side of a header or footer row each block sits on: the public RowBlocks and the Theme
+ * Editor's Left / Center / Right lanes use the same rule. Left and Right are the designer's
+ * explicit choice, so they stay physical in a right-to-left site (`rtl` swaps them to the logical
+ * zones). "Auto" (inherit) follows the block before it, so a block added after a right-aligned
+ * menu stays with the menu; the first Auto block is at the start (the left, or the right in RTL).
+ */
+export const rowZones = (blocks: ThemeBlock[], rtl = false): RowZone[] => {
+  let previous: RowZone = 'start';
+  return blocks.map((block) => {
+    const { align } = block.style;
+    const zone: RowZone = align === 'center' ? 'center'
+      : align === 'left' ? (rtl ? 'end' : 'start')
+        : align === 'right' ? (rtl ? 'start' : 'end')
+          : previous;
+    previous = zone;
+    return zone;
+  });
+};
+
+export const containerDirection =(area: ThemeAreaId, containerId: string): 'row' | 'column' =>
   area === 'header' || (area === 'footer' && containerId === 'bottom') ? 'row' : 'column';
 
 const block = (id: string, type: ThemeBlockType, settings: BlockSettings = {}, style: Partial<BlockStyle> = {}): ThemeBlock => ({

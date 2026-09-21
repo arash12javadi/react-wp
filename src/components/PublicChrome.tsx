@@ -4,6 +4,7 @@ import { fetchProfile } from '../lib/profiles';
 import { getUserRole, type UserRole } from '../lib/roles';
 import { defaultSettings, loadSettings, type SiteSettings } from '../lib/settings';
 import { rwp } from '../lib/rwp';
+import { signOutAndRedirect } from '../lib/account';
 import PublicLayout, { type MenuLink } from './PublicLayout';
 
 export interface PublicChromeState {
@@ -102,11 +103,9 @@ export default function PublicChrome({ children, layout = 'wide' }: { children: 
         layout={layout}
         showAuthLinks={state.settings.show_auth_links}
         canRegister={state.settings.users_can_register}
+        toolbar={state.settings.admin_toolbar}
         onViewAdmin={() => { window.location.href = '/admin'; }}
-        onLogout={async () => {
-          await getSupabaseClient().auth.signOut();
-          window.location.reload();
-        }}
+        onLogout={() => void signOutAndRedirect(state.settings)}
       >
         {children}
       </PublicLayout>

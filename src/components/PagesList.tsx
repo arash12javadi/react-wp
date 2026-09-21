@@ -1,13 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { getSupabaseClient } from '../lib/db';
-import type { Page } from '../lib/types';
+import type { Category, Page } from '../lib/types';
 import { canManageAllPosts, canPublishPosts, type UserRole } from '../lib/roles';
 import { rwp } from '../lib/rwp';
 import { deleteContent, explainContentError, plural, setContentStatus, type ContentStatus } from '../lib/contentBulk';
-import { BulkBar, RowCheckbox, SelectAllCheckbox, describeBulkResult, useBulkSelection, type BulkAction } from './BulkActions';
+import {
+  BulkBar, BulkInline, RowCheckbox, SelectAllCheckbox, describeBulkResult, useBulkSelection, type BulkAction,
+} from './BulkActions';
 import styles from './PostsManager.module.css';
 
 type PageRow = Page & { is_site_template?: boolean };
+
+/** The Category column's value: a category id, a post without one, or a page (not a post). */
+const AS_PAGE = 'page';
+const NO_CATEGORY = 'none';
+const categoryValue = (row: PageRow) => (row.is_post ? row.category_id || NO_CATEGORY : AS_PAGE);
 
 export default function PagesList({ onCreate, onEdit, role }: { onCreate: (isPost: boolean) => void; onEdit: (page: Page) => void; role: UserRole }) {
   const [pages, setPages] = useState<PageRow[]>([]);
@@ -19,6 +26,9 @@ export default function PagesList({ onCreate, onEdit, role }: { onCreate: (isPos
   const [success, setSuccess] = useState('');
   const [busy, setBusy] = useState('');
   const [trashCount, setTrashCount] = useState(0);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [bulkCategory, setBulkCategory] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
   const inTrash = status === 'trash';
   const canPublish = canPublishPosts(role);
 
@@ -40,10 +50,13 @@ export default function PagesList({ onCreate, onEdit, role }: { onCreate: (isPos
           trashQuery = trashQuery.eq('author_id', data.user.id);
         }
       }
-      const [{ data, error: queryError }, { count }] = await Promise.all([query, trashQuery]);
+      const [{ data, error: queryError }, { count }, { data: categoryRows }] = await Promise.all([
+        query, trashQuery, supabase.from('categories').select('id,name,slug').order('name'),
+      ]);
       if (queryError) throw queryError;
       setPages((data || []) as PageRow[]);
       setTrashCount(count || 0);
+      setCategories((categoryRows || []) as Category[]);
     } catch (loadError: unknown) {
       const message = explainContentError(loadError);
       setError(
@@ -57,8 +70,9 @@ export default function PagesList({ onCreate, onEdit, role }: { onCreate: (isPos
 
   const visible = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return term ? pages.filter((page) => `${page.title} ${page.slug}`.toLowerCase().includes(term)) : pages;
-  }, [pages, search]);
+    return pages.filter((page) => (!term || `${page.title} ${page.slug}`.toLowerCase().includes(term))
+      && (!categoryFilter || (!page.is_site_template && categoryValue(page) === categoryFilter)));
+  }, [categoryFilter, pages, search]);
   const visibleIds = useMemo(() => visible.map((page) => page.id), [visible]);
   const selection = useBulkSelection(visibleIds);
 
@@ -109,6 +123,62 @@ export default function PagesList({ onCreate, onEdit, role }: { onCreate: (isPos
       setBusy('');
     }
   };
+
+  /**
+   * The Category column and its bulk action. Giving a page a category turns it into a post (the
+   * blog, archives and category pages only list posts); "Page" turns a post back into a page.
+   */
+  const assignCategory = async (ids: number[], value: string) => {
+    const rows = pages.filter((page) => ids.includes(page.id) && !page.is_site_template && categoryValue(page) !== value);
+    const skippedTemplates = pages.filter((page) => ids.includes(page.id) && page.is_site_template).length;
+    if (!value) return setError('Choose a category first.');
+    if (!rows.length) {
+      setSuccess('');
+      return setError(skippedTemplates ? 'Site templates cannot be put in a category.' : 'The selected items are already there.');
+    }
+    const category = categories.find((item) => item.id === value);
+    const toPosts = rows.filter((row) => !row.is_post).length;
+    const toPages = value === AS_PAGE ? rows.filter((row) => row.is_post).length : 0;
+    const question = toPosts && value !== AS_PAGE
+      ? `${plural(toPosts, 'page')} will become ${toPosts === 1 ? 'a post' : 'posts'} in ${category ? `“${category.name}”` : 'no category'}, so ${toPosts === 1 ? 'it appears' : 'they appear'} in the blog and archives. Continue?`
+      : toPages ? `${plural(toPages, 'post')} will become ${toPages === 1 ? 'a page' : 'pages'} and leave the blog. Continue?` : '';
+    if (question && !window.confirm(question)) return;
+
+    const changes = value === AS_PAGE
+      ? { is_post: false, category_id: null }
+      : { is_post: true, category_id: value === NO_CATEGORY ? null : value };
+    setBusy('category'); setError(''); setSuccess('');
+    try {
+      // .select(): rows row level security skips come back missing, not as an error.
+      const { data, error: updateError } = await getSupabaseClient().from('pages')
+        .update({ ...changes, updated_at: new Date().toISOString() })
+        .in('id', rows.map((row) => row.id))
+        .select('id');
+      if (updateError) throw updateError;
+      const changed = (data || []).length;
+      const label = value === AS_PAGE ? 'Made into pages' : value === NO_CATEGORY ? 'Moved out of every category' : `Moved to “${category?.name || 'category'}”`;
+      if (changed) setSuccess(`${label}: ${plural(changed, 'item')}.${skippedTemplates ? ` ${plural(skippedTemplates, 'site template')} left alone.` : ''}`);
+      if (changed < rows.length) {
+        setError(`${plural(rows.length - changed, 'item')} not changed: row level security skipped ${rows.length - changed === 1 ? 'it' : 'them'}. Changing someone else's content needs the edit_others_posts capability.`);
+      }
+      rows.filter((row) => data?.some((item) => item.id === row.id))
+        .forEach((row) => rwp.actions.do(changes.is_post ? 'rwp_post_updated' : 'rwp_page_updated', { ...row, ...changes }));
+      selection.clear();
+      await load();
+    } catch (updateError: unknown) {
+      setError(explainContentError(updateError));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const categoryOptions = (
+    <>
+      <option value={AS_PAGE}>Page (not a post)</option>
+      <option value={NO_CATEGORY}>Post, no category</option>
+      {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+    </>
+  );
 
   const emptyTrash = async () => {
     const { data, error: loadError } = await getSupabaseClient().from('pages').select('id,title,is_post').eq('status', 'trash');
@@ -163,6 +233,10 @@ export default function PagesList({ onCreate, onEdit, role }: { onCreate: (isPos
             <option value="published">Published</option>
             <option value="trash">Trash ({trashCount})</option>
           </select>
+          <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} aria-label="Category">
+            <option value="">All categories</option>
+            {categoryOptions}
+          </select>
           {inTrash && trashCount > 0 && (
             <button type="button" className={styles.deleteButton} disabled={Boolean(busy)} onClick={() => void emptyTrash()}>
               {busy === 'empty' ? 'Emptying…' : 'Empty Trash'}
@@ -174,7 +248,22 @@ export default function PagesList({ onCreate, onEdit, role }: { onCreate: (isPos
           <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search title or slug" aria-label="Search pages and posts" />
         </div>
       </div>
-      {!loading && <BulkBar selection={selection} total={visible.length} noun="items" actions={bulkActions} busy={busy} onAction={(id, ids) => void runBulk(id, ids)} />}
+      {!loading && (
+        <BulkBar selection={selection} total={visible.length} noun="items" actions={bulkActions} busy={busy} onAction={(id, ids) => void runBulk(id, ids)}>
+          {!inTrash && (
+            <BulkInline>
+              <select value={bulkCategory} onChange={(event) => setBulkCategory(event.target.value)} aria-label="Category for the selected items">
+                <option value="">Move to category…</option>
+                {categoryOptions}
+              </select>
+              <button type="button" className={styles.editButton} disabled={!bulkCategory || Boolean(busy)}
+                onClick={() => void assignCategory(selection.selected, bulkCategory)}>
+                {busy === 'category' ? 'Saving…' : 'Apply'}
+              </button>
+            </BulkInline>
+          )}
+        </BulkBar>
+      )}
       <div className={styles.tableCard}>
         {loading ? <div className={styles.emptyState}>Loading content…</div> : visible.length === 0 ? (
           <div className={styles.emptyState}>
@@ -186,7 +275,7 @@ export default function PagesList({ onCreate, onEdit, role }: { onCreate: (isPos
               <thead>
                 <tr>
                   <th className={styles.checkCell}><SelectAllCheckbox selection={selection} total={visible.length} /></th>
-                  <th>Title</th><th>Type</th><th>Status</th><th>Updated</th><th>Actions</th>
+                  <th>Title</th><th>Type</th><th>Category</th><th>Status</th><th>Updated</th><th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -195,6 +284,16 @@ export default function PagesList({ onCreate, onEdit, role }: { onCreate: (isPos
                     <td className={styles.checkCell}><RowCheckbox selection={selection} id={page.id} label={page.title} /></td>
                     <td><strong>{page.title}</strong><span className={styles.slug}>/{page.slug}</span></td>
                     <td>{page.is_site_template ? 'Template' : page.is_post ? 'Post' : 'Page'}</td>
+                    <td>
+                      {page.is_site_template || page.status === 'trash' ? (
+                        <span className={styles.slug}>{page.is_post ? categories.find((item) => item.id === page.category_id)?.name || '—' : '—'}</span>
+                      ) : (
+                        <select className={styles.categorySelect} value={categoryValue(page)} disabled={Boolean(busy)}
+                          aria-label={`Category of ${page.title}`} onChange={(event) => void assignCategory([page.id], event.target.value)}>
+                          {categoryOptions}
+                        </select>
+                      )}
+                    </td>
                     <td>
                       {page.status === 'trash'
                         ? <span className={`${styles.status} ${styles.trash}`}>trash</span>

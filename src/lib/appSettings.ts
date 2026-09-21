@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { describeDbError, getSupabaseClient } from './db';
-import { applyCapabilityGrants, type CapabilityGrants, type UserRole } from './roles';
+import type { UserRole } from './roles';
 import { sanitizeTrackingHtml } from './scriptSanitizer.js';
 
 /**
@@ -8,9 +8,10 @@ import { sanitizeTrackingHtml } from './scriptSanitizer.js';
  * option, which is publicly readable — so nothing private belongs here. Per-user quota
  * overrides are keyed by email and live in the rwp_quota_overrides table instead.
  *
- * Several values are enforced by the database, not only this UI: the role grants
- * (user_has_cap), media scoping (rwp_can_manage_media) and upload limits
- * (media_enforce_upload_rules). Keep the key names in sync with those functions.
+ * Several values are enforced by the database, not only this UI: media scoping
+ * (rwp_can_manage_media) and upload limits (media_enforce_upload_rules). Keep the key names in
+ * sync with those functions. Role grants used to be a `roles` key here; they are now the
+ * rwp_role_capabilities table (src/lib/capabilityGrants.ts), and the 20261001 migration moved them.
  */
 
 export const quotaRoles = ['editor', 'author', 'contributor', 'subscriber'] as const;
@@ -43,7 +44,6 @@ export interface AppSettings {
     header_script: string;
     body_script: string;
   };
-  roles: CapabilityGrants;
 }
 
 export const appSettingsOption = 'rwp_app_settings';
@@ -55,12 +55,9 @@ export const defaultAppSettings: AppSettings = {
     max_upload_kb: null, min_width: null, min_height: null, max_width: null, max_height: null,
     quota_mb: { editor: null, author: null, contributor: null, subscriber: null },
   },
-  menu: { profile_url: '/admin?section=profile' },
+  // /profile shows the page chosen under Settings → Site → User profile page, for every role.
+  menu: { profile_url: '/profile' },
   seo: { meta_keywords_enabled: false, header_script: '', body_script: '' },
-  roles: {
-    subscriber_upload_files: false, subscriber_edit_posts: false,
-    contributor_upload_files: false, contributor_publish_posts: false,
-  },
 };
 
 type Json = Record<string, unknown>;
@@ -79,7 +76,6 @@ export const normalizeAppSettings = (raw: unknown): AppSettings => {
   const quota = asObject(uploads.quota_mb);
   const menu = asObject(root.menu);
   const seo = asObject(root.seo);
-  const roles = asObject(root.roles);
   const d = defaultAppSettings;
   return {
     general: {
@@ -99,17 +95,12 @@ export const normalizeAppSettings = (raw: unknown): AppSettings => {
         contributor: limit(quota.contributor), subscriber: limit(quota.subscriber),
       },
     },
-    menu: { profile_url: str(menu.profile_url, d.menu.profile_url).trim() || d.menu.profile_url },
+    // The old default only opened for roles that can use the admin; /profile works for every role.
+    menu: { profile_url: str(menu.profile_url, d.menu.profile_url).trim().replace(/^\/admin\?section=profile$/, d.menu.profile_url) || d.menu.profile_url },
     seo: {
       meta_keywords_enabled: bool(seo.meta_keywords_enabled, d.seo.meta_keywords_enabled),
       header_script: str(seo.header_script, ''),
       body_script: str(seo.body_script, ''),
-    },
-    roles: {
-      subscriber_upload_files: roles.subscriber_upload_files === true,
-      subscriber_edit_posts: roles.subscriber_edit_posts === true,
-      contributor_upload_files: roles.contributor_upload_files === true,
-      contributor_publish_posts: roles.contributor_publish_posts === true,
     },
   };
 };
@@ -136,7 +127,6 @@ export const loadAppSettings = (force = false): Promise<AppSettings> => {
       if (error) throw new Error(`Could not load settings: ${describeDbError(error)}`);
       const settings = parseAppSettings(data?.option_value);
       current = settings;
-      applyCapabilityGrants(settings.roles);
       listeners.forEach((listener) => listener(settings));
       return settings;
     });
@@ -175,7 +165,6 @@ export const saveAppSettings = async (settings: AppSettings): Promise<AppSetting
   }
   current = clean;
   cached = Promise.resolve(clean);
-  applyCapabilityGrants(clean.roles);
   listeners.forEach((listener) => listener(clean));
   return clean;
 };

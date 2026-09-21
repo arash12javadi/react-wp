@@ -12,6 +12,15 @@ export const headerDisplayLabels: Record<HeaderDisplay, string> = {
   logo_text: 'Logo, site title and tagline',
 };
 
+/** Who sees the admin toolbar across the top of the public site (Settings → Accounts). */
+export type AdminToolbarMode = 'everyone' | 'admins' | 'nobody';
+
+export const adminToolbarLabels: Record<AdminToolbarMode, string> = {
+  everyone: 'Everyone who is signed in',
+  admins: 'Only people who can use the admin',
+  nobody: 'Nobody',
+};
+
 export interface SiteSettings {
   site_title: string;
   site_tagline: string;
@@ -38,6 +47,26 @@ export interface SiteSettings {
   comments_enabled: boolean;
   comment_moderation: boolean;
   comment_max_depth: number;
+  /**
+   * Account pages (src/lib/account.ts). Each is '' (the built-in screen), a page id, or 'custom'
+   * with the address in the matching _url key, e.g. a shop's /my-account. The fixed paths
+   * /login, /register, /lost-password, /profile and /dashboard always show the chosen one.
+   */
+  login_page_id: string;
+  login_page_url: string;
+  register_page_id: string;
+  register_page_url: string;
+  lost_password_page_id: string;
+  lost_password_page_url: string;
+  profile_page_id: string;
+  profile_page_url: string;
+  dashboard_page_id: string;
+  dashboard_page_url: string;
+  /** Where signing in leads when the link did not ask for a page. Empty: admin or dashboard, by role. */
+  login_redirect: string;
+  /** Where signing out leads. Empty: stay on the current page. */
+  logout_redirect: string;
+  admin_toolbar: AdminToolbarMode;
 }
 
 export const defaultSettings: SiteSettings = {
@@ -65,6 +94,19 @@ export const defaultSettings: SiteSettings = {
   comments_enabled: true,
   comment_moderation: true,
   comment_max_depth: 5,
+  login_page_id: '',
+  login_page_url: '',
+  register_page_id: '',
+  register_page_url: '',
+  lost_password_page_id: '',
+  lost_password_page_url: '',
+  profile_page_id: '',
+  profile_page_url: '',
+  dashboard_page_id: '',
+  dashboard_page_url: '',
+  login_redirect: '',
+  logout_redirect: '',
+  admin_toolbar: 'everyone',
 };
 
 export const settingKeys = Object.keys(defaultSettings) as Array<keyof SiteSettings>;
@@ -120,6 +162,21 @@ export const loadSettings = async (): Promise<SiteSettings> => {
     comments_enabled: toBoolean(values.comments_enabled, defaultSettings.comments_enabled),
     comment_moderation: toBoolean(values.comment_moderation, defaultSettings.comment_moderation),
     comment_max_depth: toNumber(values.comment_max_depth, defaultSettings.comment_max_depth),
+    login_page_id: values.login_page_id || '',
+    login_page_url: values.login_page_url || '',
+    register_page_id: values.register_page_id || '',
+    register_page_url: values.register_page_url || '',
+    lost_password_page_id: values.lost_password_page_id || '',
+    lost_password_page_url: values.lost_password_page_url || '',
+    profile_page_id: values.profile_page_id || '',
+    profile_page_url: values.profile_page_url || '',
+    dashboard_page_id: values.dashboard_page_id || '',
+    dashboard_page_url: values.dashboard_page_url || '',
+    login_redirect: values.login_redirect || '',
+    logout_redirect: values.logout_redirect || '',
+    admin_toolbar: values.admin_toolbar && values.admin_toolbar in adminToolbarLabels
+      ? values.admin_toolbar as AdminToolbarMode
+      : defaultSettings.admin_toolbar,
   };
 };
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { describeDbError, getSupabaseClient } from '../lib/db';
 import { fetchProfiles, missingProfilesTable, type Profile } from '../lib/profiles';
 import { capabilitiesFor, capabilityLabels, roleLabels, roles, type UserRole } from '../lib/roles';
+import { fetchUserGrants, type UserGrant } from '../lib/capabilityGrants';
 import { BulkBar, BulkInline, RowCheckbox, SelectAllCheckbox, downloadCsv, useBulkSelection } from './BulkActions';
 import styles from './UsersManager.module.css';
 
@@ -16,6 +17,7 @@ export default function UsersManager({ role: currentRole }: { role: UserRole }) 
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<'' | UserRole>('');
   const [bulkRole, setBulkRole] = useState<UserRole>('subscriber');
+  const [userGrants, setUserGrants] = useState<UserGrant[]>([]);
 
   const canPromote = currentRole === 'administrator' || currentRole === 'super_admin';
 
@@ -26,6 +28,8 @@ export default function UsersManager({ role: currentRole }: { role: UserRole }) 
       const { data } = await getSupabaseClient().auth.getUser();
       setCurrentUserId(data.user?.id || '');
       setProfiles(await fetchProfiles());
+      // Settings → Roles grants for one person; an empty list before the 20261001 migration.
+      setUserGrants(await fetchUserGrants().catch(() => []));
     } catch (loadError: unknown) {
       const message = loadError instanceof Error ? loadError.message : describeDbError(loadError);
       setError(missingProfilesTable(message)
@@ -120,6 +124,7 @@ export default function UsersManager({ role: currentRole }: { role: UserRole }) 
         <p>
           Roles determine what each person can do. Capabilities are defined in <code>src/lib/roles.ts</code> and
           enforced by database policies, so changing a role here changes what that account can do at the database level.
+          Extra capabilities for a role or for one person are added under <strong>Settings → Roles</strong>.
         </p>
       </div>
 
@@ -160,7 +165,10 @@ export default function UsersManager({ role: currentRole }: { role: UserRole }) 
                 {visible.length === 0 && <tr><td colSpan={4} className={styles.status}>No users match your search.</td></tr>}
                 {visible.map((profile) => {
                   const isSelf = profile.id === currentUserId;
-                  const granted = capabilitiesFor(profile.role);
+                  const granted = [...new Set([
+                    ...capabilitiesFor(profile.role),
+                    ...userGrants.filter((grant) => grant.user_id === profile.id).map((grant) => grant.capability),
+                  ])];
                   const open = expanded === profile.id;
                   return (
                     <tr key={profile.id} className={selection.isSelected(profile.id) ? styles.rowSelected : undefined}>

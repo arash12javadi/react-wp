@@ -6,6 +6,15 @@ export type ContentStatus = 'draft' | 'published' | 'trash';
 
 export const trashMigration = 'supabase/migrations/20260926_bulk_actions_trash.sql';
 
+/**
+ * "View page" for content being edited. A draft is not public, so it gets a preview address,
+ * which PublicContent loads without the published filter; row level security still decides who
+ * can read it (the author, and roles with edit_others_posts).
+ */
+export const pageViewLink = (page: { slug: string; status?: string | null }) => (page.status === 'published'
+  ? { href: `/${page.slug}`, label: 'View page' }
+  : { href: `/${page.slug}?preview=1`, label: 'Preview page' });
+
 interface ContentRef {
   id: number;
   title?: string;

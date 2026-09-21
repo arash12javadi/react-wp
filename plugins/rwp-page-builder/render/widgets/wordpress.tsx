@@ -1,6 +1,8 @@
 /** Classic WordPress widgets: Pages, Calendar, Archives, Categories, Recent Posts, Search, Tag Cloud, Recent Comments, Meta. */
-import { useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import { getSupabaseClient } from '../../../../src/lib/db';
+import LiveSearch from '../../../../src/components/LiveSearch';
+import { signOutAndRedirect } from '../../../../src/lib/account';
 import { colorControl, headingTags, opts, typographyControl } from '../../lib/controls';
 import type { Control, WidgetDefinition } from '../../lib/registry';
 import { color, typography, type Typography } from '../../lib/style';
@@ -313,19 +315,12 @@ export const wpSearch: WidgetDefinition = {
   css: widgetCss,
   View: function SearchWidgetView({ node }) {
     const { mode } = useRenderContext();
-    const [term, setTerm] = useState(() => (typeof window === 'undefined' ? '' : new URLSearchParams(window.location.search).get('s') || ''));
-    const id = useId();
-    const submit = (event: FormEvent) => {
-      event.preventDefault();
-      if (mode === 'view' && term.trim()) window.location.href = `/search?s=${encodeURIComponent(term.trim())}`;
-    };
     return (
       <WpWidget settings={node.settings} fallbackTitle="Search" className="rwpb-wp-search">
-        <form role="search" className="rwpb-wp-search-form" onSubmit={submit}>
-          <label htmlFor={id} className="rwpb-sr-only">Search for:</label>
-          <input id={id} className="rwpb-form-control" type="search" value={term} placeholder={str(node.settings.placeholder, 'Search…')} onChange={(event) => setTerm(event.target.value)} />
-          {str(node.settings.buttonText) && <button type="submit" className="rwpb-button rwpb-button-sm">{str(node.settings.buttonText)}</button>}
-        </form>
+        {/* Lists matches as visitors type (not in the editor, where the canvas is only a preview). */}
+        <div inert={mode === 'edit' ? true : undefined}>
+          <LiveSearch className="rwpb-wp-search-form" placeholder={str(node.settings.placeholder, 'Search…')} buttonLabel={str(node.settings.buttonText)} />
+        </div>
       </WpWidget>
     );
   },
@@ -451,7 +446,7 @@ export const wpMeta: WidgetDefinition = {
           {signedIn ? (
             <>
               {node.settings.showAdmin !== false && <li><a href="/admin">Site admin</a></li>}
-              <li><button type="button" className="rwpb-link-button" onClick={async () => { await getSupabaseClient().auth.signOut(); window.location.reload(); }}>Log out</button></li>
+              <li><button type="button" className="rwpb-link-button" onClick={() => void signOutAndRedirect()}>Log out</button></li>
             </>
           ) : (
             <>

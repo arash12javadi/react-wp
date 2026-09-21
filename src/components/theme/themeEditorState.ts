@@ -26,7 +26,8 @@ export type EditorAction =
   | { type: 'load'; theme: ThemeSettings }
   | { type: 'saved'; theme: ThemeSettings }
   | { type: 'addBlock'; area: ThemeAreaId; block: ThemeBlock; containerId: string; index: number }
-  | { type: 'moveBlock'; area: ThemeAreaId; blockId: string; containerId: string; index: number }
+  /** `align` also puts the block on that side of a row (a drop into the Left/Center/Right lane): one undo step. */
+  | { type: 'moveBlock'; area: ThemeAreaId; blockId: string; containerId: string; index: number; align?: BlockStyle['align'] }
   | { type: 'removeBlock'; area: ThemeAreaId; blockId: string }
   | { type: 'duplicateBlock'; area: ThemeAreaId; blockId: string }
   | { type: 'updateBlock'; area: ThemeAreaId; blockId: string; settings?: BlockSettings; style?: Partial<BlockStyle> }
@@ -87,8 +88,10 @@ export function themeEditorReducer(state: EditorState, action: EditorAction): Ed
       return { ...state, saved: action.theme, draft: action.theme, lastKey: '' };
     case 'addBlock':
       return commitArea(state, action.area, insertBlock(draft.layout[action.area], action.area, action.block, action.containerId, action.index));
-    case 'moveBlock':
-      return commitArea(state, action.area, moveBlock(draft.layout[action.area], action.blockId, action.containerId, action.index));
+    case 'moveBlock': {
+      const moved = moveBlock(draft.layout[action.area], action.blockId, action.containerId, action.index);
+      return commitArea(state, action.area, action.align ? updateBlock(moved, action.blockId, { style: { align: action.align } }) : moved);
+    }
     case 'removeBlock':
       return commitArea(state, action.area, removeBlock(draft.layout[action.area], action.blockId));
     case 'duplicateBlock':

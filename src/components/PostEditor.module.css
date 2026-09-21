@@ -112,6 +112,42 @@
   font-weight: 400;
 }
 
+/* Side panel switches: "[x] Show sidebar" on one line. */
+.checkGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.checkGroup legend {
+  margin-bottom: 9px;
+  padding: 0;
+  color: #334155;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.form .checkRow {
+  flex-direction: row;
+  align-items: center;
+  gap: 9px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.form .checkRow input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  accent-color: #4f46e5;
+  cursor: pointer;
+}
+
 .formActions {
   display: flex;
   justify-content: flex-end;

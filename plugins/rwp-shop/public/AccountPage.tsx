@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { RwpRouteProps } from '../../../src/lib/plugin-api';
 import { describeDbError, getSupabaseClient } from '../../../src/lib/db';
+import { signOutAndRedirect } from '../../../src/lib/account';
 import { usePublicChrome } from '../../../src/components/PublicChrome';
 import { claimGuestOrders, consumeDownload, explainShopError, getOrder } from '../lib/api';
 import { cart } from '../lib/cart';
@@ -317,10 +318,8 @@ export default function AccountPage({ params }: RwpRouteProps) {
     );
   }
 
-  const logout = async () => {
-    await getSupabaseClient().auth.signOut();
-    window.location.href = '/';
-  };
+  // Settings → Accounts → After signing out decides where this goes.
+  const logout = () => signOutAndRedirect();
 
   let content;
   if (section === 'orders') content = <OrdersList settings={settings} />;

@@ -5,6 +5,7 @@ import type { RwpArchive } from '../lib/rwp';
 import { applyDocumentTitle, loadSettings } from '../lib/settings';
 import PublicChrome from './PublicChrome';
 import SiteTemplate from './SiteTemplate';
+import LiveSearch from './LiveSearch';
 import styles from './PublicHome.module.css';
 
 interface ArchivePost { id: number; title: string; slug: string; excerpt: string | null; content: string | null; created_at: string }
@@ -91,10 +92,7 @@ function DefaultArchive({ archive }: { archive: RwpArchive }) {
       <section className={`${styles.feed} rwp-posts-feed`} aria-labelledby="archive-heading">
         <h1 id="archive-heading">{state.title}</h1>
         {archive.kind === 'search' && (
-          <form action="/search" method="get" role="search" className="rwp-archive-search">
-            <input type="search" name="s" defaultValue={archive.term} placeholder="Search posts…" aria-label="Search posts" />
-            <button type="submit">Search</button>
-          </form>
+          <LiveSearch className="rwp-archive-search" buttonLabel="Search" />
         )}
         {state.loading && <p className={styles.muted}>Loading…</p>}
         {state.error && <div className={styles.error} role="alert"><p>{state.error}</p></div>}

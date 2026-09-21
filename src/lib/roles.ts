@@ -86,43 +86,44 @@ export const roleCapabilities: Record<UserRole, Capability[]> = {
   super_admin: [...capabilities],
 };
 
+/** Roles whose capabilities can be extended under Settings → Roles. The others already have all of them. */
+export const grantableRoles = ['shop_manager', 'editor', 'author', 'contributor', 'subscriber'] as const satisfies readonly UserRole[];
+
 /**
- * Extra capabilities an administrator can switch on under App Settings → Roles. The same four
- * (and only these) are honoured by public.user_has_cap(), which reads them from the
- * rwp_app_settings option — change both or neither.
+ * Capabilities that hand over control of the whole site. Granting one is allowed, but the Roles
+ * screen asks first: someone with manage_options can restore a backup, and activate_plugins
+ * runs uploaded code.
  */
-export interface CapabilityGrants {
-  subscriber_upload_files: boolean;
-  subscriber_edit_posts: boolean;
-  contributor_upload_files: boolean;
-  contributor_publish_posts: boolean;
-}
+export const sensitiveCapabilities: Capability[] = ['manage_options', 'activate_plugins', 'edit_users', 'promote_users'];
 
-export const capabilityGrantDefinitions: Record<keyof CapabilityGrants, { role: UserRole; capabilities: Capability[] }> = {
-  subscriber_upload_files: { role: 'subscriber', capabilities: ['upload_files'] },
-  subscriber_edit_posts: { role: 'subscriber', capabilities: ['edit_posts', 'delete_posts'] },
-  contributor_upload_files: { role: 'contributor', capabilities: ['upload_files'] },
-  contributor_publish_posts: { role: 'contributor', capabilities: ['publish_posts'] },
-};
+export const isCapability = (value: unknown): value is Capability => capabilities.includes(value as Capability);
 
-let grantedCapabilities: Partial<Record<UserRole, Capability[]>> = {};
+/**
+ * Grants added under Settings → Roles: rwp_role_capabilities (per role) and rwp_user_capabilities
+ * (per person), loaded by src/lib/capabilityGrants.ts before the first render. public.user_has_cap()
+ * reads the same two tables, so the database enforces what this file shows — change both or neither.
+ */
+let roleGrants: Partial<Record<UserRole, Capability[]>> = {};
+let viewerGrants: { role: UserRole | null; capabilities: Capability[] } = { role: null, capabilities: [] };
 
-/** Called once the app settings have loaded, before any screen checks a capability. */
-export const applyCapabilityGrants = (grants: Partial<CapabilityGrants>) => {
-  const next: Partial<Record<UserRole, Capability[]>> = {};
-  (Object.keys(capabilityGrantDefinitions) as Array<keyof CapabilityGrants>).forEach((key) => {
-    if (grants[key] !== true) return;
-    const { role, capabilities: extra } = capabilityGrantDefinitions[key];
-    next[role] = [...(next[role] || []), ...extra];
-  });
-  grantedCapabilities = next;
-};
+export const setRoleGrants = (grants: Partial<Record<UserRole, Capability[]>>) => { roleGrants = grants; };
 
+/** The signed-in person's own grants. */
+export const setViewerGrants = (role: UserRole | null, granted: Capability[]) => { viewerGrants = { role, capabilities: granted }; };
+
+export const roleGrantsFor = (role: UserRole): Capability[] => roleGrants[role] || [];
+
+/** What every account with this role can do: the built-in set plus the role's grants. Never a person's own grants. */
 export const capabilitiesFor = (role: UserRole): Capability[] =>
-  [...new Set([...(roleCapabilities[role] || []), ...(grantedCapabilities[role] || [])])];
+  [...new Set([...(roleCapabilities[role] || []), ...roleGrantsFor(role)])];
 
+/**
+ * Almost every caller passes the signed-in person's role, so their own grants count when the role
+ * matches theirs. To show what someone else can do, use capabilitiesFor plus their grants instead.
+ */
 export const hasCapability = (role: UserRole, capability: Capability): boolean =>
-  capabilitiesFor(role).includes(capability);
+  capabilitiesFor(role).includes(capability)
+  || (viewerGrants.role === role && viewerGrants.capabilities.includes(capability));
 
 // upload_files alone is enough: a subscriber granted uploads uses the Media and Profile screens.
 export const canAccessAdmin = (role: UserRole) => hasCapability(role, 'edit_posts') || hasCapability(role, 'upload_files');

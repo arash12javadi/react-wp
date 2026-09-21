@@ -6,6 +6,7 @@ import { defaultSettings, loadSettings } from './settings';
 import { appSettingsMigration } from './appSettings';
 import { currentI18nSettings, i18nMigration } from './i18n';
 import { themeMigration } from './theme';
+import { capabilityGrantsMigration } from './capabilityGrants';
 
 /**
  * The Dashboard's setup checklist: what is still missing for this site to work fully, with
@@ -27,7 +28,7 @@ const can = (role: UserRole, capability: Capability) => hasCapability(role, capa
 async function adminNotices(): Promise<RwpSetupNotice[]> {
   const notices: RwpSetupNotice[] = [];
   const supabase = getSupabaseClient();
-  const [settings, mediaConfig, menuRow, quotaProbe, detailsProbe, themeProbe, localeProbe] = await Promise.all([
+  const [settings, mediaConfig, menuRow, quotaProbe, detailsProbe, themeProbe, localeProbe, grantsProbe] = await Promise.all([
     loadSettings(),
     fetch('/api/media-config').then((response) => (response.ok ? response.json() as Promise<{ cloudinary: boolean; imagekit: boolean }> : null)).catch(() => null),
     supabase.from('options').select('option_name').eq('option_name', 'menu_links').maybeSingle(),
@@ -36,14 +37,30 @@ async function adminNotices(): Promise<RwpSetupNotice[]> {
     supabase.from('theme_settings').select('id', { count: 'exact', head: true }),
     // A missing column, not a missing table: PostgREST answers 42703 / "column … does not exist".
     supabase.from('pages').select('locale', { count: 'exact', head: true }),
+    supabase.from('rwp_role_capabilities').select('role', { count: 'exact', head: true }),
   ]);
+
+  if (grantsProbe.error && missingTable(describeDbError(grantsProbe.error))) {
+    notices.push({
+      id: 'migration-20261001',
+      level: 'required',
+      title: 'Run the account pages and capabilities database migration',
+      description: 'Until it has run, Settings → Roles cannot add capabilities, and the default Log In, Register, Profile and Dashboard pages (and, on a new site, the Home page and Sample Post) are not created.',
+      steps: [
+        'Open Supabase → SQL Editor → New query.',
+        `Paste the whole of ${capabilityGrantsMigration} and click Run. It is safe to run again.`,
+        'Reload this page. The default pages are created on that reload.',
+      ],
+      action: { label: 'Open Supabase', href: 'https://supabase.com/dashboard/projects' },
+    });
+  }
 
   if (quotaProbe.error && missingTable(describeDbError(quotaProbe.error))) {
     notices.push({
       id: 'migration-20260920',
       level: 'required',
       title: 'Run the App Settings database migration',
-      description: 'Upload limits, disk quotas and role grants under Settings are not enforced until it has run.',
+      description: 'Upload limits and disk quotas under Settings are not enforced until it has run.',
       steps: [
         'Open Supabase → SQL Editor → New query.',
         `Paste the whole of ${appSettingsMigration} and click Run. It is safe to run again.`,

@@ -14,6 +14,7 @@ import { useAppSettings } from '../lib/appSettings';
 import { cleanUrl, fillPlaceholders, useTheme, type IndexOptions, type ThemeBlock } from '../lib/theme';
 import styles from './PublicHome.module.css';
 import { rwp } from '../lib/rwp';
+import { signOutAndRedirect } from '../lib/account';
 
 const defaultTitle = defaultSettings.site_title;
 const defaultMenuLinks = [
@@ -277,12 +278,9 @@ export default function PublicHome({ onReconfigure }: { onReconfigure?: () => vo
       layout={settings.home_layout}
       showAuthLinks={settings.show_auth_links}
       canRegister={settings.users_can_register}
+      toolbar={settings.admin_toolbar}
       onViewAdmin={() => { window.location.href = `${window.location.origin}/admin`; }}
-      onLogout={async () => {
-        await getSupabaseClient().auth.signOut();
-        setAdminEmail(undefined);
-        setUserRole('subscriber');
-      }}
+      onLogout={() => void signOutAndRedirect(settings)}
     >
       <main className={`${settings.home_layout === 'full' ? styles.containerFull : settings.home_layout === 'wide' ? styles.containerWide : styles.container} rwp-index`}>
         {segments.map((segment, index) => {
