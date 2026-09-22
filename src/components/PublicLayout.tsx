@@ -5,6 +5,7 @@ import { ThemeChromeProvider, ThemeFooter, ThemeHeader, ThemePreviewBanner, useT
 import { loadWidgetAreas } from '../lib/widgets';
 import { HookSlot } from '../core/HookSlot';
 import SiteTemplate from './SiteTemplate';
+import FloatingLoginButton from './floatingLogin/FloatingLoginButton';
 import { canAccessAdmin, type UserRole } from '../lib/roles';
 import type { AdminToolbarMode, SiteBranding } from '../lib/settings';
 import type { DynamicMenuLink } from '../lib/dynamicMenu';
@@ -101,6 +102,8 @@ export default function PublicLayout({
         <HookSlot name="before_footer" args={{ layout }} />
         {showFooter && <SiteTemplate types={['footer']} layoutWidth={layout} fallback={<ThemeFooter layoutWidth={layout} />} />}
         <HookSlot name="after_footer" args={{ layout }} />
+        {/* Settings → Floating Login. Renders nothing when switched off or for someone signed in. */}
+        <FloatingLoginButton />
         <ThemePreviewBanner />
       </div>
     </ThemeChromeProvider>

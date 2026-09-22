@@ -244,6 +244,12 @@ Add `[rwp_login]` to any page or post to place a login/logout button there. It a
 
 This is also the release where the shortcode API documented above started doing anything. `parseShortcodes` existed but was never called, and content rendered through `dangerouslySetInnerHTML`, which cannot host a React component. [`ContentRenderer`](./src/components/ContentRenderer.tsx) now replaces each shortcode in the parsed DOM with a host element and portals the component into it, so shortcodes work inline as well as on their own line — and plugin-registered shortcodes work for the first time.
 
+#### Floating login
+
+**Settings → Floating Login** puts a button in a corner of every public page that opens a Log in / Register / Forgot password dialog, with a dark, light or glass theme and a live preview in the admin. Its six settings are `floating_login_*` rows in `options`; [`supabase/migrations/20261007_floating_login.sql`](./supabase/migrations/20261007_floating_login.sql) only seeds the defaults, which apply anyway when a row is missing.
+
+It uses the same flows as the `/login` screen: the reset email links to `/lost-password`, and sign-up never sends a role, so new accounts get the default role. The Register tab also needs "Anyone can register" under Settings → Accounts. The button is hidden for signed-in visitors and on the account pages. **Redirect after login** takes `current` (reload the page the visitor is on), a site path or an https:// address. There is no nonce: Supabase sends the session as a header, not a cookie, so the cross-site request a WordPress nonce guards against cannot act as the visitor.
+
 ### Comments, profiles and widgets
 
 Run [`supabase/migrations/20260915_comments_profiles_widgets.sql`](./supabase/migrations/20260915_comments_profiles_widgets.sql) for an existing installation.

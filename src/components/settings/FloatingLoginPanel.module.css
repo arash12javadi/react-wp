@@ -1,0 +1,182 @@
+.layout {
+  display: grid;
+  max-width: 1180px;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 440px);
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 1000px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Two classes, so it beats the settings form's max-width and margin whatever order the CSS loads in. */
+.layout .form {
+  max-width: none;
+  margin: 0;
+}
+
+.twoColumns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px 16px;
+}
+
+.fieldError {
+  color: #b91c1c;
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.unsaved {
+  margin-inline-end: auto;
+  color: #b45309;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.secondary {
+  border: 1px solid #dbe1ea;
+  border-radius: 6px;
+  padding: 10px 16px;
+  color: #334155;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.secondary:hover:not(:disabled) {
+  background: #f8fafc;
+}
+
+.previewColumn {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.previewHeading {
+  margin: 0;
+  color: #334155;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* A colourful page behind the button and dialog, so the glass theme has something to blur. */
+.previewPage,
+.previewStage {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 20% 20%, #f472b6 0, transparent 45%),
+    radial-gradient(circle at 80% 30%, #38bdf8 0, transparent 45%),
+    radial-gradient(circle at 50% 90%, #a78bfa 0, transparent 50%),
+    #e0e7ff;
+}
+
+.previewPage {
+  height: 190px;
+}
+
+.previewStage {
+  padding: 22px 16px;
+}
+
+.previewChrome {
+  display: flex;
+  gap: 6px;
+  padding: 10px 12px;
+  background: rgb(255 255 255 / 55%);
+}
+
+.previewChrome span {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #cbd5e1;
+}
+
+.previewLines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+}
+
+.previewLines i {
+  display: block;
+  height: 9px;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 70%);
+}
+
+.previewLines i:nth-child(1) { width: 55%; height: 14px; }
+.previewLines i:nth-child(2) { width: 90%; }
+.previewLines i:nth-child(3) { width: 80%; }
+.previewLines i:nth-child(4) { width: 65%; }
+
+.previewOff {
+  position: absolute;
+  inset: auto 12px 12px;
+  margin: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #475569;
+  background: rgb(255 255 255 / 85%);
+  font-size: 0.8rem;
+  text-align: center;
+}
+
+.toast {
+  position: fixed;
+  inset-inline-end: 24px;
+  bottom: 24px;
+  z-index: 10050;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  max-width: min(420px, calc(100vw - 48px));
+  border-radius: 10px;
+  padding: 12px 14px 12px 16px;
+  color: #fff;
+  background: #15803d;
+  box-shadow: 0 12px 30px rgb(15 23 42 / 25%);
+  font-size: 0.88rem;
+  font-weight: 600;
+  animation: toastIn 0.25s ease-out;
+}
+
+.toastClose {
+  flex: none;
+  margin-inline-start: auto;
+  border: 0;
+  padding: 0 4px;
+  color: inherit;
+  background: none;
+  cursor: pointer;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(10px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast { animation: none; }
+}

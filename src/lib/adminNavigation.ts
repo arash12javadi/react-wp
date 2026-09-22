@@ -64,6 +64,7 @@ const coreNavigation: AdminNavItem[] = [
     submenu: [
       { id: 'site', label: 'Site', icon: '🌐' },
       { id: 'accounts', label: 'Accounts', icon: '🔐' },
+      { id: 'floating-login', label: 'Floating Login', icon: '🔑' },
       { id: 'general', label: 'General', icon: '🎛️' },
       { id: 'uploads', label: 'Uploads', icon: '📤' },
       { id: 'seo', label: 'SEO', icon: '🔍' },
@@ -83,6 +84,8 @@ const coreNavigation: AdminNavItem[] = [
 /** Old ids still reach the right screen: bookmarks, the page builder's links, App Settings. */
 const legacySections: Record<string, [string, string]> = {
   'app-settings': ['settings', 'general'],
+  // Floating Login was a plugin page before it moved into Settings.
+  'floating-login': ['settings', 'floating-login'],
   categories: ['content', 'categories'],
   'rwp-shop-products': ['rwp-shop', 'products'],
 };

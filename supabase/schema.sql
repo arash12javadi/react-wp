@@ -1630,6 +1630,18 @@ insert into public.options (option_name, option_value) values
   ('supported_languages', '["en"]')
 on conflict (option_name) do nothing;
 
+-- Settings → Floating Login (src/lib/floatingLogin.ts). A missing row means the same default, so
+-- this only makes the values visible; an existing value is never overwritten.
+-- Kept identical to supabase/migrations/20261007_floating_login.sql.
+insert into public.options (option_name, option_value) values
+  ('floating_login_enabled', 'true'),
+  ('floating_login_position', 'bottom-right'),
+  ('floating_login_button_text', 'Login / Register'),
+  ('floating_login_allow_registration', 'true'),
+  ('floating_login_redirect_url', '/'),
+  ('floating_login_theme', 'dark')
+on conflict (option_name) do nothing;
+
 -- The site's language, for column defaults below. Falls back to 'en' when the option is missing
 -- or was hand-edited to something empty. Deliberately NOT revoked from anon/authenticated: it is
 -- used as a column default, which runs as the inserting user, and it only reads a public option.

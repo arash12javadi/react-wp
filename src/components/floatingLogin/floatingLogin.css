@@ -1,0 +1,502 @@
+/*
+ * Floating Login. Global rwp-fl-* classes on purpose: they are what Appearance → Custom CSS targets,
+ * so keep the names stable. Each theme only sets the custom properties below.
+ *
+ * Layers: the button (9850) sits above the header layer (9800), so a top-corner button is not hidden
+ * under a sticky header; the dialog (9985) is above the header and the off-canvas menu (9990) and
+ * search overlay (9995) stay above it, since those are opened from the header on purpose.
+ */
+
+.rwp-fl {
+  --rwp-fl-bg: #0f172a;
+  --rwp-fl-fg: #f1f5f9;
+  --rwp-fl-muted: #94a3b8;
+  --rwp-fl-border: rgb(148 163 184 / 22%);
+  --rwp-fl-field-bg: #1e293b;
+  --rwp-fl-field-border: #334155;
+  --rwp-fl-tab-active: #334155;
+  --rwp-fl-accent: #6366f1;
+  --rwp-fl-accent-hover: #4f46e5;
+  --rwp-fl-accent-fg: #fff;
+  --rwp-fl-link: #a5b4fc;
+  --rwp-fl-focus: rgb(129 140 248 / 55%);
+  --rwp-fl-error-bg: rgb(239 68 68 / 15%);
+  --rwp-fl-error-fg: #fca5a5;
+  --rwp-fl-notice-bg: rgb(34 197 94 / 15%);
+  --rwp-fl-notice-fg: #86efac;
+  --rwp-fl-backdrop: rgb(2 6 23 / 62%);
+  --rwp-fl-backdrop-filter: blur(2px);
+  --rwp-fl-dialog-filter: none;
+  --rwp-fl-shadow: 0 24px 60px rgb(2 6 23 / 45%);
+  --rwp-fl-trigger-bg: #0f172a;
+  --rwp-fl-trigger-fg: #fff;
+  --rwp-fl-trigger-border: rgb(255 255 255 / 12%);
+  --rwp-fl-trigger-filter: none;
+  --rwp-fl-offset: 24px;
+
+  font-family: var(--rwp-font-family, system-ui, -apple-system, 'Segoe UI', sans-serif);
+  line-height: 1.45;
+}
+
+.rwp-fl *,
+.rwp-fl *::before,
+.rwp-fl *::after {
+  box-sizing: border-box;
+}
+
+.rwp-fl-theme-light {
+  --rwp-fl-bg: #fff;
+  --rwp-fl-fg: #0f172a;
+  --rwp-fl-muted: #64748b;
+  --rwp-fl-border: #e2e8f0;
+  --rwp-fl-field-bg: #f8fafc;
+  --rwp-fl-field-border: #cbd5e1;
+  --rwp-fl-tab-active: #fff;
+  --rwp-fl-accent: #4f46e5;
+  --rwp-fl-accent-hover: #4338ca;
+  --rwp-fl-link: #4f46e5;
+  --rwp-fl-focus: rgb(99 102 241 / 30%);
+  --rwp-fl-error-bg: #fef2f2;
+  --rwp-fl-error-fg: #b91c1c;
+  --rwp-fl-notice-bg: #f0fdf4;
+  --rwp-fl-notice-fg: #15803d;
+  --rwp-fl-backdrop: rgb(15 23 42 / 45%);
+  --rwp-fl-shadow: 0 24px 60px rgb(15 23 42 / 22%);
+  --rwp-fl-trigger-bg: #fff;
+  --rwp-fl-trigger-fg: #0f172a;
+  --rwp-fl-trigger-border: #e2e8f0;
+}
+
+.rwp-fl-theme-glassmorphism {
+  --rwp-fl-bg: rgb(255 255 255 / 12%);
+  --rwp-fl-fg: #fff;
+  --rwp-fl-muted: rgb(255 255 255 / 78%);
+  --rwp-fl-border: rgb(255 255 255 / 32%);
+  --rwp-fl-field-bg: rgb(255 255 255 / 12%);
+  --rwp-fl-field-border: rgb(255 255 255 / 34%);
+  --rwp-fl-tab-active: rgb(255 255 255 / 24%);
+  --rwp-fl-accent: rgb(255 255 255 / 92%);
+  --rwp-fl-accent-hover: #fff;
+  --rwp-fl-accent-fg: #0f172a;
+  --rwp-fl-link: #fff;
+  --rwp-fl-focus: rgb(255 255 255 / 45%);
+  --rwp-fl-error-bg: rgb(239 68 68 / 28%);
+  --rwp-fl-error-fg: #fff;
+  --rwp-fl-notice-bg: rgb(34 197 94 / 28%);
+  --rwp-fl-notice-fg: #fff;
+  --rwp-fl-backdrop: rgb(15 23 42 / 50%);
+  --rwp-fl-backdrop-filter: blur(6px);
+  --rwp-fl-dialog-filter: blur(20px) saturate(160%);
+  --rwp-fl-shadow: 0 24px 60px rgb(2 6 23 / 35%), inset 0 1px 0 rgb(255 255 255 / 25%);
+  --rwp-fl-trigger-bg: rgb(15 23 42 / 45%);
+  --rwp-fl-trigger-fg: #fff;
+  --rwp-fl-trigger-border: rgb(255 255 255 / 35%);
+  --rwp-fl-trigger-filter: blur(12px) saturate(160%);
+}
+
+/* Without backdrop-filter the glass would be white text on a see-through card: make it solid. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .rwp-fl-theme-glassmorphism {
+    --rwp-fl-bg: rgb(30 41 59 / 94%);
+    --rwp-fl-trigger-bg: rgb(30 41 59 / 94%);
+  }
+}
+
+/* The button ------------------------------------------------------------------------------------ */
+
+/* Corners are the designer's explicit choice, so they stay physical in RTL (see CLAUDE.md). */
+.rwp-fl-trigger {
+  position: fixed;
+  z-index: 9850;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  max-width: calc(100vw - 2 * var(--rwp-fl-offset));
+  margin: 0;
+  border: 1px solid var(--rwp-fl-trigger-border);
+  border-radius: 999px;
+  padding: 12px 18px;
+  color: var(--rwp-fl-trigger-fg);
+  background: var(--rwp-fl-trigger-bg);
+  box-shadow: 0 10px 30px rgb(2 6 23 / 25%);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  -webkit-backdrop-filter: var(--rwp-fl-trigger-filter);
+  backdrop-filter: var(--rwp-fl-trigger-filter);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  animation: rwp-fl-pop-in 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.rwp-fl-trigger span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rwp-fl-trigger-icon {
+  flex: none;
+}
+
+.rwp-fl-trigger:hover {
+  box-shadow: 0 14px 34px rgb(2 6 23 / 32%);
+  transform: translateY(-2px);
+}
+
+.rwp-fl-trigger:focus-visible {
+  outline: 3px solid var(--rwp-fl-accent);
+  outline-offset: 3px;
+}
+
+.rwp-fl-pos-bottom-right { right: var(--rwp-fl-offset); bottom: max(var(--rwp-fl-offset), env(safe-area-inset-bottom)); }
+.rwp-fl-pos-bottom-left { left: var(--rwp-fl-offset); bottom: max(var(--rwp-fl-offset), env(safe-area-inset-bottom)); }
+.rwp-fl-pos-top-right { top: max(var(--rwp-fl-offset), env(safe-area-inset-top)); right: var(--rwp-fl-offset); }
+.rwp-fl-pos-top-left { top: max(var(--rwp-fl-offset), env(safe-area-inset-top)); left: var(--rwp-fl-offset); }
+
+/* The admin's Live Preview: inside its box, not the window. */
+.rwp-fl-trigger--contained {
+  position: absolute;
+  z-index: 1;
+  --rwp-fl-offset: 16px;
+}
+
+@media (max-width: 480px) {
+  .rwp-fl {
+    --rwp-fl-offset: 16px;
+  }
+
+  .rwp-fl-trigger {
+    padding: 11px 15px;
+  }
+}
+
+/* The dialog ------------------------------------------------------------------------------------ */
+
+.rwp-fl-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 9985;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.rwp-fl-backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--rwp-fl-backdrop);
+  -webkit-backdrop-filter: var(--rwp-fl-backdrop-filter);
+  backdrop-filter: var(--rwp-fl-backdrop-filter);
+}
+
+.rwp-fl-dialog {
+  position: relative;
+  width: min(420px, 100%);
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  border: 1px solid var(--rwp-fl-border);
+  border-radius: 18px;
+  padding: 28px 26px 24px;
+  color: var(--rwp-fl-fg);
+  background: var(--rwp-fl-bg);
+  box-shadow: var(--rwp-fl-shadow);
+  -webkit-backdrop-filter: var(--rwp-fl-dialog-filter);
+  backdrop-filter: var(--rwp-fl-dialog-filter);
+  text-align: start;
+}
+
+.rwp-fl-dialog:focus {
+  outline: none;
+}
+
+.rwp-fl-layer--inline {
+  position: relative;
+  inset: auto;
+  z-index: auto;
+  display: block;
+  padding: 0;
+}
+
+.rwp-fl-layer--inline .rwp-fl-dialog {
+  max-height: none;
+  margin: 0 auto;
+}
+
+.rwp-fl-layer[data-state='open'] .rwp-fl-backdrop { animation: rwp-fl-fade-in 0.2s ease-out; }
+.rwp-fl-layer[data-state='open'] .rwp-fl-dialog { animation: rwp-fl-dialog-in 0.24s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.rwp-fl-layer[data-state='closing'] .rwp-fl-backdrop { animation: rwp-fl-fade-out 0.2s ease-in forwards; }
+.rwp-fl-layer[data-state='closing'] .rwp-fl-dialog { animation: rwp-fl-dialog-out 0.2s ease-in forwards; }
+.rwp-fl-layer--inline[data-state='open'] .rwp-fl-dialog { animation: none; }
+
+.rwp-fl-close {
+  position: absolute;
+  top: 12px;
+  inset-inline-end: 12px;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin: 0;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  color: var(--rwp-fl-muted);
+  background: transparent;
+  cursor: pointer;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.rwp-fl-close:hover {
+  color: var(--rwp-fl-fg);
+  background: var(--rwp-fl-field-bg);
+}
+
+.rwp-fl-close:focus-visible,
+.rwp-fl-tab:focus-visible,
+.rwp-fl-link:focus-visible,
+.rwp-fl-submit:focus-visible {
+  outline: 3px solid var(--rwp-fl-focus);
+  outline-offset: 2px;
+}
+
+.rwp-fl-title {
+  margin: 0 0 4px;
+  padding-inline-end: 36px;
+  color: var(--rwp-fl-fg);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.rwp-fl-muted {
+  margin: 0;
+  color: var(--rwp-fl-muted);
+  font-size: 14px;
+}
+
+.rwp-fl-subtitle {
+  margin-bottom: 18px;
+}
+
+.rwp-fl-subtitle:empty {
+  display: none;
+}
+
+.rwp-fl-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-bottom: 18px;
+  border-radius: 12px;
+  padding: 4px;
+  background: var(--rwp-fl-field-bg);
+}
+
+.rwp-fl-tab {
+  margin: 0;
+  border: 0;
+  border-radius: 9px;
+  padding: 9px 10px;
+  color: var(--rwp-fl-muted);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+.rwp-fl-tab[aria-selected='true'] {
+  color: var(--rwp-fl-fg);
+  background: var(--rwp-fl-tab-active);
+  box-shadow: 0 1px 3px rgb(2 6 23 / 18%);
+}
+
+.rwp-fl-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+  animation: rwp-fl-panel-in 0.22s ease-out;
+}
+
+.rwp-fl-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rwp-fl-label {
+  color: var(--rwp-fl-fg);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.rwp-fl-input {
+  width: 100%;
+  margin: 0;
+  border: 1px solid var(--rwp-fl-field-border);
+  border-radius: 10px;
+  padding: 11px 13px;
+  outline: none;
+  color: var(--rwp-fl-fg);
+  background: var(--rwp-fl-field-bg);
+  font: inherit;
+  font-size: 15px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.rwp-fl-input:focus {
+  border-color: var(--rwp-fl-accent);
+  box-shadow: 0 0 0 3px var(--rwp-fl-focus);
+}
+
+.rwp-fl-input[aria-invalid='true'] {
+  border-color: var(--rwp-fl-error-fg);
+}
+
+.rwp-fl-hint {
+  color: var(--rwp-fl-muted);
+  font-size: 12px;
+}
+
+.rwp-fl-field-error {
+  color: var(--rwp-fl-error-fg);
+  font-size: 12.5px;
+}
+
+.rwp-fl-alert {
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13.5px;
+}
+
+.rwp-fl-alert--error { color: var(--rwp-fl-error-fg); background: var(--rwp-fl-error-bg); }
+.rwp-fl-alert--notice { color: var(--rwp-fl-notice-fg); background: var(--rwp-fl-notice-bg); }
+
+.rwp-fl-submit {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin: 4px 0 0;
+  border: 0;
+  border-radius: 10px;
+  padding: 12px;
+  color: var(--rwp-fl-accent-fg);
+  background: var(--rwp-fl-accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  transition: background-color 0.15s ease;
+}
+
+.rwp-fl-submit:hover:not(:disabled) {
+  background: var(--rwp-fl-accent-hover);
+}
+
+.rwp-fl-submit:disabled {
+  cursor: progress;
+  opacity: 0.8;
+}
+
+.rwp-fl-links {
+  margin: 0;
+  color: var(--rwp-fl-muted);
+  font-size: 13.5px;
+  text-align: center;
+}
+
+.rwp-fl-links:empty {
+  display: none;
+}
+
+.rwp-fl-link {
+  margin: 0;
+  border: 0;
+  padding: 0;
+  color: var(--rwp-fl-link);
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+
+.rwp-fl-link:hover {
+  text-decoration: underline;
+}
+
+.rwp-fl-success {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 0 4px;
+  text-align: center;
+}
+
+.rwp-fl-success-icon {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 6px;
+  border-radius: 50%;
+  color: var(--rwp-fl-notice-fg);
+  background: var(--rwp-fl-notice-bg);
+  font-size: 28px;
+  font-weight: 700;
+  animation: rwp-fl-pop-in 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.rwp-fl-success-title {
+  margin: 0;
+  color: var(--rwp-fl-fg);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.rwp-fl-spinner {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  margin-top: 10px;
+  border: 3px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  color: var(--rwp-fl-muted);
+  animation: rwp-fl-spin 0.8s linear infinite;
+}
+
+.rwp-fl-spinner--small {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border-width: 2px;
+  color: inherit;
+}
+
+@keyframes rwp-fl-fade-in { from { opacity: 0; } }
+@keyframes rwp-fl-fade-out { to { opacity: 0; } }
+@keyframes rwp-fl-dialog-in { from { opacity: 0; transform: translateY(12px) scale(0.97); } }
+@keyframes rwp-fl-dialog-out { to { opacity: 0; transform: translateY(8px) scale(0.98); } }
+@keyframes rwp-fl-panel-in { from { opacity: 0; transform: translateY(4px); } }
+@keyframes rwp-fl-pop-in { from { opacity: 0; transform: scale(0.85); } }
+@keyframes rwp-fl-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .rwp-fl,
+  .rwp-fl * {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  /* Still shows that something is happening, just slowly. */
+  .rwp-fl .rwp-fl-spinner {
+    animation: rwp-fl-spin 1.6s linear infinite !important;
+  }
+}

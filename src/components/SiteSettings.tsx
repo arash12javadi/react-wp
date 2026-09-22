@@ -1,5 +1,6 @@
 import SiteSettingsPanel from './settings/SiteSettingsPanel';
 import AccountsPanel from './settings/AccountsPanel';
+import FloatingLoginPanel from './settings/FloatingLoginPanel';
 import RolesPanel from './settings/RolesPanel';
 import TranslationsPanel from './settings/TranslationsPanel';
 import BackupPanel from './settings/BackupPanel';
@@ -11,6 +12,7 @@ import styles from './SiteSettings.module.css';
 const descriptions: Record<string, [string, string]> = {
   site: ['Site', 'The site title, tagline, logo, icon, front page, and the profile and dashboard pages for signed-in people.'],
   accounts: ['Accounts', 'Who can register and what they become, the sign-in pages, where signing in and out leads, and the admin toolbar.'],
+  'floating-login': ['Floating Login', 'A button fixed to a corner of every public page that opens a Log in / Register / Forgot password dialog.'],
   general: ['General', 'What the public site shows, whose media each role sees, excerpts, and menu profile links.'],
   uploads: ['Uploads', 'File size and image dimension rules, and how much storage each role or person may use.'],
   seo: ['SEO', 'Meta keywords in the page editor, and tracking scripts such as Google Tag Manager.'],
@@ -34,6 +36,7 @@ export default function SiteSettings({ tab, onBrandingChange }: { tab: string; o
       </div>
 
       {tab === 'accounts' ? <AccountsPanel />
+        : tab === 'floating-login' ? <FloatingLoginPanel />
         : tab === 'roles' ? <RolesPanel />
         : tab === 'translations' ? <TranslationsPanel />
         : tab === 'backup' ? <BackupPanel />
