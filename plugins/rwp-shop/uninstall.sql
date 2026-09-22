@@ -79,6 +79,16 @@ drop table if exists public.shop_tags cascade;
 drop table if exists public.shop_categories cascade;
 
 -- Functions. Signatures must match schema.sql exactly, or the drop is a silent no-op.
+drop function if exists public.shop_backup_import(jsonb, jsonb, boolean);
+drop function if exists public.shop_backup_prune(text);
+drop function if exists public.shop_backup_links(text, jsonb, text, text, text, text, text);
+drop function if exists public.shop_backup_fix(text, jsonb, jsonb);
+drop function if exists public.shop_backup_put(text, jsonb, text, text, jsonb, text, jsonb);
+drop function if exists public.shop_backup_remap(jsonb, jsonb);
+drop function if exists public.shop_backup_resolve(text, text);
+drop function if exists public.shop_backup_export(text[], jsonb);
+drop function if exists public.shop_backup_tables(text);
+drop function if exists public.shop_backup_label(text);
 drop function if exists public.shop_apply_bundle_discounts(jsonb[], integer);
 drop function if exists public.shop_variations_price_alerts();
 drop function if exists public.shop_products_price_alerts();

@@ -381,6 +381,29 @@ Everything happens in the browser and in Supabase, so this also works on Vercel.
 
 **Size limits.** The whole backup is held in browser memory, which is fine for hundreds of megabytes of media, not tens of gigabytes. Supabase cancels statements from signed-in users after 8 seconds by default; a very large restore can hit that and is rolled back. The error says so and gives the fix: `alter role authenticated set statement_timeout = '60s'; notify pgrst, 'reload config';`.
 
+### Shop backup and import
+
+Run [`supabase/migrations/20261006_shop_backup.sql`](./supabase/migrations/20261006_shop_backup.sql) for a site where the shop is already active (activating the shop runs it as part of `plugins/rwp-shop/schema.sql`). Safe to re-run.
+
+**Shop → Backup** is for the shop alone, and for shop managers (`manage_shop`), not only administrators. Settings → Backup can only replace the whole site. This screen can move a catalogue to another store, merge two, or restore last week's orders without touching the rest.
+
+**Export** picks any of Orders, Products, Reports, Customers, Coupons, Reviews, Offers, Questions, Price alerts, Bundles and Settings, optionally orders from a date range and without trashed products. The `.zip` holds `shop-backup.json` (from `shop_backup_export()`), optional CSV copies of every table under `spreadsheets/`, and for Reports the sales report under `reports/`. Reports are never imported: they are calculated from orders. Payment secret keys are server environment variables and are never in the file. Images stay as URLs; Settings → Backup is the one that carries media files.
+
+**Import** takes a shop backup or a full site backup (only its shop part is used), and a mode per part:
+
+- **Update & add**: items that exist are overwritten, the rest added. An updated product ends up with exactly the backup's variations, files and categories, and an updated order with exactly its items, notes and refunds.
+- **Add missing only**: existing items and their children are left exactly as they are.
+- **Replace**: like update, then the part's items that are not in the backup are deleted (products take their reviews, questions, offers, alerts and bundles with them). Needs typing `REPLACE`.
+- **Add as copies** (products and coupons): everything gets a new id; a taken slug or coupon code gets `-2`, a taken SKU is cleared.
+
+**Preview changes** runs the real import in the database and rolls it back (`p_dry_run`), so the table it shows (added, updated, left alone, deleted, not imported, per table) is exactly what Import will do. Numbered rows (orders, items, notes, refunds, reviews) are numbered from the highest id in use rather than with `nextval`, because a sequence does not roll back and every preview would use up order numbers. The screen also downloads a backup of the same parts before a real import, unless unticked.
+
+**How an existing item is recognised.** By id first, then by what identifies it to a person: product slug, then SKU; category, tag, attribute and shipping class slug; coupon code; the setting's name; a variation by its options; an order by its **order key**, never its number (#12 on another site is a different order). Every reference inside the backup is then re-pointed to the row it became: category parents, variations, order items, refund lines, download counters, coupon product and category lists, upsells, bundle pairs and shipping class costs. A backup of reviews or orders without products carries each product's id, slug and SKU under `references`, so it still finds the same products on another site. New rows keep the backup's id when this site doesn't use it, which keeps order numbers and emailed download links working after a restore.
+
+**Accounts** are matched by email, like the site restore. Orders of someone without an account here keep their billing details and come back to that person through the existing guest-order claim when they sign up with that email. Rows that cannot exist without their account (saved addresses, questions, offers, price alerts) are skipped, and the report lists the emails.
+
+Like the site restore, the import runs in one transaction with the shop's triggers off, so orders don't take stock again, reviews keep their authors and dates, and questions aren't rate-limited. Ratings are recalculated from the reviews afterwards. Replace deletions run after the triggers are back on, so a deleted product still takes its likes and views with it. The 8-second statement limit applies here too; the error gives the same fix.
+
 ### App Settings
 
 Run [`supabase/migrations/20260920_app_settings.sql`](./supabase/migrations/20260920_app_settings.sql) for an existing installation. Safe to re-run. These settings are now under **Settings → General, Uploads, SEO and Languages** in the admin (administrators only); one Save button covers all of them. Roles moved to its own screen in 20261001 (see [Account pages, redirects and capability grants](#account-pages-redirects-and-capability-grants)).

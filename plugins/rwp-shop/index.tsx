@@ -96,6 +96,7 @@ export const shopPluginCleanup = defineRwpPlugin(manifest, ({ admin, routes, hea
         { id: 'alerts', label: 'Price alerts', icon: '🔔' },
         { id: 'bundles', label: 'Bundles', icon: '🧺' },
         { id: 'settings', label: 'Settings', icon: '⚙️' },
+        { id: 'backup', label: 'Backup', icon: '💾' },
       ],
     }),
     admin.registerDashboardWidget({ id: 'rwp-shop-summary', title: '🛒 Shop at a glance', capability: 'manage_shop', component: ShopDashboardWidget }),

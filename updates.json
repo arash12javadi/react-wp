@@ -20,8 +20,10 @@
   },
   "plugins": {
     "rwp-shop": {
-      "version": "1.1.0",
+      "version": "1.2.0",
       "notes": [
+        "Shop → Backup: export orders, products, reports, customers, coupons, reviews, offers, questions, price alerts, bundles and settings to a ZIP (with optional spreadsheet copies), and import it back.",
+        "Import chooses per part: update & add, add missing only, replace, or add as copies (products and coupons), with a preview of every change before anything is written.",
         "Product likes, saves (wishlists) and view counts.",
         "Product Q&A: customers ask, the store answers under Shop → Questions.",
         "Make an Offer: accept, decline or counter under Shop → Offers; an accepted offer becomes a single-use coupon.",
@@ -29,7 +31,7 @@
         "Frequently Bought Together with an optional bundle discount, set under Shop → Bundles and applied at checkout.",
         "New shortcodes [rwp_product_qa], [rwp_make_offer], [rwp_price_alert], [rwp_frequently_bought] and matching Page Builder widgets."
       ],
-      "migrations": ["supabase/migrations/20261004_engagement.sql", "supabase/migrations/20261005_shop_engagement.sql"]
+      "migrations": ["supabase/migrations/20261004_engagement.sql", "supabase/migrations/20261005_shop_engagement.sql", "supabase/migrations/20261006_shop_backup.sql"]
     },
     "rwp-page-builder": {
       "version": "1.1.0",

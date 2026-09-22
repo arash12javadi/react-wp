@@ -462,6 +462,48 @@
   font-weight: 700;
 }
 
+/* Shop → Backup: one checkable card per part of the shop. */
+.optionGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.optionCard,
+.optionCardOn {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.optionCardOn {
+  border-color: #4f46e5;
+  background: #eef2ff;
+}
+
+.optionCard input,
+.optionCardOn input {
+  margin-block-start: 3px;
+  accent-color: #4f46e5;
+}
+
+.optionIcon {
+  font-size: 1.3rem;
+  line-height: 1.2;
+}
+
+.optionText {
+  display: grid;
+  gap: 3px;
+  color: #0f172a;
+  font-size: 0.88rem;
+}
+
 @media (max-width: 1000px) {
   .editorLayout {
     grid-template-columns: 1fr;
