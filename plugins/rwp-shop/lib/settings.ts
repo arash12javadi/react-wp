@@ -74,6 +74,15 @@ export interface ShopSettings {
   show_verified_label: boolean;
   review_rating_required: boolean;
 
+  /** Product Q&A, Make an Offer and price-drop alerts. Read by SQL too (shop_settings()). */
+  enable_qa: boolean;
+  enable_offers: boolean;
+  /** Offers below this percentage of the price are refused by shop_make_offer. */
+  offer_min_percent: number;
+  /** How long the coupon of an accepted offer stays valid. */
+  offer_valid_days: number;
+  enable_price_alerts: boolean;
+
   guest_checkout: boolean;
   login_reminder: boolean;
   terms_page_url: string;
@@ -162,6 +171,12 @@ export const defaultShopSettings: ShopSettings = {
   verified_owners_only: false,
   show_verified_label: true,
   review_rating_required: true,
+
+  enable_qa: true,
+  enable_offers: true,
+  offer_min_percent: 50,
+  offer_valid_days: 7,
+  enable_price_alerts: true,
 
   guest_checkout: true,
   login_reminder: true,

@@ -16,6 +16,9 @@ import SiteTemplate from './SiteTemplate';
 import styles from './PublicHome.module.css';
 import { rwp } from '../lib/rwp';
 import { accountIdKey, accountPages, signOutAndRedirect } from '../lib/account';
+import { useRecordView } from '../lib/engagement';
+import EngagementBar from './engagement/EngagementBar';
+import { EngagementTargetProvider } from './engagement/context';
 
 const defaultMenuLinks = [
   { label: 'Home', url: '/' },
@@ -109,6 +112,9 @@ export default function PublicContent({ slug, pageId, onReconfigure, fallback }:
     return () => { mounted = false; };
   }, [pageId, previewing, slug]);
 
+  // Counted for every published page, whichever renderer draws it (classic, builder, template).
+  useRecordView('page', page?.id, Boolean(page && page.status === 'published' && !previewing));
+
   const canEdit = canManageAllPosts(role) || Boolean(page?.author_id && page.author_id === userId);
   const containerClass = page?.layout === 'full'
     ? styles.containerFull
@@ -148,6 +154,10 @@ export default function PublicContent({ slug, pageId, onReconfigure, fallback }:
         className={styles.content}
         html={rwp.filters.apply('rwp_page_content', page.content, page)}
       />
+      {/* Posts only: a Like bar under About or Contact would be noise. Pages can use [rwp_engagement]. */}
+      {page.is_post && page.status === 'published' && (
+        <EngagementBar targetType="page" targetId={page.id} authorId={page.author_id || null} placement="auto" />
+      )}
       {comments}
     </article>
     } />
@@ -181,13 +191,18 @@ export default function PublicContent({ slug, pageId, onReconfigure, fallback }:
         {!loading && !error && !page && (
           <SiteTemplate types={['404']} fallback={<section className={styles.hero}><h1>Page not found</h1><p>This page does not exist or is not published.</p><a className={styles.heroLink} href="/">Return home</a></section>} />
         )}
-        {page && (withSidebar ? (
-          // The page decides whether it has a sidebar; the theme decides which side. "Hidden" is for the index only.
-          <div className={`${styles.grid} rwpt-grid rwpt-sidebar-${theme.layout.index.options.sidebar_position === 'left' ? 'left' : 'right'}`}>
-            {article}
-            <PublicSidebar />
-          </div>
-        ) : article)}
+        {page && (
+          // Engagement shortcodes in the content ([rwp_like] …) default to this page.
+          <EngagementTargetProvider value={{ targetType: 'page', targetId: page.id, authorId: page.author_id || null, categoryId: page.category_id || null }}>
+            {withSidebar ? (
+              // The page decides whether it has a sidebar; the theme decides which side. "Hidden" is for the index only.
+              <div className={`${styles.grid} rwpt-grid rwpt-sidebar-${theme.layout.index.options.sidebar_position === 'left' ? 'left' : 'right'}`}>
+                {article}
+                <PublicSidebar />
+              </div>
+            ) : article}
+          </EngagementTargetProvider>
+        )}
       </main>
     </PublicLayout>
   );

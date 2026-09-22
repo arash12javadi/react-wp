@@ -166,6 +166,26 @@ export async function buildEmail(ctx, type, order, settings, extra = {}) {
   }
 }
 
+/** A short branded email for offers and price alerts: { subject, html }. Everything interpolated is escaped. */
+export function commerceEmail({ settings, siteTitle, heading, intro, code = null, note = '', link, linkLabel }) {
+  const color = settings?.emails?.base_color || '#7f54b3';
+  const footer = settings?.emails?.footer_text || siteTitle;
+  return {
+    subject: `[${siteTitle}] ${heading}`,
+    html: `<!doctype html><html><body style="margin:0;background:#f5f5f5;font-family:Helvetica,Arial,sans-serif;color:#333">
+  <div style="max-width:600px;margin:0 auto;padding:24px">
+    <div style="background:${escape(color)};color:#fff;padding:24px;border-radius:6px 6px 0 0"><h1 style="margin:0;font-size:22px">${escape(heading)}</h1></div>
+    <div style="background:#fff;padding:24px;border-radius:0 0 6px 6px">
+      <p>${escape(intro)}</p>
+      ${code ? `<p style="font-size:20px;font-weight:bold;letter-spacing:1px;font-family:monospace">${escape(String(code).toUpperCase())}</p>` : ''}
+      ${note ? `<blockquote style="border-left:4px solid #ddd;margin:0 0 16px;padding:8px 12px">${escape(note)}</blockquote>` : ''}
+      <p><a href="${escape(link)}" style="color:${escape(color)}">${escape(linkLabel)}</a></p>
+    </div>
+    <p style="text-align:center;color:#999;font-size:12px">${escape(footer)}</p>
+  </div></body></html>`,
+  };
+}
+
 export async function send(email) {
   const transport = await getTransport();
   const fromName = email.fromName ? `"${String(email.fromName).replace(/"/g, '')}" ` : '';

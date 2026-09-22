@@ -2,30 +2,39 @@
   "format": "rwp-update-feed",
   "version": 1,
   "app": {
-    "version": "1.1.0",
-    "released": "2026-10-01",
+    "version": "1.2.0",
+    "released": "2026-09-22",
     "notes": [
-      "New sites start with a Home page set as the front page, a Blog, a Sample Post, and Log In, Register, Lost Password, User Profile and Dashboard pages.",
-      "Settings → Site chooses the user profile and dashboard pages; Settings → Accounts chooses the sign-in pages, where signing in and out leads, and who sees the admin toolbar.",
-      "Settings → Roles adds any capability to a role or to one person.",
-      "Pages & Posts has a Category column: giving a page a category makes it a post.",
-      "Fixed: password reset links now let people choose a new password.",
-      "Fixed: shortcodes in page content (sign-in forms, [rwp_login] …) could render nothing.",
-      "Page Builder: new Account Form widget; the account pages are built with it.",
-      "Search boxes list results as you type and have a Go button.",
-      "Theme Editor: choose Left, Center or Right when adding a header or footer block; Right now really sticks to the right.",
-      "Pages can hide the header and footer; the header and its menus always stay above page content."
+      "Engagement: Like, Save (with your own collections) and Follow buttons for posts, authors and categories, and view counts.",
+      "Settings → Engagement switches each feature off site-wide, and chooses where buttons appear automatically.",
+      "The visitors' dashboard has My saved collections and a Following feed that refreshes itself when a followed author publishes.",
+      "Dashboard → Analytics: views, likes, saves and follows per period, top content and most-followed authors.",
+      "New shortcodes: [rwp_like], [rwp_save], [rwp_follow], [rwp_views], [rwp_engagement], [rwp_popular_content], [rwp_saved_collections], [rwp_following_feed].",
+      "Views count once per browser per item every 30 minutes, never for the author, and store no IP address or visitor id."
     ],
     "migrations": [
-      "supabase/migrations/20261001_account_pages_capabilities.sql",
-      "supabase/migrations/20261002_page_header_footer.sql"
+      "supabase/migrations/20261004_engagement.sql"
     ],
     "download_url": "https://github.com/arash12javadi/react-wp/archive/refs/heads/main.zip",
     "changelog_url": "https://github.com/arash12javadi/react-wp/commits/main"
   },
   "plugins": {
-    "rwp-shop": { "version": "1.0.0" },
-    "rwp-page-builder": { "version": "1.0.0" },
+    "rwp-shop": {
+      "version": "1.1.0",
+      "notes": [
+        "Product likes, saves (wishlists) and view counts.",
+        "Product Q&A: customers ask, the store answers under Shop → Questions.",
+        "Make an Offer: accept, decline or counter under Shop → Offers; an accepted offer becomes a single-use coupon.",
+        "Price-drop alerts, emailed from Shop → Price alerts.",
+        "Frequently Bought Together with an optional bundle discount, set under Shop → Bundles and applied at checkout.",
+        "New shortcodes [rwp_product_qa], [rwp_make_offer], [rwp_price_alert], [rwp_frequently_bought] and matching Page Builder widgets."
+      ],
+      "migrations": ["supabase/migrations/20261004_engagement.sql", "supabase/migrations/20261005_shop_engagement.sql"]
+    },
+    "rwp-page-builder": {
+      "version": "1.1.0",
+      "notes": ["New Engagement Bar and Popular Content widgets."]
+    },
     "rwp-code-snippets": {
       "version": "1.0.0",
       "migrations": ["supabase/migrations/20260930_code_snippets.sql"]

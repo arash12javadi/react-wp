@@ -8,6 +8,7 @@ import { currentI18nSettings, i18nMigration } from './i18n';
 import { themeMigration } from './theme';
 import { capabilityGrantsMigration } from './capabilityGrants';
 import { translationsMigration } from './translations';
+import { engagementMigration } from './engagement';
 
 /**
  * The Dashboard's setup checklist: what is still missing for this site to work fully, with
@@ -29,7 +30,7 @@ const can = (role: UserRole, capability: Capability) => hasCapability(role, capa
 async function adminNotices(): Promise<RwpSetupNotice[]> {
   const notices: RwpSetupNotice[] = [];
   const supabase = getSupabaseClient();
-  const [settings, mediaConfig, menuRow, quotaProbe, detailsProbe, themeProbe, localeProbe, grantsProbe, translationsProbe] = await Promise.all([
+  const [settings, mediaConfig, menuRow, quotaProbe, detailsProbe, themeProbe, localeProbe, grantsProbe, translationsProbe, engagementProbe] = await Promise.all([
     loadSettings(),
     fetch('/api/media-config').then((response) => (response.ok ? response.json() as Promise<{ cloudinary: boolean; imagekit: boolean }> : null)).catch(() => null),
     supabase.from('options').select('option_name').eq('option_name', 'menu_links').maybeSingle(),
@@ -40,7 +41,24 @@ async function adminNotices(): Promise<RwpSetupNotice[]> {
     supabase.from('pages').select('locale', { count: 'exact', head: true }),
     supabase.from('rwp_role_capabilities').select('role', { count: 'exact', head: true }),
     supabase.from('rwp_translations').select('id', { count: 'exact', head: true }),
+    supabase.from('bookmarks').select('id', { count: 'exact', head: true }),
   ]);
+
+  if (engagementProbe.error && missingTable(describeDbError(engagementProbe.error))) {
+    notices.push({
+      id: 'migration-20261004',
+      level: 'recommended',
+      title: 'Run the engagement database migration',
+      description: 'Like, Save and Follow buttons, view counts, saved collections, the Following feed and Dashboard → Analytics stay hidden until it has run.',
+      steps: [
+        'Open Supabase → SQL Editor → New query.',
+        `Paste the whole of ${engagementMigration} and click Run. It is safe to run again.`,
+        'With the shop active, run supabase/migrations/20261005_shop_engagement.sql next (or re-activate the shop on npm start).',
+        'Reload this page.',
+      ],
+      action: { label: 'Open Supabase', href: 'https://supabase.com/dashboard/projects' },
+    });
+  }
 
   if (translationsProbe.error && missingTable(describeDbError(translationsProbe.error))) {
     notices.push({

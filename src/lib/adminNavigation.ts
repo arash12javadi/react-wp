@@ -21,6 +21,7 @@ const coreNavigation: AdminNavItem[] = [
     id: 'dashboard', label: 'Dashboard', icon: '🏠',
     submenu: [
       { id: 'overview', label: 'Overview', icon: '📊' },
+      { id: 'analytics', label: 'Analytics', icon: '📈', capability: 'edit_others_posts' },
       { id: 'updates', label: 'Updates', icon: '🔄', capability: 'manage_options' },
       { id: 'guide', label: 'Guide & shortcodes', icon: '📘' },
     ],
@@ -66,6 +67,7 @@ const coreNavigation: AdminNavItem[] = [
       { id: 'general', label: 'General', icon: '🎛️' },
       { id: 'uploads', label: 'Uploads', icon: '📤' },
       { id: 'seo', label: 'SEO', icon: '🔍' },
+      { id: 'engagement', label: 'Engagement', icon: '❤️' },
       { id: 'languages', label: 'Languages', icon: '🗣️' },
       { id: 'translations', label: 'Translations', icon: '🔤' },
       { id: 'roles', label: 'Roles', icon: '🛡️' },

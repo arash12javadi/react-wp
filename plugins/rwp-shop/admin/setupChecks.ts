@@ -37,6 +37,22 @@ export async function shopSetupNotices(): Promise<RwpSetupNotice[]> {
     }
   }
 
+  const { error: commerceError } = await supabase.from('shop_product_bundles').select('id', { count: 'exact', head: true });
+  if (commerceError && /schema cache|42P01|PGRST205|does not exist/i.test(describeDbError(commerceError))) {
+    notices.push({
+      id: 'shop-migration-20261005',
+      level: 'recommended',
+      title: 'Run the shop engagement migration',
+      description: 'Product likes and saves, Q&A, Make an Offer, price-drop alerts and Frequently Bought Together need it; until then they stay hidden or show the error.',
+      steps: [
+        'Open your Supabase project → SQL Editor → New query.',
+        'Run supabase/migrations/20261004_engagement.sql first if you have not, then paste the whole of supabase/migrations/20261005_shop_engagement.sql and click Run. Both are safe to run again.',
+        'Reload this page.',
+      ],
+      action: { label: 'Open Supabase', href: 'https://supabase.com/dashboard/projects' },
+    });
+  }
+
   const settings = await loadShopSettings(true);
   if (!settings.store_address.trim() || !settings.store_city.trim() || !settings.store_country) {
     notices.push({

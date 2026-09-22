@@ -33,6 +33,11 @@ import { OrderReceivedPage } from '../public/OrderViews';
 import ShopPage from '../public/ShopPage';
 import { ProductCard, ProductPriceHtml, SaleBadge, Stars } from '../public/components';
 import { useShopRoute } from './ShopLayoutRoute';
+import EngagementBar from '../../../src/components/engagement/EngagementBar';
+import ProductQA from '../components/ProductQA';
+import MakeOfferModal from '../components/MakeOfferModal';
+import PriceAlertButton from '../components/PriceAlertButton';
+import FrequentlyBoughtTogether from '../components/FrequentlyBoughtTogether';
 import './shop-widgets.css';
 
 const isBrowser = typeof window !== 'undefined';
@@ -848,10 +853,130 @@ const shopNotices: WidgetDefinition = {
   },
 };
 
+// Product Q&A, Make an Offer, price alerts, Frequently Bought Together, likes/saves ----------------------------------
+// The same components as the product page (plugins/rwp-shop/components); the database does every check.
+
+const productQA: WidgetDefinition = {
+  type: 'shop-product-qa',
+  label: 'Product Q&A',
+  icon: 'help',
+  category: 'shop',
+  keywords: ['questions', 'answers', 'faq', 'ask'],
+  defaults: () => ({ settings: { product: '', title: 'Questions & answers' } }),
+  controls: [productControl(), { key: 'title', label: 'Heading', type: 'text' }, colorControl('accent', 'Answer accent colour')],
+  css: (bag) => ({ ' .rwp-shop-qa': { '--rwp-shop-accent': color(bag.accent) } }),
+  View: function ProductQAView({ node }) {
+    const { mode } = useRenderContext();
+    return (
+      <ProductWidget settings={node.settings}>
+        {(product, shop) => (shop.enable_qa
+          ? <ProductQA product_id={product.id} title={str(node.settings.title) || 'Questions & answers'} />
+          : mode === 'edit' ? <EditorPlaceholder>Product Q&amp;A is switched off (Shop → Questions).</EditorPlaceholder> : null)}
+      </ProductWidget>
+    );
+  },
+};
+
+const makeOffer: WidgetDefinition = {
+  type: 'shop-make-offer',
+  label: 'Make an Offer',
+  icon: 'dollar',
+  category: 'shop',
+  keywords: ['offer', 'haggle', 'best offer', 'negotiate', 'ebay'],
+  defaults: () => ({ settings: { product: '' } }),
+  controls: [productControl(), alignControl(), colorControl('buttonColor', 'Button text colour')],
+  css: (bag) => ({ '': alignCss(bag), ' .rwp-shop-tool-button': { color: color(bag.buttonColor) } }),
+  View: function MakeOfferView({ node }) {
+    return (
+      <ProductWidget settings={node.settings}>
+        {(product, shop) => (product.type !== 'simple'
+          ? <EditorPlaceholder>Offers are only possible on simple products.</EditorPlaceholder>
+          : !shop.enable_offers ? <EditorPlaceholder>Offers are switched off (Shop → Offers).</EditorPlaceholder>
+            : <MakeOfferModal product_id={product.id} original_price={effectivePrice(product)} product_type={product.type} />)}
+      </ProductWidget>
+    );
+  },
+};
+
+const priceAlert: WidgetDefinition = {
+  type: 'shop-price-alert',
+  label: 'Price Drop Alert',
+  icon: 'bell',
+  category: 'shop',
+  keywords: ['price alert', 'notify', 'watch price', 'bell'],
+  defaults: () => ({ settings: { product: '' } }),
+  controls: [productControl(), alignControl()],
+  css: (bag) => ({ '': alignCss(bag) }),
+  View: function PriceAlertView({ node }) {
+    return (
+      <ProductWidget settings={node.settings}>
+        {(product, shop) => (shop.enable_price_alerts
+          ? <PriceAlertButton product_id={product.id} current_price={product.type === 'simple' ? effectivePrice(product) : minVariationPrice(product)} />
+          : <EditorPlaceholder>Price alerts are switched off (Shop → Price alerts).</EditorPlaceholder>)}
+      </ProductWidget>
+    );
+  },
+};
+
+const minVariationPrice = (product: ProductDetail) => {
+  const prices = product.variations.map((variation) => effectivePrice(variation)).filter((price): price is number => price !== null);
+  return prices.length ? Math.min(...prices) : null;
+};
+
+const frequentlyBought: WidgetDefinition = {
+  type: 'shop-frequently-bought',
+  label: 'Frequently Bought Together',
+  icon: 'boxes',
+  category: 'shop',
+  keywords: ['bundle', 'cross-sell', 'bought together', 'add all to cart'],
+  defaults: () => ({ settings: { product: '', title: 'Frequently bought together' } }),
+  controls: [productControl(), { key: 'title', label: 'Heading', type: 'text' }, colorControl('accent', 'Button colour'), colorControl('panelBg', 'Background')],
+  css: (bag) => ({ ' .rwp-shop-fbt': { '--rwp-shop-accent': color(bag.accent), 'background-color': color(bag.panelBg) } }),
+  View: function FrequentlyBoughtView({ node }) {
+    const { mode } = useRenderContext();
+    return (
+      <ProductWidget settings={node.settings}>
+        {(product) => (
+          <>
+            <FrequentlyBoughtTogether main_product_id={product.id} title={str(node.settings.title) || 'Frequently bought together'} />
+            {mode === 'edit' && <EditorPlaceholder>If nothing shows, add suggestions for “{product.name}” under Shop → Bundles.</EditorPlaceholder>}
+          </>
+        )}
+      </ProductWidget>
+    );
+  },
+};
+
+const productEngagement: WidgetDefinition = {
+  type: 'shop-product-engagement',
+  label: 'Product Like & Save',
+  icon: 'heart',
+  category: 'shop',
+  keywords: ['like', 'wishlist', 'save', 'bookmark', 'views'],
+  defaults: () => ({ settings: { product: '', showLike: true, showSave: true, showViews: true } }),
+  controls: [
+    productControl(),
+    { key: 'showLike', label: 'Like button', type: 'toggle' },
+    { key: 'showSave', label: 'Save button (wishlist)', type: 'toggle' },
+    { key: 'showViews', label: 'View count', type: 'toggle' },
+  ],
+  View: function ProductEngagementView({ node }) {
+    return (
+      <ProductWidget settings={node.settings}>
+        {(product) => (
+          <EngagementBar targetType="product" targetId={product.id} compact showFollow={false}
+            showLike={node.settings.showLike !== false} showSave={node.settings.showSave !== false} showViews={node.settings.showViews !== false} />
+        )}
+      </ProductWidget>
+    );
+  },
+};
+
 /** Panel order within the Shop group. */
 export const shopWidgets: WidgetDefinition[] = [
   products, productCategories, menuCart, customAddToCart, productTitle, productImages, productPrice, addToCart, productRating,
   productStock, productMeta, shortDescription, productContent, productDataTabs, additionalInformation, productRelated, upsells,
+  productEngagement, priceAlert, makeOffer, frequentlyBought, productQA,
   archiveProducts, archiveDescription, cartWidget, checkoutWidget, myAccount, purchaseSummary, shopNotices,
 ];
 

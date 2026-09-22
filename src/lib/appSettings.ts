@@ -44,6 +44,24 @@ export interface AppSettings {
     header_script: string;
     body_script: string;
   };
+  /**
+   * Settings → Engagement: where the Like, Save, Follow buttons and view counts appear. A global
+   * toggle switches that feature off everywhere; the granular ones only affect the places the site
+   * adds buttons by itself (a shortcode or builder widget placed by hand follows the global toggle
+   * only). track_views is read by SQL (rwp_record_view): with it off, nothing is recorded at all.
+   */
+  engagement: {
+    show_like_global: boolean;
+    show_follow_global: boolean;
+    show_views_global: boolean;
+    show_save_global: boolean;
+    show_like_on_posts: boolean;
+    show_like_on_products: boolean;
+    show_follow_on_authors: boolean;
+    show_views_on_single: boolean;
+    show_views_on_archive: boolean;
+    track_views: boolean;
+  };
 }
 
 export const appSettingsOption = 'rwp_app_settings';
@@ -58,6 +76,11 @@ export const defaultAppSettings: AppSettings = {
   // /profile shows the page chosen under Settings → Site → User profile page, for every role.
   menu: { profile_url: '/profile' },
   seo: { meta_keywords_enabled: false, header_script: '', body_script: '' },
+  engagement: {
+    show_like_global: true, show_follow_global: true, show_views_global: true, show_save_global: true,
+    show_like_on_posts: true, show_like_on_products: true, show_follow_on_authors: true,
+    show_views_on_single: true, show_views_on_archive: false, track_views: true,
+  },
 };
 
 type Json = Record<string, unknown>;
@@ -76,7 +99,9 @@ export const normalizeAppSettings = (raw: unknown): AppSettings => {
   const quota = asObject(uploads.quota_mb);
   const menu = asObject(root.menu);
   const seo = asObject(root.seo);
+  const engagement = asObject(root.engagement);
   const d = defaultAppSettings;
+  const engagementFlag = (key: keyof AppSettings['engagement']) => bool(engagement[key], d.engagement[key]);
   return {
     general: {
       show_page_titles: bool(general.show_page_titles, d.general.show_page_titles),
@@ -101,6 +126,18 @@ export const normalizeAppSettings = (raw: unknown): AppSettings => {
       meta_keywords_enabled: bool(seo.meta_keywords_enabled, d.seo.meta_keywords_enabled),
       header_script: str(seo.header_script, ''),
       body_script: str(seo.body_script, ''),
+    },
+    engagement: {
+      show_like_global: engagementFlag('show_like_global'),
+      show_follow_global: engagementFlag('show_follow_global'),
+      show_views_global: engagementFlag('show_views_global'),
+      show_save_global: engagementFlag('show_save_global'),
+      show_like_on_posts: engagementFlag('show_like_on_posts'),
+      show_like_on_products: engagementFlag('show_like_on_products'),
+      show_follow_on_authors: engagementFlag('show_follow_on_authors'),
+      show_views_on_single: engagementFlag('show_views_on_single'),
+      show_views_on_archive: engagementFlag('show_views_on_archive'),
+      track_views: engagementFlag('track_views'),
     },
   };
 };

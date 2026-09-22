@@ -1,0 +1,161 @@
+/*
+ * Product Q&A, Make an Offer, price alerts and Frequently Bought Together. Global rwp-shop-* classes
+ * (not a CSS module) so builder widgets and Custom CSS can style them. Logical properties throughout.
+ */
+
+.rwp-shop-tool-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.9rem;
+  border: 1px solid rgb(127 127 127 / 40%);
+  border-radius: 0.4rem;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.rwp-shop-tool-button:hover:not(:disabled) { border-color: currentColor; }
+.rwp-shop-tool-button:disabled { opacity: 0.55; cursor: default; }
+.rwp-shop-tool-button.is-primary { border-color: transparent; background: var(--rwp-shop-accent, #7f54b3); color: #fff; }
+.rwp-shop-tool-button.is-active { color: #b45309; border-color: rgb(180 83 9 / 45%); }
+.rwp-shop-tool-button svg { width: 1.05em; height: 1.05em; }
+
+.rwp-shop-tools { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-block: 0.75rem; }
+
+.rwp-shop-note { margin: 0.35rem 0 0; font-size: 0.85rem; opacity: 0.8; }
+.rwp-shop-error { margin: 0.35rem 0 0; font-size: 0.85rem; color: #b91c1c; }
+.rwp-shop-success { margin: 0.35rem 0 0; font-size: 0.85rem; color: #047857; }
+
+.rwp-shop-field { display: grid; gap: 0.3rem; font-size: 0.9rem; }
+
+.rwp-shop-field input,
+.rwp-shop-field textarea {
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid rgb(127 127 127 / 40%);
+  border-radius: 0.4rem;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  box-sizing: border-box;
+}
+
+/* Modal (above the header layer, 9800; below the lightbox, 10000). */
+
+.rwp-shop-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9996;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(15 23 42 / 55%);
+}
+
+.rwp-shop-modal {
+  width: min(28rem, 100%);
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  padding: 1.25rem;
+  border-radius: 0.75rem;
+  background: var(--rwp-surface, #fff);
+  color: var(--rwp-text, #111827);
+  box-shadow: 0 20px 50px rgb(0 0 0 / 30%);
+  display: grid;
+  gap: 0.85rem;
+}
+
+.rwp-shop-modal h2 { margin: 0; font-size: 1.2rem; }
+.rwp-shop-modal-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: flex-end; }
+
+.rwp-shop-offer-status {
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.5rem;
+  background: rgb(127 127 127 / 10%);
+  font-size: 0.9rem;
+}
+
+.rwp-shop-coupon {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+/* Price alert popover. */
+
+.rwp-shop-alert { position: relative; display: inline-flex; }
+
+.rwp-shop-alert-panel {
+  position: absolute;
+  inset-block-start: calc(100% + 0.4rem);
+  inset-inline-start: 0;
+  z-index: 60;
+  width: min(17rem, 80vw);
+  padding: 0.75rem;
+  border: 1px solid rgb(127 127 127 / 30%);
+  border-radius: 0.6rem;
+  background: var(--rwp-surface, #fff);
+  color: var(--rwp-text, #111827);
+  box-shadow: 0 12px 30px rgb(0 0 0 / 15%);
+  display: grid;
+  gap: 0.5rem;
+}
+
+/* Q&A accordion. */
+
+.rwp-shop-qa { display: grid; gap: 1rem; }
+.rwp-shop-qa h2, .rwp-shop-qa h3 { margin: 0; }
+.rwp-shop-qa-list { display: grid; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
+
+.rwp-shop-qa-item {
+  border: 1px solid rgb(127 127 127 / 25%);
+  border-radius: 0.5rem;
+}
+
+.rwp-shop-qa-item summary {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.7rem 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.rwp-shop-qa-item summary::-webkit-details-marker { display: none; }
+.rwp-shop-qa-item summary::before { content: 'Q'; flex: none; font-weight: 800; opacity: 0.5; }
+.rwp-shop-qa-body { padding: 0 0.9rem 0.8rem; display: grid; gap: 0.4rem; }
+.rwp-shop-qa-answer { margin: 0; padding-inline-start: 0.75rem; border-inline-start: 3px solid var(--rwp-shop-accent, #7f54b3); }
+.rwp-shop-qa-meta { font-size: 0.8rem; opacity: 0.7; }
+.rwp-shop-qa-form { display: grid; gap: 0.5rem; }
+.rwp-shop-qa-form > div { display: flex; gap: 0.5rem; }
+
+/* Frequently bought together. */
+
+.rwp-shop-fbt { display: grid; gap: 0.85rem; padding: 1rem; border: 1px solid rgb(127 127 127 / 25%); border-radius: 0.75rem; }
+.rwp-shop-fbt h2, .rwp-shop-fbt h3 { margin: 0; }
+.rwp-shop-fbt-list { display: grid; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
+
+.rwp-shop-fbt-item {
+  display: grid;
+  grid-template-columns: auto 3.5rem minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.rwp-shop-fbt-item img,
+.rwp-shop-fbt-thumb {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 0.4rem;
+  object-fit: cover;
+  background: rgb(127 127 127 / 12%);
+}
+
+.rwp-shop-fbt-name { min-width: 0; overflow-wrap: anywhere; }
+.rwp-shop-fbt-price { text-align: end; white-space: nowrap; }
+.rwp-shop-fbt-price del { opacity: 0.55; margin-inline-end: 0.35rem; }
+.rwp-shop-fbt-badge { display: inline-block; margin-inline-start: 0.4rem; padding: 0 0.4rem; border-radius: 999px; background: #dcfce7; color: #166534; font-size: 0.72rem; }
+.rwp-shop-fbt-total { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; justify-content: space-between; }

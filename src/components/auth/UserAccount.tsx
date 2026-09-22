@@ -6,7 +6,10 @@ import { canAccessAdmin, getUserRole, roleLabels, type UserRole } from '../../li
 import { defaultSettings, loadSettings, type SiteSettings } from '../../lib/settings';
 import { loginHref, signOutAndRedirect } from '../../lib/account';
 import { HookSlot } from '../../core/HookSlot';
+import { useAppSettings } from '../../lib/appSettings';
 import ProfileManager from '../ProfileManager';
+import SavedCollections from '../engagement/SavedCollections';
+import FollowingFeed from '../engagement/FollowingFeed';
 import DashboardCard from './DashboardCard';
 import authStyles from '../AuthPage.module.css';
 import styles from './UserAccount.module.css';
@@ -79,10 +82,36 @@ export function UserDashboard({ title }: { title?: string }) {
   );
 }
 
+type DashboardTab = 'overview' | 'saved' | 'following';
+
+const readTab = (): DashboardTab => {
+  const value = new URLSearchParams(window.location.search).get('tab');
+  return value === 'saved' || value === 'following' ? value : 'overview';
+};
+
 function DashboardView({ viewer, settings, title }: { viewer: Viewer; settings: SiteSettings; title?: string }) {
   const { user, profile, role } = viewer;
   const name = profile?.display_name || user.email || 'there';
   const slotArgs = useMemo(() => ({ userId: user.id, role }), [role, user.id]);
+  const { settings: appSettings } = useAppSettings();
+  const showSaved = appSettings.engagement.show_save_global;
+  const showFollowing = appSettings.engagement.show_follow_global;
+  const [tab, setTab] = useState<DashboardTab>(readTab);
+  const activeTab = (tab === 'saved' && !showSaved) || (tab === 'following' && !showFollowing) ? 'overview' : tab;
+
+  // In the address bar, so "My saved collections" can be linked to (/dashboard?tab=saved).
+  const choose = (next: DashboardTab) => {
+    setTab(next);
+    const params = new URLSearchParams(window.location.search);
+    if (next === 'overview') params.delete('tab'); else params.set('tab', next);
+    const query = params.toString();
+    window.history.replaceState({}, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
+  };
+  const tabs: Array<[DashboardTab, string]> = [
+    ['overview', 'Overview'],
+    ...(showSaved ? [['saved', 'My saved collections'] as [DashboardTab, string]] : []),
+    ...(showFollowing ? [['following', 'Following'] as [DashboardTab, string]] : []),
+  ];
 
   return (
     <section className={`${styles.dashboard} rwp-user-dashboard`} aria-labelledby="rwp-dashboard-heading">
@@ -99,14 +128,31 @@ function DashboardView({ viewer, settings, title }: { viewer: Viewer; settings: 
         </div>
       </header>
 
-      <div className={`${styles.cards} rwp-user-dashboard-cards`}>
-        <DashboardCard href="/profile" title="Profile" text="Change your name, avatar, email or password." />
-        {canAccessAdmin(role) && <DashboardCard href="/admin" title="Admin dashboard" text="Write and manage content." />}
-        <HookSlot name="user_dashboard" args={slotArgs} />
-        <button type="button" className={styles.card} onClick={() => void signOutAndRedirect(settings)}>
-          <strong>Log out</strong>
-          <span>Sign out of this site on this device.</span>
-        </button>
+      {tabs.length > 1 && (
+        <div className="rwp-user-dashboard-tabs" role="tablist" aria-label="Dashboard sections">
+          {tabs.map(([id, label]) => (
+            <button key={id} type="button" role="tab" id={`rwp-dashboard-tab-${id}`} aria-selected={activeTab === id}
+              aria-controls="rwp-dashboard-panel" className="rwp-user-dashboard-tab" onClick={() => choose(id)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div id="rwp-dashboard-panel" role="tabpanel" aria-labelledby={`rwp-dashboard-tab-${activeTab}`}>
+        {activeTab === 'saved' ? <SavedCollections />
+          : activeTab === 'following' ? <FollowingFeed />
+            : (
+              <div className={`${styles.cards} rwp-user-dashboard-cards`}>
+                <DashboardCard href="/profile" title="Profile" text="Change your name, avatar, email or password." />
+                {canAccessAdmin(role) && <DashboardCard href="/admin" title="Admin dashboard" text="Write and manage content." />}
+                <HookSlot name="user_dashboard" args={slotArgs} />
+                <button type="button" className={styles.card} onClick={() => void signOutAndRedirect(settings)}>
+                  <strong>Log out</strong>
+                  <span>Sign out of this site on this device.</span>
+                </button>
+              </div>
+            )}
       </div>
     </section>
   );

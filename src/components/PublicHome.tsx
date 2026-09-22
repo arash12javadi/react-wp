@@ -15,6 +15,7 @@ import { cleanUrl, fillPlaceholders, useTheme, type IndexOptions, type ThemeBloc
 import styles from './PublicHome.module.css';
 import { rwp } from '../lib/rwp';
 import { signOutAndRedirect } from '../lib/account';
+import EngagementBar from './engagement/EngagementBar';
 
 const defaultTitle = defaultSettings.site_title;
 const defaultMenuLinks = [
@@ -240,6 +241,9 @@ export default function PublicHome({ onReconfigure }: { onReconfigure?: () => vo
                   <h3 className={appSettings.general.show_post_titles ? undefined : styles.srOnly}>{rwp.filters.apply('rwp_post_title', post.title, post)}</h3>
                   {s.show_excerpt && <p>{rwp.filters.apply('rwp_post_excerpt', resolveExcerpt(post, excerptLength, settings.excerpt_unit), post)}</p>}
                   <a href={`/${post.slug}`}>{String(s.read_more || 'Read More')} <span aria-hidden="true">→</span></a>
+                  {post.id > 0 && (
+                    <EngagementBar compact context="archive" targetType="page" targetId={post.id} placement="auto" showSave={false} showFollow={false} />
+                  )}
                 </article>
               )) : <p className={styles.muted}>{search.trim() ? 'No posts match your search.' : 'No posts on this page.'}</p>}
             </div>

@@ -7,9 +7,9 @@
  * gateway itself reports the payment, re-checked against that total in SQL.
  */
 import {
-  HttpError, isShopManager, loadOrder, loadSettings, rpc, requireShopManager, select,
+  HttpError, isShopManager, loadOrder, loadSettings, readOptions, rpc, requireShopManager, select, update,
 } from './server/supabase.mjs';
-import { buildEmail, send, smtpConfigured } from './server/emails.mjs';
+import { buildEmail, commerceEmail, money, send, smtpConfigured } from './server/emails.mjs';
 import {
   fromStripeAmount, paypal, paypalConfigured, paypalMode, stripe, stripeConfigured, stripeMode,
   toPaypalValue, toStripeAmount, verifyStripeSignature,
@@ -334,6 +334,65 @@ export default {
       const updated = await loadOrder(ctx, order.id, '', 'user');
       const emails = await sendOrderEmails(ctx, updated, ['customer_refunded'], { claimOnce: false, extra: { amount } });
       return { status: 200, body: { refund_id: gatewayRefundId, emails } };
+    },
+
+    // Tells a customer the store answered their offer (Shop → Offers). Runs with the manager's own
+    // session: row level security lets manage_shop read the offer and the customer's profile email.
+    'POST offers/notify': async (ctx) => {
+      await requireShopManager(ctx);
+      const { offer_id: offerId } = ctx.json();
+      if (!/^[0-9a-f-]{36}$/i.test(String(offerId || ''))) throw new HttpError(400, 'A valid offer_id is required.');
+      if (!smtpConfigured()) return { status: 200, body: { sent: false, skipped: 'SMTP is not configured on the server (SMTP_HOST and SMTP_FROM)' } };
+      const [offer] = await select(ctx, `shop_product_offers?id=eq.${offerId}&select=*,shop_products(name,slug),profiles!shop_product_offers_user_id_fkey(display_name,email)`, 'user');
+      if (!offer) throw new HttpError(404, 'That offer was not found, or your session cannot read it.');
+      const to = offer.profiles?.email;
+      if (!to) return { status: 200, body: { sent: false, skipped: 'the customer has no email address on their profile' } };
+      const [settings, options] = await Promise.all([loadSettings(ctx), readOptions(ctx, ['site_title'])]);
+      const product = offer.shop_products?.name || 'the product';
+      const link = `${ctx.origin}/product/${offer.shop_products?.slug || ''}`;
+      const amount = (value) => money(value, settings.currency, settings);
+      const text = {
+        accepted: [`Your offer was accepted`, `Good news: your offer of ${amount(offer.offered_price)} for ${product} was accepted. Use this code at checkout${offer.expires_at ? ` before ${new Date(offer.expires_at).toLocaleDateString('en')}` : ''}:`, offer.coupon_code],
+        countered: [`A counter-offer for ${product}`, `We can't do ${amount(offer.offered_price)}, but we can offer ${product} for ${amount(offer.counter_price)}. Accept or decline it on the product page.`, null],
+        rejected: [`About your offer for ${product}`, `Thank you for your offer of ${amount(offer.offered_price)} for ${product}. We're unable to accept it this time.`, null],
+      }[offer.status];
+      if (!text) return { status: 200, body: { sent: false, skipped: `the offer is ${offer.status}, which has no email` } };
+      await send({ ...commerceEmail({ settings, siteTitle: options.site_title || 'Shop', heading: text[0], intro: text[1], code: text[2], note: offer.response_message, link, linkLabel: 'Open the product' }), to: [to], fromName: settings?.emails?.from_name })
+        .catch((error) => { throw new HttpError(502, `The SMTP server rejected the email: ${error instanceof Error ? error.message : 'unknown error'}`); });
+      return { status: 200, body: { sent: true } };
+    },
+
+    // Emails every price alert that has been reached but not emailed yet (Shop → Price alerts → Send).
+    'POST price-alerts/send': async (ctx) => {
+      await requireShopManager(ctx);
+      if (!smtpConfigured()) return { status: 200, body: { sent: 0, failed: [], skipped: 'Email is not configured: set SMTP_HOST and SMTP_FROM on the server and restart it.' } };
+      await rpc(ctx, 'shop_check_price_alerts', { p_product_id: null }, 'user');
+      const due = await select(ctx, 'shop_price_drop_alerts?is_notified=eq.true&emailed_at=is.null&select=id,target_price,notified_price,shop_products(name,slug),profiles!shop_price_drop_alerts_user_id_fkey(display_name,email)&limit=200', 'user');
+      const [settings, options] = await Promise.all([loadSettings(ctx), readOptions(ctx, ['site_title'])]);
+      let sent = 0;
+      const failed = [];
+      for (const alert of due) {
+        const to = alert.profiles?.email;
+        const product = alert.shop_products?.name || 'a product you follow';
+        try {
+          if (to) {
+            await send({
+              ...commerceEmail({
+                settings, siteTitle: options.site_title || 'Shop', heading: `Price drop: ${product}`,
+                intro: `${product} is now ${money(alert.notified_price, settings.currency, settings)}, at or below the ${money(alert.target_price, settings.currency, settings)} you were waiting for.`,
+                link: `${ctx.origin}/product/${alert.shop_products?.slug || ''}`, linkLabel: 'See the product',
+              }),
+              to: [to], fromName: settings?.emails?.from_name,
+            });
+            sent += 1;
+          }
+          // Marked even without an address, so it does not stay "pending" forever.
+          await update(ctx, 'shop_price_drop_alerts', `id=eq.${alert.id}`, { emailed_at: new Date().toISOString() });
+        } catch (error) {
+          failed.push(`${to || alert.id}: ${error instanceof Error ? error.message : 'failed'}`);
+        }
+      }
+      return { status: 200, body: { sent, failed } };
     },
 
     'POST emails/test': async (ctx) => {

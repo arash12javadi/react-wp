@@ -14,6 +14,7 @@ const descriptions: Record<string, [string, string]> = {
   general: ['General', 'What the public site shows, whose media each role sees, excerpts, and menu profile links.'],
   uploads: ['Uploads', 'File size and image dimension rules, and how much storage each role or person may use.'],
   seo: ['SEO', 'Meta keywords in the page editor, and tracking scripts such as Google Tag Manager.'],
+  engagement: ['Engagement', 'Like, Save and Follow buttons, view counts, and where the site shows them.'],
   languages: ['Languages', 'The languages this site offers, the defaults for visitors and for the admin, and the public language switcher.'],
   translations: ['Translations', 'Reword any interface string, translate it into the languages this site offers, and import or export them for a translator.'],
   roles: ['Roles', 'Add capabilities to a role, or to one person on top of their role.'],

@@ -8,6 +8,8 @@ import { useTranslation } from '../context/I18nContext';
 import PublicChrome from './PublicChrome';
 import SiteTemplate from './SiteTemplate';
 import LiveSearch from './LiveSearch';
+import EngagementBar from './engagement/EngagementBar';
+import FollowButton from './engagement/FollowButton';
 import styles from './PublicHome.module.css';
 
 interface ArchivePost { id: number; title: string; slug: string; excerpt: string | null; content: string | null; created_at: string }
@@ -38,6 +40,8 @@ export const archiveTemplateTypes = (archive: RwpArchive) =>
 function DefaultArchive({ archive }: { archive: RwpArchive }) {
   const pageNumber = Math.max(1, Math.floor(Number(new URLSearchParams(window.location.search).get('paged')) || 1));
   const [state, setState] = useState<{ title: string; posts: ArchivePost[]; pages: number; error: string; loading: boolean }>({ title: '', posts: [], pages: 1, error: '', loading: true });
+  // Category and author archives offer to follow what they list.
+  const [categoryId, setCategoryId] = useState<string | null>(null);
   const { locale, t } = useTranslation();
 
   const archiveKey = JSON.stringify(archive);
@@ -57,6 +61,7 @@ function DefaultArchive({ archive }: { archive: RwpArchive }) {
         query = query.ilike('title', `%${archive.term.replace(/[\\%_]/g, (char) => `\\${char}`)}%`);
       } else if (archive.kind === 'category') {
         const { data: category } = await supabase.from('categories').select('id,name,slug').eq('slug', archive.slug).maybeSingle();
+        if (active) setCategoryId(category?.id || null);
         // The name comes from Settings → Translations (category.<slug>.name) when one is saved.
         title = t('archive.category', 'Category: {name}', { name: category ? translateTerm('category', category) : archive.slug });
         query = query.eq('category_id', category?.id || '00000000-0000-0000-0000-000000000000');
@@ -96,6 +101,8 @@ function DefaultArchive({ archive }: { archive: RwpArchive }) {
     <main className={`${styles.container} rwp-archive`}>
       <section className={`${styles.feed} rwp-posts-feed`} aria-labelledby="archive-heading">
         <h1 id="archive-heading">{state.title}</h1>
+        {archive.kind === 'category' && categoryId && <FollowButton targetType="category" targetId={categoryId} />}
+        {archive.kind === 'author' && <FollowButton targetType="user" targetId={archive.id} placement="auto" />}
         {archive.kind === 'search' && (
           <LiveSearch className="rwp-archive-search" buttonLabel="Search" />
         )}
@@ -107,6 +114,7 @@ function DefaultArchive({ archive }: { archive: RwpArchive }) {
             <p className={styles.postMeta}>{new Date(post.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</p>
             <h3><a href={`/${post.slug}`}>{post.title}</a></h3>
             <p>{resolveExcerpt({ excerpt: post.excerpt || '', content: post.content || '' }, 30)}</p>
+            <EngagementBar compact context="archive" targetType="page" targetId={post.id} placement="auto" showSave={false} showFollow={false} />
           </article>
         ))}
         {state.pages > 1 && (

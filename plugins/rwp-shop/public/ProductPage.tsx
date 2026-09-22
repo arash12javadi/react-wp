@@ -10,9 +10,14 @@ import { useShopSettings, type ShopSettings } from '../lib/settings';
 import { effectivePrice } from '../lib/pricing';
 import type { CatalogProduct, Review, Variation } from '../lib/types';
 import { Breadcrumbs, PageShell, PriceHtml, ProductCard, ProductPriceHtml, SaleBadge, Stars } from './components';
+import EngagementBar from '../../../src/components/engagement/EngagementBar';
+import ProductQA from '../components/ProductQA';
+import MakeOfferModal from '../components/MakeOfferModal';
+import PriceAlertButton from '../components/PriceAlertButton';
+import FrequentlyBoughtTogether from '../components/FrequentlyBoughtTogether';
 import styles from './shop.module.css';
 
-type Tab = 'description' | 'additional' | 'reviews';
+type Tab = 'description' | 'additional' | 'reviews' | 'questions';
 
 const matchesVariation = (variation: Variation, chosen: Record<string, string>) =>
   Object.entries(variation.attributes).every(([name, value]) => !value || chosen[name] === value);
@@ -339,6 +344,12 @@ export default function ProductPage({ params }: RwpRouteProps) {
             </form>
           )}
 
+          <div className="rwp-shop-tools">
+            <PriceAlertButton product_id={product.id} current_price={effectivePrice(product)} />
+            <MakeOfferModal product_id={product.id} original_price={effectivePrice(product)} product_type={product.type} />
+          </div>
+          <EngagementBar targetType="product" targetId={product.id} placement="auto" showFollow={false} compact />
+
           <div className={styles.meta}>
             {(variation?.sku || product.sku) && <span>SKU: {variation?.sku || product.sku}</span>}
             {product.categories.length > 0 && (
@@ -366,6 +377,7 @@ export default function ProductPage({ params }: RwpRouteProps) {
           <button type="button" role="tab" aria-selected={tab === 'description'} className={tab === 'description' ? styles.tabActive : styles.tab} onClick={() => setTab('description')}>Description</button>
           {hasAdditional && <button type="button" role="tab" aria-selected={tab === 'additional'} className={tab === 'additional' ? styles.tabActive : styles.tab} onClick={() => setTab('additional')}>Additional information</button>}
           {settings.enable_reviews && <button type="button" role="tab" aria-selected={tab === 'reviews'} className={tab === 'reviews' ? styles.tabActive : styles.tab} onClick={() => setTab('reviews')}>Reviews ({product.rating_count})</button>}
+          {settings.enable_qa && <button type="button" role="tab" aria-selected={tab === 'questions'} className={tab === 'questions' ? styles.tabActive : styles.tab} onClick={() => setTab('questions')}>Questions</button>}
         </div>
         <div className={styles.tabPanel} role="tabpanel">
           {tab === 'description' && (product.description ? <ContentRenderer html={product.description} /> : <p className={styles.muted}>No description.</p>)}
@@ -383,8 +395,11 @@ export default function ProductPage({ params }: RwpRouteProps) {
             </table>
           )}
           {tab === 'reviews' && settings.enable_reviews && <ReviewsPanel product={product} settings={settings} />}
+          {tab === 'questions' && settings.enable_qa && <ProductQA product_id={product.id} />}
         </div>
       </div>
+
+      <FrequentlyBoughtTogether main_product_id={product.id} />
 
       {upsells.length > 0 && (
         <section className={styles.section}>

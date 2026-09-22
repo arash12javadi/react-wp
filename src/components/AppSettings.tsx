@@ -15,14 +15,15 @@ import {
 } from '../lib/i18n';
 import LanguageSwitcher from './LanguageSwitcher';
 import { rwp } from '../lib/rwp';
+import { engagementMigration, recountLikes } from '../lib/engagement';
 import settingsStyles from './SiteSettings.module.css';
 import styles from './AppSettings.module.css';
 
 // Roles has its own screen (settings/RolesPanel): its changes save one at a time, not with this form.
-type Tab = 'general' | 'uploads' | 'seo' | 'languages';
+type Tab = 'general' | 'uploads' | 'seo' | 'engagement' | 'languages';
 
 export const isAppSettingsTab = (value: string): value is Tab =>
-  ['general', 'uploads', 'seo', 'languages'].includes(value);
+  ['general', 'uploads', 'seo', 'engagement', 'languages'].includes(value);
 
 type Setter = <S extends keyof AppSettingsValue, K extends keyof AppSettingsValue[S]>(
   section: S, key: K, value: AppSettingsValue[S][K],
@@ -42,10 +43,10 @@ function LimitInput({ label, value, unit, onChange }: { label: string; value: nu
   );
 }
 
-function Toggle({ checked, onChange, children }: { checked: boolean; onChange: (value: boolean) => void; children: ReactNode }) {
+function Toggle({ checked, onChange, children, disabled = false }: { checked: boolean; onChange: (value: boolean) => void; children: ReactNode; disabled?: boolean }) {
   return (
     <label className={settingsStyles.checkboxRow}>
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
       {children}
     </label>
   );
@@ -286,7 +287,92 @@ function LanguageFields({ value, onChange }: { value: I18nSettings; onChange: (n
   );
 }
 
-/** Settings → General, Uploads, SEO and Languages. The sidebar picks the section. */
+/**
+ * Settings → Engagement: where Like, Save, Follow and view counts appear. Display only, except "Count
+ * views", which the database reads itself (rwp_record_view). The data lives in the engagement tables.
+ */
+function EngagementFields({ value, onChange }: {
+  value: AppSettingsValue['engagement'];
+  onChange: <K extends keyof AppSettingsValue['engagement']>(key: K, next: AppSettingsValue['engagement'][K]) => void;
+}) {
+  const [recounting, setRecounting] = useState(false);
+  const [recountResult, setRecountResult] = useState('');
+  const recount = async () => {
+    setRecounting(true);
+    setRecountResult('');
+    try {
+      const changed = await recountLikes();
+      setRecountResult(changed ? `Corrected the like count of ${changed} page${changed === 1 ? '' : 's'}.` : 'Every like count was already correct.');
+    } catch (recountError: unknown) {
+      setRecountResult(recountError instanceof Error ? recountError.message : 'The recount failed.');
+    } finally {
+      setRecounting(false);
+    }
+  };
+
+  return (
+    <>
+      <fieldset className={settingsStyles.fieldset}>
+        <legend>Features</legend>
+        <Toggle checked={value.show_like_global} onChange={(next) => onChange('show_like_global', next)}>Like buttons</Toggle>
+        <Toggle checked={value.show_save_global} onChange={(next) => onChange('show_save_global', next)}>Save buttons and saved collections</Toggle>
+        <Toggle checked={value.show_follow_global} onChange={(next) => onChange('show_follow_global', next)}>Follow buttons for authors and categories, and the Following feed</Toggle>
+        <Toggle checked={value.show_views_global} onChange={(next) => onChange('show_views_global', next)}>View counts</Toggle>
+        <span className={settingsStyles.help}>
+          Switching a feature off here hides it everywhere, including shortcodes and Page Builder widgets placed by hand.
+          Likes, saves and follows already made are kept and come back when it is switched on again.
+        </span>
+      </fieldset>
+
+      <fieldset className={settingsStyles.fieldset}>
+        <legend>Where buttons appear automatically</legend>
+        <Toggle checked={value.show_like_on_posts} disabled={!value.show_like_global} onChange={(next) => onChange('show_like_on_posts', next)}>
+          Like button under posts and on post cards
+        </Toggle>
+        <Toggle checked={value.show_like_on_products} disabled={!value.show_like_global} onChange={(next) => onChange('show_like_on_products', next)}>
+          Like button on product pages (needs the shop)
+        </Toggle>
+        <Toggle checked={value.show_follow_on_authors} disabled={!value.show_follow_global} onChange={(next) => onChange('show_follow_on_authors', next)}>
+          Follow-the-author button under posts and on author archives
+        </Toggle>
+        <Toggle checked={value.show_views_on_single} disabled={!value.show_views_global} onChange={(next) => onChange('show_views_on_single', next)}>
+          View count on single posts and products
+        </Toggle>
+        <Toggle checked={value.show_views_on_archive} disabled={!value.show_views_global} onChange={(next) => onChange('show_views_on_archive', next)}>
+          View count on post cards in the blog and archives
+        </Toggle>
+        <span className={settingsStyles.help}>
+          These only change the places the site adds buttons by itself. Pages (as opposed to posts) never get them
+          automatically; put <code>[rwp_engagement]</code>, <code>[rwp_like]</code>, <code>[rwp_save]</code> or{' '}
+          <code>[rwp_follow]</code> in a page, or use the Page Builder&rsquo;s Engagement Bar widget, to add them by hand.
+          Category archives always offer Follow while follows are on.
+        </span>
+      </fieldset>
+
+      <fieldset className={settingsStyles.fieldset}>
+        <legend>Analytics</legend>
+        <Toggle checked={value.track_views} onChange={(next) => onChange('track_views', next)}>
+          Count views
+        </Toggle>
+        <span className={settingsStyles.help}>
+          Enforced by the database: while this is off, no view is recorded at all. A view counts once per browser per
+          item every 30 minutes, and never for the author reading their own post. No IP address, account or visitor
+          id is stored — only hashes salted with a random value that is replaced every day, so they cannot be traced
+          back once that day is over. Totals are under <strong>Dashboard → Analytics</strong>. Needs the{' '}
+          <code>{engagementMigration}</code> migration.
+        </span>
+        <div>
+          <button type="button" className={settingsStyles.secondaryButton} disabled={recounting} onClick={() => void recount()}>
+            {recounting ? 'Recounting…' : 'Recount likes'}
+          </button>
+          {recountResult && <span className={settingsStyles.help} role="status"> {recountResult}</span>}
+        </div>
+      </fieldset>
+    </>
+  );
+}
+
+/** Settings → General, Uploads, SEO, Engagement and Languages. The sidebar picks the section. */
 export default function AppSettings({ tab }: { tab: Tab }) {
   const [form, setForm] = useState<AppSettingsValue>(defaultAppSettings);
   const [excerpt, setExcerpt] = useState<Pick<SiteSettings, 'excerpt_length' | 'excerpt_unit'>>({
@@ -355,7 +441,7 @@ export default function AppSettings({ tab }: { tab: Tab }) {
       setForm(saved);
       setLanguages(savedLanguages);
       rwp.actions.do('rwp_settings_saved', { app_settings: saved, i18n: savedLanguages, ...excerpt });
-      setFeedback('Settings saved (General, Uploads, SEO and Languages are saved together).');
+      setFeedback('Settings saved (General, Uploads, SEO, Engagement and Languages are saved together).');
     } catch (saveError: unknown) {
       setError(saveError instanceof Error ? saveError.message : 'Could not save settings.');
     } finally {
@@ -536,6 +622,8 @@ export default function AppSettings({ tab }: { tab: Tab }) {
                 </fieldset>
               </>
             )}
+
+            {tab === 'engagement' && <EngagementFields value={form.engagement} onChange={(key, value) => set('engagement', key, value)} />}
 
             {tab === 'languages' && <LanguageFields value={languages} onChange={setLanguages} />}
 

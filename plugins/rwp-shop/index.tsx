@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { defineRwpPlugin } from '../../src/lib/plugin-api';
+import { defineRwpPlugin, type RwpRouteProps } from '../../src/lib/plugin-api';
+import { commerceShortcodes, useProductView } from './components/shortcodes';
 import { addSlotContent } from '../../src/core/HookSlot';
 import DashboardCard from '../../src/components/auth/DashboardCard';
 import type { AccountPageChoice } from '../../src/lib/account';
@@ -22,10 +23,18 @@ import { withShopLayout } from './builder/ShopLayoutRoute';
 import type { CatalogProduct } from './lib/types';
 import styles from './public/shop.module.css';
 
+const ProductLayout = withShopLayout('product', ProductPage);
+
+/** Product pages count a view (core's rwp_record_view) whichever screen or template draws them. */
+function ProductRoute(props: RwpRouteProps) {
+  useProductView(props.params.slug);
+  return <ProductLayout {...props} />;
+}
+
 const ShopRoutes = {
   shop: withShopLayout('shop', ShopPage),
   archive: withShopLayout('product_category', ShopPage),
-  product: withShopLayout('product', ProductPage),
+  product: ProductRoute,
   cart: withShopLayout('cart', CartPage),
   checkout: withShopLayout('checkout', CheckoutPage),
   account: withShopLayout('my_account', AccountPage),
@@ -82,6 +91,10 @@ export const shopPluginCleanup = defineRwpPlugin(manifest, ({ admin, routes, hea
         { id: 'customers', label: 'Customers', icon: '🧑‍🤝‍🧑' },
         { id: 'coupons', label: 'Coupons', icon: '🎟️' },
         { id: 'reviews', label: 'Reviews', icon: '⭐' },
+        { id: 'offers', label: 'Offers', icon: '🤝' },
+        { id: 'questions', label: 'Questions', icon: '❓' },
+        { id: 'alerts', label: 'Price alerts', icon: '🔔' },
+        { id: 'bundles', label: 'Bundles', icon: '🧺' },
         { id: 'settings', label: 'Settings', icon: '⚙️' },
       ],
     }),
@@ -128,6 +141,8 @@ export const shopPluginCleanup = defineRwpPlugin(manifest, ({ admin, routes, hea
         { name: 'quantity', description: 'How many to add. Default 1.' },
       ],
     }),
+    // [rwp_product_qa], [rwp_make_offer], [rwp_price_alert], [rwp_frequently_bought].
+    ...commerceShortcodes.map((shortcode) => shortcodes.register(shortcode)),
     shortcodes.register({
       name: 'rwp_cart_link',
       render: () => <CartHeaderLink />,

@@ -60,6 +60,17 @@ export async function select(ctx, path, auth = 'anon') {
   return response.json();
 }
 
+/** PATCH rows matching `filter` (PostgREST query string). Returns the updated rows, so an RLS refusal shows as []. */
+export async function update(ctx, table, filter, values, auth = 'user') {
+  const response = await fetch(`${ctx.supabase.url.replace(/\/$/, '')}/rest/v1/${table}?${filter}`, {
+    method: 'PATCH',
+    headers: { ...headersFor(ctx, auth), 'Content-Type': 'application/json', Prefer: 'return=representation' },
+    body: JSON.stringify(values),
+  });
+  if (!response.ok) throw new HttpError(500, `Supabase update of ${table} failed (HTTP ${response.status}): ${await response.text()}`);
+  return response.json();
+}
+
 export async function readOptions(ctx, names) {
   const rows = await select(ctx, `options?option_name=in.(${names.join(',')})&select=option_name,option_value`);
   return Object.fromEntries(rows.map((row) => [row.option_name, row.option_value]));

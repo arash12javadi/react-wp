@@ -1,6 +1,7 @@
 import { lazy, Suspense, type ReactNode } from 'react';
 import LoginButton from '../components/LoginButton';
 import AuthForm from '../components/auth/AuthForm';
+import { registerEngagementShortcodes } from '../components/engagement/shortcodes';
 import { rwp } from './rwp';
 
 // Their own chunk: the profile form pulls in the media library, which most pages never need.
@@ -87,4 +88,8 @@ export const registerBuiltinShortcodes = () => {
     attributes: [{ name: 'title', description: 'The heading. Without it: "Hello, <name>".' }],
     render: (attributes) => loading(<UserDashboard title={attributes.title} />),
   });
+
+  // [rwp_like], [rwp_save], [rwp_follow], [rwp_views], [rwp_engagement], [rwp_popular_content],
+  // [rwp_saved_collections], [rwp_following_feed].
+  registerEngagementShortcodes();
 };

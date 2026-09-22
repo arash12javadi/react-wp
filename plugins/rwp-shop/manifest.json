@@ -1,7 +1,7 @@
 {
   "id": "rwp-shop",
   "name": "RWP Shop",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "React-WP",
   "description": "A WooCommerce-style store: products with variations, cart, checkout, orders, coupons, tax, shipping zones, Stripe, PayPal and offline payments, customer accounts, reviews, reports and order emails.",
   "entry": "./index.tsx",
@@ -16,12 +16,14 @@
       "shop_shipping_classes", "shop_products", "shop_product_categories", "shop_product_tags",
       "shop_variations", "shop_product_downloads", "shop_customers", "shop_coupons",
       "shop_tax_rates", "shop_shipping_zones", "shop_shipping_methods", "shop_orders",
-      "shop_order_items", "shop_order_notes", "shop_refunds", "shop_reviews"
+      "shop_order_items", "shop_order_notes", "shop_refunds", "shop_reviews",
+      "shop_product_qa", "shop_product_offers", "shop_price_drop_alerts", "shop_product_bundles"
     ],
     "options": ["shop\\_%"],
     "retains": [
       "Shop site templates (Shop, Product, Cart, Checkout, My Account) stay in Pages as ordinary builder layouts.",
-      "The shop_manager role stays on existing accounts; without the shop it grants nothing extra."
+      "The shop_manager role stays on existing accounts; without the shop it grants nothing extra.",
+      "Likes, saved items and view counts of products stay in the core engagement tables, keyed by product id."
     ]
   }
 }

@@ -1,5 +1,6 @@
 import type { AdminStatus } from '../../lib/adminStatus';
 import { hasCapability, type UserRole } from '../../lib/roles';
+import EngagementAnalytics from './EngagementAnalytics';
 import GuidePanel from './GuidePanel';
 import Overview from './Overview';
 import UpdatesPanel from './UpdatesPanel';
@@ -13,6 +14,7 @@ export default function Dashboard({ subsection, navigate, role, status, siteTitl
   siteTitle: string;
 }) {
   if (subsection === 'updates' && hasCapability(role, 'manage_options')) return <UpdatesPanel status={status} />;
+  if (subsection === 'analytics' && hasCapability(role, 'edit_others_posts')) return <EngagementAnalytics />;
   if (subsection === 'guide') return <GuidePanel navigate={navigate} />;
   return <Overview role={role} status={status} navigate={navigate} siteTitle={siteTitle} />;
 }

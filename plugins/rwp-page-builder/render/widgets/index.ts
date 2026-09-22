@@ -20,6 +20,7 @@ import {
 } from './site';
 import { themeFooter, themeHeader } from './theme';
 import { accountForm } from './account';
+import { engagementBar, popularContent } from './engagement';
 import {
   wpArchives, wpCalendar, wpCategories, wpMeta, wpPages, wpRecentComments, wpRecentPosts, wpSearch, wpTagCloud,
 } from './wordpress';
@@ -40,9 +41,10 @@ export const coreWidgets = [
   reviews, tableOfContents, countdown, shareButtons, blockquote, template, lottie, codeHighlight, videoPlaylist, hotspot,
   paypalButton, stripeButton, progressTracker, facebookButton, facebookComments, facebookEmbed, facebookPage,
   // Post (dynamic content)
-  postTitle, postExcerpt, postContent, featuredImage, postMeta,
+  postTitle, postExcerpt, postContent, featuredImage, postMeta, engagementBar,
   // Site
   themeHeader, themeFooter, siteLogo, siteTitle, pageTitle, accountForm, authorBox, postComments, postNavigation, archiveTitle, archivePosts, breadcrumbs, sitemap,
+  popularContent,
   // WordPress-style site widgets
   wpPages, wpCalendar, wpArchives, wpCategories, wpRecentPosts, wpSearch, wpTagCloud, wpRecentComments, wpMeta,
 ];
