@@ -108,6 +108,43 @@ core must not import plugin code. The plugin starts it on activation and returns
 so deactivating the plugin removes every style, script and hook the snippets added. Anything
 else that wants the same behaviour can call `startSnippetRuntime()` or mount `<SnippetInjector />`.
 
+## Chat plugin
+
+`rwp-chat` is a chat widget with a Gemini-backed assistant and handover to a person. Activate it
+under Plugins, which installs `plugins/rwp-chat/schema.sql`; the same text is in
+`supabase/migrations/20261008_chat_system.sql` for sites that prefer the SQL Editor. Set
+`GEMINI_API_KEY` in `.env.local` for the assistant — never `VITE_GEMINI_API_KEY`, which Vite
+compiles into the JavaScript every visitor downloads.
+
+Anonymous visitors cannot read the chat tables at all: RLS refuses anon even a select, because a
+readable `chat_sessions` row is a list of every lead's email and phone number. They reach their
+own conversation through `rwp_chat_*` functions that take the session's own secret token. Staff
+use ordinary queries: `moderate_comments` for the inbox, `manage_options` for the settings.
+Credentials (the Telegram bot token, the WhatsApp API token) are in `chat_secrets`, which no
+browser can read — not even the settings screen, which shows only whether each one is set.
+
+The chatbot has no reference to a shop object anywhere. It publishes two names and looks them up
+with `to_regprocedure` at run time, the way core finds `rwp_engagement_target_product`:
+
+```sql
+public.rwp_chat_card_product(p_id text) returns jsonb            -- a product card
+public.rwp_chat_order_status(p_key text, p_email text) returns jsonb  -- order tracking
+```
+
+`plugins/rwp-shop/schema.sql` creates both and drops them in its `uninstall.sql`. Without the shop
+they do not exist and the widget hides the product card and the order tracker.
+
+Which page a conversation is about is *announced*, not guessed:
+
+```js
+doAction('rwp_chat_subject', 'product', 'blue-cotton-shirt');  // entering the page
+doAction('rwp_chat_subject', null, null);                      // leaving it
+```
+
+Anything that renders a page can fire that — the shop's product route does. Likewise
+`doAction('rwp_chat_add_to_cart', productId, quantity)` is how the in-chat "Add to cart" button
+reaches the shop's cart without either plugin importing the other.
+
 ## Persian Origins plugin
 
 `persian-origins` makes every page, post and category bilingual (English and Persian by default)

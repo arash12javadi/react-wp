@@ -20,8 +20,9 @@
   },
   "plugins": {
     "rwp-shop": {
-      "version": "1.2.0",
+      "version": "1.3.0",
       "notes": [
+        "Chatbot support: a product card and order tracking inside the chat widget, and in-chat add to cart (needs supabase/migrations/20261009_shop_chat.sql).",
         "Shop → Backup: export orders, products, reports, customers, coupons, reviews, offers, questions, price alerts, bundles and settings to a ZIP (with optional spreadsheet copies), and import it back.",
         "Import chooses per part: update & add, add missing only, replace, or add as copies (products and coupons), with a preview of every change before anything is written.",
         "Product likes, saves (wishlists) and view counts.",
@@ -31,7 +32,23 @@
         "Frequently Bought Together with an optional bundle discount, set under Shop → Bundles and applied at checkout.",
         "New shortcodes [rwp_product_qa], [rwp_make_offer], [rwp_price_alert], [rwp_frequently_bought] and matching Page Builder widgets."
       ],
-      "migrations": ["supabase/migrations/20261004_engagement.sql", "supabase/migrations/20261005_shop_engagement.sql", "supabase/migrations/20261006_shop_backup.sql"]
+      "migrations": ["supabase/migrations/20261004_engagement.sql", "supabase/migrations/20261005_shop_engagement.sql", "supabase/migrations/20261006_shop_backup.sql", "supabase/migrations/20261009_shop_chat.sql"]
+    },
+    "rwp-chat": {
+      "version": "1.0.0",
+      "notes": [
+        "A floating chat launcher on every page, and an inline support box for Contact pages ([rwp_inline_chat], plus Page Builder widgets).",
+        "A Gemini-backed assistant that answers from the site's own pages. The key stays on the server.",
+        "A pre-chat form that captures the visitor's name, email and phone as a lead before the conversation starts.",
+        "File attachments, stored in their own Media Library folder so they stay out of All media.",
+        "Handover to a person: the admin inbox, a free Telegram notification, a free wa.me link, or a WhatsApp Business API push.",
+        "On a shop site: a product card for the page being viewed, in-chat add to cart, and order tracking by order number plus email.",
+        "Every message is logged, with the model that produced each assistant reply, under Chat → Inbox."
+      ],
+      "migrations": [
+        "supabase/migrations/20261008_chat_system.sql",
+        "supabase/migrations/20261009_shop_chat.sql"
+      ]
     },
     "rwp-page-builder": {
       "version": "1.1.0",

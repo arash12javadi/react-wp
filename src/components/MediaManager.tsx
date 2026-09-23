@@ -8,8 +8,8 @@ import { fetchProfile } from '../lib/profiles';
 import { hasCapability } from '../lib/roles';
 import type { MediaItem, MediaProvider } from '../lib/types';
 import {
-  DEFAULT_MEDIA_FOLDER, createMediaFolder, deleteMediaFolder, folderLineage, isInFolder, listMediaFolders, mediaFoldersMigration,
-  normalizeMediaFolder, renameMediaFolder,
+  DEFAULT_MEDIA_FOLDER, createMediaFolder, deleteMediaFolder, folderLineage, isInFolder, isQuietMediaFolder,
+  listMediaFolders, mediaFoldersMigration, normalizeMediaFolder, renameMediaFolder,
 } from '../lib/mediaFolders';
 import FolderSidebar, { MEDIA_DRAG_TYPE, type FolderDeleteChoice, type FolderNode } from './media/FolderSidebar';
 import styles from './MediaManager.module.css';
@@ -201,12 +201,26 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
 
   const visible = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return scoped.filter((item) =>
-      // A folder shows its subfolders' media too, matching the count beside it.
-      (activeFolder === 'all' || isInFolder(item.folder || DEFAULT_MEDIA_FOLDER, activeFolder)) &&
-      (providerFilter === 'all' || item.provider === providerFilter) &&
-      (!term || `${item.title || ''} ${item.file_name || ''} ${item.alt_text || ''} ${item.folder || ''}`.toLowerCase().includes(term)));
+    return scoped.filter((item) => {
+      const folder = item.folder || DEFAULT_MEDIA_FOLDER;
+      // "All media" leaves out the quiet folders (chat attachments), which are reached by
+      // clicking the folder itself. Every other filter still applies inside them, and the count
+      // beside the folder in the sidebar still shows everything that is there.
+      const inScope = activeFolder === 'all'
+        ? !isQuietMediaFolder(folder)
+        // A folder shows its subfolders' media too, matching the count beside it.
+        : isInFolder(folder, activeFolder);
+      return inScope
+        && (providerFilter === 'all' || item.provider === providerFilter)
+        && (!term || `${item.title || ''} ${item.file_name || ''} ${item.alt_text || ''} ${folder}`.toLowerCase().includes(term));
+    });
   }, [activeFolder, providerFilter, scoped, search]);
+
+  // What "All media" says beside it, so the number matches the grid it opens.
+  const allCount = useMemo(
+    () => scoped.filter((item) => !isQuietMediaFolder(item.folder || DEFAULT_MEDIA_FOLDER)).length,
+    [scoped],
+  );
 
   // Bulk actions only touch ticked items that are currently visible, so a filter never hides
   // what is about to be deleted.
@@ -708,7 +722,7 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
           {folderSupport && (
             <FolderSidebar
               nodes={folders}
-              allCount={scoped.length}
+              allCount={allCount}
               active={activeFolder}
               onSelect={selectFolder}
               manageable={folderRows !== null}

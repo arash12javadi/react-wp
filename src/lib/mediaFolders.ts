@@ -3,6 +3,31 @@ import { describeDbError, getSupabaseClient } from './db';
 /** The folder every media row belongs to unless another is chosen (the column default). */
 export const DEFAULT_MEDIA_FOLDER = 'general';
 
+/**
+ * Library folders that are a conversation's worth of files rather than the site's own images.
+ * They are left out of the Media Library's "All media" view and only shown when the folder
+ * itself is opened, so a support inbox full of screenshots does not bury the site's pictures.
+ * Everything else about them is ordinary: they can be browsed, moved out of, renamed and deleted.
+ *
+ * `chat_media` is where plugins/rwp-chat puts what visitors attach. The provider folder is a
+ * different thing and is namespaced separately (plugins/rwp-chat/chat_media, see mediaScope.js).
+ */
+export const CHAT_MEDIA_FOLDER = 'chat_media';
+
+export const quietMediaFolders: string[] = [CHAT_MEDIA_FOLDER];
+
+export const quietFolderLabels: Record<string, string> = {
+  [CHAT_MEDIA_FOLDER]: 'Chatbot media',
+};
+
+export const quietFolderIcons: Record<string, string> = {
+  [CHAT_MEDIA_FOLDER]: '💬',
+};
+
+/** True when this folder (or a subfolder of it) is hidden from "All media". */
+export const isQuietMediaFolder = (folder: string) =>
+  quietMediaFolders.some((root) => folder === root || folder.startsWith(`${root}/`));
+
 export const mediaFoldersMigration = 'supabase/migrations/20260927_media_folders.sql';
 export const folderManagerMigration = 'supabase/migrations/20260928_media_folder_manager.sql';
 

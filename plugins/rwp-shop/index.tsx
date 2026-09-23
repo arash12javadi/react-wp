@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { defineRwpPlugin, type RwpRouteProps } from '../../src/lib/plugin-api';
+import { doAction } from '../../src/core/hooks';
 import { commerceShortcodes, useProductView } from './components/shortcodes';
 import { addSlotContent } from '../../src/core/HookSlot';
 import DashboardCard from '../../src/components/auth/DashboardCard';
@@ -27,7 +28,16 @@ const ProductLayout = withShopLayout('product', ProductPage);
 
 /** Product pages count a view (core's rwp_record_view) whichever screen or template draws them. */
 function ProductRoute(props: RwpRouteProps) {
-  useProductView(props.params.slug);
+  const { slug } = props.params;
+  useProductView(slug);
+  // Tells anything that cares what this page is about. The chatbot listens and puts a product
+  // card and the product's details in front of whoever asks a question here; nothing else
+  // listens on a site without it, and the action costs nothing. The chat resolves the slug
+  // through public.rwp_chat_card_product, so no shop code is imported anywhere for it.
+  useEffect(() => {
+    doAction('rwp_chat_subject', 'product', slug);
+    return () => doAction('rwp_chat_subject', null, null);
+  }, [slug]);
   return <ProductLayout {...props} />;
 }
 
@@ -163,6 +173,16 @@ export const shopPluginCleanup = defineRwpPlugin(manifest, ({ admin, routes, hea
 
     // Carry a saved cart across devices once the customer signs in.
     actions.add('rwp_user_logged_in', () => { void cart.restoreFromAccount(); }),
+
+    // "Add to cart" on a product card inside the chat widget. The chatbot fires this rather than
+    // importing the cart store, so it works with or without the shop and neither plugin has a
+    // reference to the other. The amount is never sent: the cart holds ids, and shop_calculate
+    // prices them in SQL at checkout as always.
+    actions.add('rwp_chat_add_to_cart', (...args: unknown[]) => {
+      const [productId, quantity] = args as [unknown, unknown];
+      if (typeof productId !== 'string' || !productId) return;
+      cart.add(productId, Number(quantity) > 0 ? Number(quantity) : 1);
+    }),
     actions.add('rwp_settings_saved', () => { void loadShopSettings(true); }),
   ];
   return () => cleanups.forEach((cleanup) => cleanup());

@@ -1,5 +1,7 @@
 import { useState, type DragEvent, type KeyboardEvent } from 'react';
-import { DEFAULT_MEDIA_FOLDER, folderManagerMigration } from '../../lib/mediaFolders';
+import {
+  DEFAULT_MEDIA_FOLDER, folderManagerMigration, isQuietMediaFolder, quietFolderIcons, quietFolderLabels,
+} from '../../lib/mediaFolders';
 import styles from './FolderSidebar.module.css';
 
 /** Drag payload for media thumbnails dropped on a folder: a JSON array of media ids. */
@@ -159,8 +161,11 @@ export default function FolderSidebar({
             ) : (
               <div className={`${styles.row} ${dropTarget === node.path ? styles.dropTarget : ''}`} {...dropHandlers(node.path)}>
                 <button type="button" className={active === node.path ? styles.itemActive : styles.item}
-                  style={{ paddingLeft: 8 + node.depth * 12 }} onClick={() => onSelect(node.path)} title={node.path}>
-                  <span className={styles.label}>{node.depth > 0 ? '└ ' : ''}📁 {node.name}</span>
+                  style={{ paddingLeft: 8 + node.depth * 12 }} onClick={() => onSelect(node.path)}
+                  title={isQuietMediaFolder(node.path) ? `${node.path} — kept out of “All media” so it does not bury the site's own images` : node.path}>
+                  <span className={styles.label}>
+                    {node.depth > 0 ? '└ ' : ''}{quietFolderIcons[node.path] || '📁'} {quietFolderLabels[node.path] || node.name}
+                  </span>
                   <span className={styles.count} title={`${node.count} here, ${node.total} including subfolders`}>{node.total}</span>
                 </button>
                 {manageable && node.path !== DEFAULT_MEDIA_FOLDER && (

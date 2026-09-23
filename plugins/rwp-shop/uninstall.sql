@@ -130,6 +130,12 @@ drop function if exists public.shop_stock_guard();
 drop function if exists public.shop_matching_zone(text, text, text);
 drop function if exists public.shop_calc_tax(numeric, jsonb, boolean, integer);
 drop function if exists public.shop_matching_tax_rates(text, text, text, text, text, boolean);
+-- The shop's implementations of the two names rwp-chat looks up at run time. Dropping them is
+-- what makes the chatbot hide its product card and order tracker; the chatbot itself keeps
+-- working, and never had a reference to a shop object to break.
+drop function if exists public.rwp_chat_card_product(text);
+drop function if exists public.rwp_chat_order_status(text, text);
+
 drop function if exists public.shop_postcode_matches(text[], text);
 drop function if exists public.shop_effective_price(numeric, numeric, timestamptz, timestamptz);
 drop function if exists public.shop_try_uuid(text);
