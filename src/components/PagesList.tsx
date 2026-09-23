@@ -4,6 +4,7 @@ import type { Category, Page } from '../lib/types';
 import { canManageAllPosts, canPublishPosts, type UserRole } from '../lib/roles';
 import { rwp } from '../lib/rwp';
 import { deleteContent, explainContentError, plural, setContentStatus, type ContentStatus } from '../lib/contentBulk';
+import { purgePageCacheQuietly } from '../lib/security';
 import {
   BulkBar, BulkInline, RowCheckbox, SelectAllCheckbox, describeBulkResult, useBulkSelection, type BulkAction,
 } from './BulkActions';
@@ -81,7 +82,12 @@ export default function PagesList({ onCreate, onEdit, role }: { onCreate: (isPos
     if (next === 'published' && !canPublish) return;
     const { error: updateError } = await getSupabaseClient().from('pages').update({ status: next, updated_at: new Date().toISOString() }).eq('id', page.id);
     if (updateError) setError(explainContentError(updateError));
-    else { rwp.actions.do('rwp_post_updated', { ...page, status: next }); void load(); }
+    else {
+      // Publishing or unpublishing changes both the page itself and any list that includes it.
+      await purgePageCacheQuietly();
+      rwp.actions.do('rwp_post_updated', { ...page, status: next });
+      void load();
+    }
   };
 
   /** Runs one bulk action over the given rows and reports exactly what the database changed. */

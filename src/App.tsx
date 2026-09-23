@@ -23,6 +23,7 @@ import { loadCapabilityGrants } from './lib/capabilityGrants';
 import { installDefaultContent } from './lib/defaultContent';
 import { pageViewLink } from './lib/contentBulk';
 import { accountPageByPath, accountTarget, signOutAndRedirect, type AccountPageKey } from './lib/account';
+import { startSessionGovernor } from './lib/session';
 import { useCurrentProfile } from './lib/profiles';
 import { describeDbError, resolveSupabaseConfig, tryGetSupabaseClient } from './lib/db';
 import {
@@ -389,6 +390,15 @@ export default function App() {
     localStorage.removeItem('supabase_key');
     window.location.reload();
   };
+
+  /**
+   * The administrator's session policy (Settings → Security). Only a cookie that exists and has
+   * run out signs anyone out: a missing cookie means this host has no server.mjs, or the person
+   * signed in before the feature existed, and neither is a reason to end a valid session.
+   */
+  useEffect(() => startSessionGovernor(() => {
+    void signOutAndRedirect();
+  }), []);
 
   useEffect(() => {
     rwp.actions.do('rwp_init');

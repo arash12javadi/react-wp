@@ -5,6 +5,7 @@ import RolesPanel from './settings/RolesPanel';
 import TranslationsPanel from './settings/TranslationsPanel';
 import BackupPanel from './settings/BackupPanel';
 import ResetSitePanel from './settings/ResetSitePanel';
+import SecurityPanel, { isSecurityTab } from './settings/SecurityPanel';
 import AppSettings, { isAppSettingsTab } from './AppSettings';
 import type { SiteBranding } from '../lib/settings';
 import styles from './SiteSettings.module.css';
@@ -16,6 +17,10 @@ const descriptions: Record<string, [string, string]> = {
   general: ['General', 'What the public site shows, whose media each role sees, excerpts, and menu profile links.'],
   uploads: ['Uploads', 'File size and image dimension rules, and how much storage each role or person may use.'],
   seo: ['SEO', 'Meta keywords in the page editor, and tracking scripts such as Google Tag Manager.'],
+  security: ['Session & Security', 'How long people stay signed in, the session cookie policy, and signing an account out of every device.'],
+  'anti-bot': ['Anti-bot & Verification', 'The honeypot, Cloudflare Turnstile or Google reCAPTCHA v3, and which public forms have to pass a check.'],
+  performance: ['Rate limiting & Speed', 'How many requests each address and account may make, the server-side page cache, and the browser caching headers.'],
+  indexing: ['SEO & Indexing', 'The generated /sitemap.xml and an editable /robots.txt.'],
   engagement: ['Engagement', 'Like, Save and Follow buttons, view counts, and where the site shows them.'],
   languages: ['Languages', 'The languages this site offers, the defaults for visitors and for the admin, and the public language switcher.'],
   translations: ['Translations', 'Reword any interface string, translate it into the languages this site offers, and import or export them for a translator.'],
@@ -41,6 +46,7 @@ export default function SiteSettings({ tab, onBrandingChange }: { tab: string; o
         : tab === 'translations' ? <TranslationsPanel />
         : tab === 'backup' ? <BackupPanel />
           : tab === 'advanced' ? <ResetSitePanel />
+            : isSecurityTab(tab) ? <SecurityPanel tab={tab} />
             // One AppSettings instance for its sections, so unsaved changes survive switching between them.
             : isAppSettingsTab(tab) ? <AppSettings tab={tab} />
               : <SiteSettingsPanel onBrandingChange={onBrandingChange} />}

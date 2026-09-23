@@ -3,6 +3,8 @@ import type { Session } from '@supabase/supabase-js';
 import { getSupabaseClient } from '../../lib/db';
 import { defaultSettings, loadSettings, type SiteSettings } from '../../lib/settings';
 import { afterLoginUrl, requestedRedirect, signOutAndRedirect } from '../../lib/account';
+import { openGovernedSession } from '../../lib/session';
+import { CaptchaNotice, useHumanCheck } from '../security/HumanCheck';
 import { rwp } from '../../lib/rwp';
 import styles from '../AuthPage.module.css';
 
@@ -61,6 +63,9 @@ export default function AuthForm({
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [ready, setReady] = useState(false);
+  const [remember, setRemember] = useState(false);
+  // The honeypot and the CAPTCHA. `mode` is already the form name the server knows this by.
+  const human = useHumanCheck(mode);
 
   const continueTo = async (userId: string) => {
     const explicit = !requestedRedirect() && redirect && /^\/(?!\/)/.test(redirect) ? redirect : '';
@@ -96,9 +101,15 @@ export default function AuthForm({
     setNotice('');
     try {
       const supabase = getSupabaseClient();
+      // Before anything is sent to Supabase: a form that failed the human check must not also
+      // count against the account's sign-in attempts.
+      await human.verify();
       if (mode === 'login') {
         const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError || !data.session) throw new Error(signInError?.message || 'Unable to sign in.');
+        // The administrator's session policy, as an HttpOnly cookie. Best-effort: a host without
+        // server.mjs has no such endpoint, and that must not stop anyone signing in.
+        await openGovernedSession(remember);
         rwp.actions.do('rwp_user_logged_in', data.session.user);
         await continueTo(data.session.user.id);
         return;
@@ -136,12 +147,15 @@ export default function AuthForm({
       // Supabase returns a session only when email confirmation is disabled. Without this
       // branch the form would look like it had silently done nothing.
       if (data.session) {
+        await openGovernedSession(remember);
         await continueTo(data.session.user.id);
       } else {
         setNotice(`Account created. Check ${email} for a confirmation link before signing in.`);
       }
     } catch (authError: unknown) {
       setError(authError instanceof Error ? authError.message : 'Something went wrong.');
+      // A used or failed challenge cannot be replayed, so the next attempt needs a fresh one.
+      human.reset();
     } finally {
       setLoading(false);
     }
@@ -252,9 +266,21 @@ export default function AuthForm({
         </label>
       )}
 
+      {mode === 'login' && !resetStep && (
+        <label className={styles.rememberRow}>
+          <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />
+          Keep me signed in
+        </label>
+      )}
+
+      {/* The invisible trap field and, when one is configured, the CAPTCHA widget. */}
+      {human.field}
+
       <button type="submit" className={styles.primary} disabled={loading}>
         {loading ? 'Please wait…' : resetStep ? 'Save new password' : buttonLabel || text.button}
       </button>
+
+      <CaptchaNotice config={human.config} />
 
       {mode === 'login' && showLinks && (
         <a className={styles.linkButton} href={withRedirect('/lost-password')}>Forgot password?</a>

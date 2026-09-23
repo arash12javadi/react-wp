@@ -1,4 +1,5 @@
 import { getSupabaseClient, updateOption } from './db';
+import { purgePageCacheQuietly } from './security';
 import { defaultExcerptLength, type ExcerptUnit } from './excerpt';
 
 /** What the public header shows in its brand area (Settings → Site). */
@@ -186,6 +187,10 @@ export const saveSettings = async (settings: Partial<SiteSettings>): Promise<voi
   if (results.some((saved) => !saved)) {
     throw new Error('Some settings could not be saved. Check that your role can manage settings.');
   }
+  // The site title, logo and front page are rendered into every cached page, so a partial purge
+  // would leave some of them stale. Quiet: the TTL is the backstop and a cache miss is not a
+  // failed save.
+  await purgePageCacheQuietly();
 };
 
 export type SiteBranding = Pick<SiteSettings, 'site_title' | 'site_tagline' | 'site_icon' | 'site_logo' | 'header_display' | 'logo_height'>;

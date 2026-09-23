@@ -9,6 +9,7 @@ import { themeMigration } from './theme';
 import { capabilityGrantsMigration } from './capabilityGrants';
 import { translationsMigration } from './translations';
 import { engagementMigration } from './engagement';
+import { securityMigration } from './security';
 
 /**
  * The Dashboard's setup checklist: what is still missing for this site to work fully, with
@@ -43,6 +44,26 @@ async function adminNotices(): Promise<RwpSetupNotice[]> {
     supabase.from('rwp_translations').select('id', { count: 'exact', head: true }),
     supabase.from('bookmarks').select('id', { count: 'exact', head: true }),
   ]);
+
+  // Probed through the RPC, not the table. rwp_security_secrets has RLS on, no policy and no
+  // grants, so PostgREST does not expose it at all and a select against it looks "missing" even
+  // where it exists. The function is the thing that is actually granted, so "no such function" is
+  // the honest signal that the migration has not run.
+  const securityProbe = await supabase.rpc('rwp_security_secrets_status');
+  if (securityProbe.error && /PGRST202|Could not find the function/i.test(describeDbError(securityProbe.error))) {
+    notices.push({
+      id: 'migration-20261010',
+      level: 'recommended',
+      title: 'Run the security database migration',
+      description: 'Settings → Security saves nothing until it has run: the rate limits, anti-bot settings, page cache and robots.txt all fall back to their defaults, and the CAPTCHA secret has nowhere to be stored.',
+      steps: [
+        'Open Supabase → SQL Editor → New query.',
+        `Paste the whole of ${securityMigration} and click Run. It is safe to run again.`,
+        'Reload this page, then open Settings → Security.',
+      ],
+      action: { label: 'Open Supabase', href: 'https://supabase.com/dashboard/projects' },
+    });
+  }
 
   if (engagementProbe.error && missingTable(describeDbError(engagementProbe.error))) {
     notices.push({

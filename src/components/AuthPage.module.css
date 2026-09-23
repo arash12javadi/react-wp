@@ -59,6 +59,19 @@
   font-weight: 700;
 }
 
+/* Overrides the column layout above: a checkbox belongs beside its wording, not under it. */
+.rememberRow {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.rememberRow input {
+  width: auto !important;
+  margin: 0;
+}
+
 .card input {
   box-sizing: border-box;
   width: 100%;

@@ -12,6 +12,14 @@ import { handlePluginRequest, resolveOrigin } from './server/plugins.mjs';
 import { authorizePluginManager, deletePluginFolder, listPluginFolders } from './server/pluginFiles.mjs';
 import { InstallError, installPlugin, MAX_ZIP_BYTES } from './server/pluginInstaller.mjs';
 import { handleAdminRequest } from './server/adminRoutes.mjs';
+import { handleSecurityRequest } from './server/securityRoutes.mjs';
+import { buildRobots, buildSitemap, purgeSitemap } from './server/sitemap.mjs';
+import { configureSecuritySettings, refreshSecuritySettings, securitySettings } from './server/middleware/securitySettings.mjs';
+import { consumeRateLimit, rateLimitHeaders, rateLimitMessage, rateLimitTier } from './server/middleware/rateLimiter.mjs';
+import {
+  assetCacheHeaders, htmlCacheHeaders, notModified, pageCacheKey, pageCacheLookup, pageCachePurge,
+  pageCacheStore,
+} from './server/middleware/pageCache.mjs';
 import { resolveConnectionString, withClient } from './server/db.mjs';
 
 const port = Number(process.env.PORT || 3000);
@@ -31,9 +39,19 @@ const contentTypes = {
   '.webp': 'image/webp',
 };
 
-const json = (response, status, value) => {
-  response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+const json = (response, status, value, headers = {}) => {
+  response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', ...headers });
   response.end(JSON.stringify(value));
+};
+
+/**
+ * The config, read once per request and handed to the security engine. readConfig() is a file read,
+ * so this also stops the four or five separate readConfig() calls a single request used to make.
+ */
+const currentConfig = async () => {
+  const config = publicConfig(await readConfig());
+  configureSecuritySettings(config);
+  return config;
 };
 
 const readBody = async (request) => {
@@ -74,54 +92,172 @@ const install = async (body) => {
   });
 };
 
-const serveFile = async (request, response, pathname, seoPath = pathname) => {
+/**
+ * Renders index.html for a path: the SEO block, the Theme Editor's CSS and code, the tracking
+ * scripts and the injected site config. Split out of serveFile so the page cache has something to
+ * store and to re-run — the cache holds the string this returns.
+ */
+const renderIndex = async (request, filePath, seoPath, config) => {
+  const html = await readFile(filePath, 'utf8');
+  // Tracking scripts stay off the admin and the full-screen page builder.
+  const isAdmin = seoPath.replace(/\/+$/, '') === '/admin';
+  const isEditor = isAdmin || seoPath.startsWith('/builder/');
+  const origin = `http://${request.headers.host || 'localhost'}`;
+  const { head, bodyStart, headEnd = '', bodyEnd = '' } = isEditor
+    ? await renderEditorInjections(config)
+    : await renderDocumentInjections(seoPath, origin, config);
+  // The injected block carries its own <title>; leaving the placeholder one in place
+  // would win, because browsers honour the first title in the document.
+  // Function replacements throughout, so "$&" or "$1" in a script or title is not treated
+  // as a replacement pattern.
+  // Theme Editor output goes in first, while index.html still has exactly one </head> and one
+  // </body> (a pasted script can contain those strings): CSS after the app's stylesheet link,
+  // so it wins at equal specificity, and footer scripts last in <body>.
+  const themed = html
+    .replace(/<\/head>/i, () => (headEnd ? `  ${headEnd}\n  </head>` : '</head>'))
+    .replace(/<\/body>/i, () => (bodyEnd ? `  ${bodyEnd}\n  </body>` : '</body>'));
+  let withSeo = (head.includes('<title>') ? themed.replace(/\s*<title>.*?<\/title>/i, '') : themed)
+    .replace('<!--rwp-seo-->', () => head);
+  // Anchored to </head> so a "<body" inside a <head> script is not mistaken for the real tag.
+  if (bodyStart) withSeo = withSeo.replace(/<\/head>\s*<body[^>]*>/i, (tag) => `${tag}\n    ${bodyStart}`);
+  return withSeo.replace('window.__REACT_WP_CONFIG__=null;', () => `window.__REACT_WP_CONFIG__=${JSON.stringify(config)};`);
+};
+
+/**
+ * Serves a file from dist/, with the page cache in front of index.html.
+ *
+ * A cache hit skips renderIndex entirely — that is three or four PostgREST round trips per page
+ * view. A stale hit is served immediately and re-rendered after the response has been flushed
+ * (`stale-while-revalidate`), so a page falling out of its TTL never makes a visitor wait.
+ */
+const serveFile = async (request, response, pathname, seoPath = pathname, url = null, config = null) => {
   const relative = pathname === '/' || pathname === '/admin' ? 'index.html' : pathname.slice(1);
   const filePath = path.resolve(root, relative);
   if (!filePath.startsWith(`${root}${path.sep}`)) return false;
   try {
     await access(filePath);
+    const settings = securitySettings();
     if (relative === 'index.html') {
-      const html = await readFile(filePath, 'utf8');
-      const config = publicConfig(await readConfig());
-      const isAdmin = seoPath.replace(/\/+$/, '') === '/admin';
-      // Tracking scripts stay off the admin and the full-screen page builder.
-      const isEditor = isAdmin || seoPath.startsWith('/builder/');
-      const origin = `http://${request.headers.host || 'localhost'}`;
-      const { head, bodyStart, headEnd = '', bodyEnd = '' } = isEditor ? await renderEditorInjections(config) : await renderDocumentInjections(seoPath, origin, config);
-      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-      // The injected block carries its own <title>; leaving the placeholder one in place
-      // would win, because browsers honour the first title in the document.
-      // Function replacements throughout, so "$&" or "$1" in a script or title is not treated
-      // as a replacement pattern.
-      // Theme Editor output goes in first, while index.html still has exactly one </head> and one
-      // </body> (a pasted script can contain those strings): CSS after the app's stylesheet link,
-      // so it wins at equal specificity, and footer scripts last in <body>.
-      const themed = html
-        .replace(/<\/head>/i, () => (headEnd ? `  ${headEnd}\n  </head>` : '</head>'))
-        .replace(/<\/body>/i, () => (bodyEnd ? `  ${bodyEnd}\n  </body>` : '</body>'));
-      let withSeo = (head.includes('<title>') ? themed.replace(/\s*<title>.*?<\/title>/i, '') : themed)
-        .replace('<!--rwp-seo-->', () => head);
-      // Anchored to </head> so a "<body" inside a <head> script is not mistaken for the real tag.
-      if (bodyStart) withSeo = withSeo.replace(/<\/head>\s*<body[^>]*>/i, (tag) => `${tag}\n    ${bodyStart}`);
-      response.end(
-        withSeo.replace('window.__REACT_WP_CONFIG__=null;', () => `window.__REACT_WP_CONFIG__=${JSON.stringify(config)};`),
-      );
+      const resolvedConfig = config ?? await currentConfig();
+      const cacheable = url ? pageCacheKey(request, url, settings) : { cacheable: false, reason: 'no-url' };
+      const lookup = cacheable.cacheable ? pageCacheLookup(cacheable.key, settings) : { state: 'off' };
+
+      if (lookup.state === 'fresh' || lookup.state === 'stale') {
+        const { entry } = lookup;
+        const headers = {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': htmlCacheHeaders(settings, true),
+          ETag: entry.etag,
+          'X-RWP-Cache': lookup.state === 'fresh' ? 'HIT' : 'STALE',
+          Age: String(Math.floor(lookup.age / 1000)),
+        };
+        if (notModified(request, entry.etag)) {
+          response.writeHead(304, headers);
+          response.end();
+        } else {
+          response.writeHead(200, headers);
+          response.end(entry.body);
+        }
+        if (lookup.state === 'stale') {
+          // After the response, and swallowed: a failed background render must leave the stale
+          // entry in place rather than crashing the process on an unhandled rejection.
+          renderIndex(request, filePath, seoPath, resolvedConfig)
+            .then((fresh) => pageCacheStore(cacheable.key, fresh))
+            .catch((error) => console.error(`Background re-render of ${cacheable.key} failed:`, error));
+        }
+        return true;
+      }
+
+      const body = await renderIndex(request, filePath, seoPath, resolvedConfig);
+      const entry = cacheable.cacheable ? pageCacheStore(cacheable.key, body) : null;
+      response.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': htmlCacheHeaders(settings, Boolean(entry)),
+        ...(entry ? { ETag: entry.etag } : {}),
+        'X-RWP-Cache': entry ? 'MISS' : `BYPASS:${cacheable.reason || 'uncacheable'}`,
+      });
+      response.end(body);
     } else {
       response.writeHead(200, {
         'Content-Type': contentTypes[path.extname(filePath).toLowerCase()] || 'application/octet-stream',
-        'Cache-Control': 'no-store, max-age=0',
+        'Cache-Control': assetCacheHeaders(pathname, settings),
       });
       createReadStream(filePath).pipe(response);
     }
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    // "There is no such file" is the ordinary case and returns false so the caller can fall back
+    // to the SPA. Anything else is a bug in the render, and swallowing it silently is how a
+    // request ends up hanging with nothing written to it and nothing in the log.
+    if (error?.code === 'ENOENT') return false;
+    throw error;
   }
 };
 
 const server = http.createServer(async (request, response) => {
   try {
     const url = new URL(request.url || '/', `http://${request.headers.host || 'localhost'}`);
+
+    // Rate limiting comes before everything else that costs anything: before the body is read,
+    // before Supabase is called, before a file is touched. A limiter that runs after the work it
+    // is meant to prevent is decoration. Static files and page views are not counted — they are
+    // what the page cache and the CDN headers are for, and counting them would throttle a visitor
+    // for loading their own page's assets.
+    if (url.pathname.startsWith('/api/')) {
+      const tier = rateLimitTier(url.pathname, request.method);
+      const decision = consumeRateLimit(request, tier, securitySettings());
+      if (!decision.allowed) {
+        json(response, 429, { error: rateLimitMessage(decision) }, rateLimitHeaders(decision));
+        return;
+      }
+      response.setHeader('X-RateLimit-Limit', String(decision.limit));
+      response.setHeader('X-RateLimit-Remaining', String(decision.remaining));
+    }
+
+    // The security engine's own endpoints. Returns null for anything it does not own.
+    if (url.pathname.startsWith('/api/security/')) {
+      const result = await handleSecurityRequest({
+        method: request.method,
+        pathname: url.pathname,
+        headers: request.headers,
+        body: request.method === 'POST' ? await readBody(request).catch(() => ({})) : {},
+        config: await currentConfig(),
+        request,
+      });
+      // Unlike the plugin routes, an unknown /api/security/ path is a mistake, not something a
+      // plugin might own — answering 404 beats falling through to the SPA and returning HTML.
+      json(response, result ? result.status : 404, result ? result.body : { error: `No security endpoint at ${url.pathname}.` }, result?.headers || {});
+      return;
+    }
+
+    // The native SEO routes. Both are public and both are generated, so they sit in front of the
+    // SPA fallback — otherwise /sitemap.xml would serve index.html and a crawler would parse the
+    // app shell as a sitemap.
+    if (url.pathname === '/sitemap.xml' && request.method === 'GET') {
+      const config = await currentConfig();
+      if (!securitySettings().sitemap_enabled) {
+        response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+        response.end('The sitemap is switched off for this site (Settings → Security → SEO & indexing).\n');
+        return;
+      }
+      const xml = await buildSitemap(`http://${request.headers.host || 'localhost'}`, config);
+      response.writeHead(200, {
+        'Content-Type': 'application/xml; charset=utf-8',
+        'Cache-Control': `public, max-age=${securitySettings().cache_ttl_seconds}`,
+      });
+      response.end(xml);
+      return;
+    }
+    if (url.pathname === '/robots.txt' && request.method === 'GET') {
+      await currentConfig();
+      response.writeHead(200, {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'public, max-age=300',
+      });
+      response.end(buildRobots(`http://${request.headers.host || 'localhost'}`));
+      return;
+    }
+
     if (url.pathname === '/api/site-config.js' && request.method === 'GET') {
       const config = publicConfig(await readConfig());
       response.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'no-store' });
@@ -335,13 +471,23 @@ const server = http.createServer(async (request, response) => {
     if (url.pathname === '/api/install-schema' && request.method === 'POST') {
       const body = await readBody(request);
       await install(body);
+      // The site the engine was told about no longer exists, and neither does anything rendered
+      // from it. Re-point it and start again from the new project's settings.
+      pageCachePurge();
+      purgeSitemap();
+      configureSecuritySettings(await currentConfig());
+      await refreshSecuritySettings();
       json(response, 200, { success: true });
       return;
     }
-    if (request.method === 'GET' && await serveFile(request, response, url.pathname)) return;
+    const config = request.method === 'GET' ? await currentConfig() : null;
+    if (request.method === 'GET' && await serveFile(request, response, url.pathname, url.pathname, url, config)) return;
     if (request.method === 'GET') {
       // SPA fallback: serve index.html but keep the real path so SEO tags match the route.
-      await serveFile(request, response, '/', url.pathname);
+      // If even index.html is missing, say so — this used to leave the request hanging.
+      if (await serveFile(request, response, '/', url.pathname, url, config)) return;
+      response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' });
+      response.end('dist/index.html is missing. Run "npm run build" before starting the server.\n');
       return;
     }
     json(response, 405, { error: 'Method not allowed' });
@@ -365,6 +511,18 @@ const server = http.createServer(async (request, response) => {
   }
 });
 
+// Read once at startup so the very first request is already limited and already knows its rules,
+// rather than running on the defaults until the first timer tick. A site that is not installed
+// yet has nothing to read and keeps the defaults, which is correct.
+configureSecuritySettings(publicConfig(await readConfig()));
+await refreshSecuritySettings();
+
 server.listen(port, () => {
+  const settings = securitySettings();
   console.log(`React-WP server listening on port ${port}`);
+  console.log(
+    `Security: rate limit ${settings.rate_limit_auth_max}/${settings.rate_limit_api_max} per ${settings.rate_limit_window_minutes} min`
+    + `, anti-bot ${settings.anti_bot_provider}${settings.anti_bot_honeypot ? ' + honeypot' : ''}`
+    + `, page cache ${settings.cache_enabled ? `on (${settings.cache_ttl_seconds}s)` : 'off'}`,
+  );
 });

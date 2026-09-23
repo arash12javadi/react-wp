@@ -19,10 +19,15 @@ begin
       using errcode = '42501';
   end if;
 
+  -- profiles is rebuilt from `users` below. The credential tables are skipped on purpose: a
+  -- backup file is downloaded, emailed and kept in folders, and a CAPTCHA secret or a bot token
+  -- inside one is a credential leak with a long tail. They are deliberately re-entered by hand
+  -- after a restore; every other table round-trips.
   for table_row in
     select c.relname
     from pg_class c join pg_namespace n on n.oid = c.relnamespace
-    where n.nspname = 'public' and c.relkind = 'r' and c.relname <> 'profiles'
+    where n.nspname = 'public' and c.relkind = 'r'
+      and c.relname not in ('profiles', 'rwp_security_secrets', 'chat_secrets')
     order by c.relname
   loop
     execute format('select coalesce(jsonb_agg(to_jsonb(t)), ''[]''::jsonb) from public.%I t', table_row.relname)
@@ -126,10 +131,13 @@ begin
   where user_map ->> (bu ->> 'id') = p.id::text;
 
   -- Restore order: a table goes after the tables its foreign keys point to.
+  -- The credential tables are left alone, matching the export: a restore must not empty the
+  -- CAPTCHA secret or the chat bot token, because the backup it is restoring never held them.
   pending := array(
     select c.relname::text
     from pg_class c join pg_namespace n on n.oid = c.relnamespace
-    where n.nspname = 'public' and c.relkind = 'r' and c.relname <> 'profiles'
+    where n.nspname = 'public' and c.relkind = 'r'
+      and c.relname not in ('profiles', 'rwp_security_secrets', 'chat_secrets')
   );
   while cardinality(pending) > 0 loop
     ready := array(

@@ -2,9 +2,16 @@
   "format": "rwp-update-feed",
   "version": 1,
   "app": {
-    "version": "1.2.0",
-    "released": "2026-09-22",
+    "version": "1.3.0",
+    "released": "2026-09-23",
     "notes": [
+      "Settings → Security: session lifetime and cookie policy, anti-bot, rate limiting, page caching and the SEO routes, all read live by the server.",
+      "Anti-bot: an invisible honeypot on public forms, plus optional Cloudflare Turnstile or Google reCAPTCHA v3. The secret key is stored where no visitor can read it, never in the options table.",
+      "Rate limiting on every /api route, counted per address and per account, with separate ceilings for authentication and for ordinary traffic.",
+      "Server-side page caching with ETags and stale-while-revalidate; never for signed-in visitors, and purged automatically when content or settings change.",
+      "/sitemap.xml is generated from published content, and /robots.txt is editable in the admin.",
+      "Sign an account out of every device from Settings → Security.",
+      "Backups no longer contain credential tables, so a backup file cannot leak a CAPTCHA secret or a chat bot token.",
       "Engagement: Like, Save (with your own collections) and Follow buttons for posts, authors and categories, and view counts.",
       "Settings → Engagement switches each feature off site-wide, and chooses where buttons appear automatically.",
       "The visitors' dashboard has My saved collections and a Following feed that refreshes itself when a followed author publishes.",
@@ -13,7 +20,8 @@
       "Views count once per browser per item every 30 minutes, never for the author, and store no IP address or visitor id."
     ],
     "migrations": [
-      "supabase/migrations/20261004_engagement.sql"
+      "supabase/migrations/20261004_engagement.sql",
+      "supabase/migrations/20261010_security_engine.sql"
     ],
     "download_url": "https://github.com/arash12javadi/react-wp/archive/refs/heads/main.zip",
     "changelog_url": "https://github.com/arash12javadi/react-wp/commits/main"

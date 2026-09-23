@@ -8,6 +8,7 @@ import { useTheme, type ThemeBlock } from '../lib/theme';
 import { useTranslation } from '../context/I18nContext';
 import { HookSlot } from '../core/HookSlot';
 import ContentRenderer from './ContentRenderer';
+import { useHumanCheck } from './security/HumanCheck';
 import { BlockFrame } from './theme/ThemeLayoutRenderer';
 import styles from './CommentSection.module.css';
 
@@ -31,10 +32,22 @@ function CommentForm({
   placeholder?: string;
 }) {
   const [content, setContent] = useState('');
+  const human = useHumanCheck('comment');
+  const [checkError, setCheckError] = useState('');
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!content.trim()) return;
+    setCheckError('');
+    try {
+      // Before the insert: a comment that fails the human check must never reach the moderation
+      // queue, where refusing it becomes somebody's manual work.
+      await human.verify();
+    } catch (verifyError: unknown) {
+      setCheckError(verifyError instanceof Error ? verifyError.message : 'The verification check did not pass.');
+      human.reset();
+      return;
+    }
     await onSubmit(content.trim(), parentId);
     setContent('');
   };
@@ -52,6 +65,8 @@ function CommentForm({
         placeholder={parentId ? 'Write a reply…' : placeholder || 'Join the discussion…'}
         required
       />
+      {human.field}
+      {checkError && <div className="rwp-captcha-error" role="alert">{checkError}</div>}
       <div className={styles.formActions}>
         {onCancel && <button type="button" className={styles.secondary} onClick={onCancel}>Cancel</button>}
         <button type="submit" className={styles.primary} disabled={busy || !content.trim()}>

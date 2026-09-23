@@ -41,6 +41,109 @@ Keep the `data/` directory on a persistent volume. If the host clears that direc
 
 The installer first tries the generated PostgreSQL host. If that is unavailable from the host, enter the exact Supabase Session pooler connection string in the setup wizard. The server uses it to install the schema and then stores the shared public Supabase configuration for every browser.
 
+## Security, rate limiting, caching and the SEO routes
+
+Everything in this section is configured under **Settings → Security** and needs
+`supabase/migrations/20261010_security_engine.sql`. It is core, not a plugin: `server.mjs` applies
+it before any plugin is loaded, and `/sitemap.xml` and `/robots.txt` are served on a site with no
+plugins at all.
+
+### How the settings reach the server
+
+Each knob is one row in the `options` table, and `server.mjs` reads them all in a single query
+every 30 seconds into `server/middleware/securitySettings.mjs`. Middleware then reads its rules
+out of memory, synchronously: a rate limiter that asks the database whether to allow a request has
+already spent more than it saves. Saving in the admin calls `POST /api/security/refresh`, so a
+change applies immediately rather than on the next tick.
+
+The CAPTCHA **secret key is deliberately not an option row**. `public.options` is world-readable —
+the public site reads `site_title` before anyone signs in — so a secret there is a file every
+visitor can download. It lives in `rwp_security_secrets`, which has RLS on and no policy at all;
+only the server's secret key reaches it, and the admin screen reports *set* or *not set*, never a
+value. `ANTI_BOT_SECRET_KEY` in `.env.local` overrides it.
+
+### Sessions
+
+Supabase owns the JWT's real lifetime (Dashboard → Authentication → Sessions) and nothing here can
+shorten it — a JWT is stateless and cannot be recalled. What Settings → Security configures is this
+site's own policy: how long someone stays signed in on this front end, whether "keep me signed in"
+extends it, and the `SameSite` policy of the cookie that carries it. The cookie is `HttpOnly`,
+`Secure` over HTTPS, and holds only `{user id, expiry, signature}` — never the access token. It
+also switches the page cache off for that browser, which is what stops a signed-in visitor being
+served someone else's cached page.
+
+**Sign out everywhere** deletes the account's rows in `auth.sessions` and revokes its refresh
+tokens over the direct Postgres connection, so every device is signed out at its next refresh.
+GoTrue's admin API revokes by JWT and has no "sign out this user id" call, which an administrator
+signing *someone else* out does not have. An access token already issued keeps working until it
+expires; the response says so rather than promising a cut the mechanism cannot deliver.
+
+### Anti-bot
+
+Two layers, and it is worth being precise about which is which:
+
+* **Honeypot** — an invisible field on public forms, plus a "submitted faster than a person types"
+  check. Costs nothing, needs no third party, catches most form spam. A filled trap pauses that
+  address for `anti_bot_flag_minutes`; a merely fast submission does not.
+* **CAPTCHA** — Cloudflare Turnstile or Google reCAPTCHA v3, chosen in the admin and verified
+  server-side against the provider before anything else happens.
+
+Sign-in, registration and comments go from the browser straight to Supabase, so for those forms the
+check runs **before** the request rather than around it. That stops bots driving a real page and
+does not stop something talking to the Supabase REST API directly — what stops that is Supabase's
+own auth rate limiting, email confirmation and the comment RLS policies. Forms that do reach this
+server exchange a solved challenge for a signed, short-lived, address-bound clearance ticket
+(`POST /api/security/verify`), which `requireClearance()` verifies; those cannot be bypassed.
+
+### Rate limiting
+
+Applied to every `/api` request, before the body is read and before Supabase is called. Two tiers
+share one window: `auth` (sign-in verification, CAPTCHA checks, the admin endpoints that run DDL or
+delete folders) and `api` (everything else). Each request is counted against **both** the caller's
+address and their account, and whichever is closer to its ceiling decides — address alone lets one
+account burn a shared office NAT's budget, account alone lets a bot that never signs in go
+uncounted. Page views and static files are not counted.
+
+Counters live in this process's memory, keyed by a salted hash, and are never written anywhere.
+Behind several Node processes each one limits its own share.
+
+> `X-Forwarded-For` is trusted only when `TRUST_PROXY=true`. Without a proxy in front, that header
+> is chosen by the caller, and a limiter keyed on a value the attacker controls is not a limiter.
+
+### Page cache
+
+With caching on, the finished HTML response — `index.html` after `server/seo.mjs` has injected the
+SEO tags, theme CSS and tracking scripts — is held in memory per path. That injection is three or
+four PostgREST round trips, so on a site with traffic it is the whole cost of a page view. The app
+still hydrates and still fetches the page body; this removes the repeated work in front of it.
+
+Never cached: anything but `GET`, any request with an `Authorization` header **or any cookie**,
+`/admin`, `/builder/*`, and any path with a query string other than known tracking parameters. The
+`X-RWP-Cache` response header says `HIT`, `STALE`, `MISS` or `BYPASS:<reason>`, so a page you
+expected to be cached tells you why it is not.
+
+Invalidation is explicit: the admin purges after content and settings saves, and `stale-while-
+revalidate` means a page past its lifetime is served immediately while the next render replaces it.
+`ETag` and `If-None-Match` give a 304 to anyone who already has the current body. Fingerprinted
+files under `/assets/` are served `immutable`; everything else in `dist/` gets five minutes and a
+revalidation.
+
+### Sitemap and robots.txt
+
+`/sitemap.xml` is generated on request from published pages, posts and categories, read with the
+**publishable** key — so it contains exactly what a visitor can see and no draft can leak into it.
+Pages marked *noindex* in the page editor and the Page Builder's site template rows are left out.
+
+`/robots.txt` is editable in the admin. An empty box means "serve the generated default", not
+"serve an empty file": clearing it by accident must not start inviting crawlers into `/admin`. A
+`Sitemap:` line is appended unless your text already has one.
+
+### What needs the Node server
+
+Rate limiting, the page cache, session revocation and the two SEO routes all live in `server.mjs`.
+On a static deployment the browser reports *this host has no such endpoint* rather than a database
+failure, the settings still save, and the forms still work with the honeypot alone.
+
 ## RWP plugin and hook API
 
 React-WP exposes a typed extension API from [`src/lib/plugin-api.ts`](./src/lib/plugin-api.ts). Plugin IDs should use a unique prefix such as `ajdwp-`; public hooks use the `rwp_` prefix.

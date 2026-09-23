@@ -7,6 +7,7 @@ import { loadSettings, type SiteSettings } from '../lib/settings';
 import { appSettingsMigration, useAppSettings } from '../lib/appSettings';
 import { rwp } from '../lib/rwp';
 import { pageViewLink } from '../lib/contentBulk';
+import { purgePageCacheQuietly } from '../lib/security';
 import ClassicEditor from './ClassicEditor';
 import SeoPanel from './SeoPanel';
 import styles from './PostEditor.module.css';
@@ -122,6 +123,9 @@ export default function PageEditor({ page, initialIsPost = false, onSaved, onCan
         }
         throw new Error(result.error.code === '23505' ? 'That slug is already in use.' : result.error.message);
       }
+      // The cached HTML for this page (and for the home page, which may list it) is now wrong.
+      // Quiet on purpose: a stale cache entry that expires on its own is not a failed save.
+      await purgePageCacheQuietly(['/', `/${slug}`, ...(page && page.slug !== slug ? [`/${page.slug}`] : [])]);
       const action = page
         ? (form.is_post ? 'rwp_post_updated' : 'rwp_page_updated')
         : (form.is_post ? 'rwp_post_created' : 'rwp_page_created');
