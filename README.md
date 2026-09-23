@@ -563,17 +563,117 @@ Run [`supabase/migrations/20260930_code_snippets.sql`](./supabase/migrations/202
 
 ### Chat and the AI assistant (the `rwp-chat` plugin)
 
-Activate the plugin under **Plugins** and it installs [`plugins/rwp-chat/schema.sql`](./plugins/rwp-chat/schema.sql) on its own; the same text is [`supabase/migrations/20261008_chat_system.sql`](./supabase/migrations/20261008_chat_system.sql) for sites that prefer the SQL Editor. On a shop site also run [`supabase/migrations/20261009_shop_chat.sql`](./supabase/migrations/20261009_shop_chat.sql), or reinstall the shop's schema.
+A floating chat widget with a Gemini-backed assistant, lead capture, file attachments, and handover
+to a human by internal inbox, Telegram, or WhatsApp — with shop-aware product cards and order
+tracking when `rwp-shop` is active. Self-contained: it has no reference to any other plugin's
+tables and everything it can't do (no key, no shop, no server) degrades to "wait for a person"
+instead of breaking.
 
-**What a visitor gets.** A launcher in the corner of every public page, a pre-chat form that captures a name, email and phone as a lead before the conversation starts, file attachments, an assistant that answers straight away, and a button that fetches a person. `[rwp_inline_chat]` puts the same conversation inside a Contact or Support page, and both exist as Page Builder widgets. A proactive speech bubble can invite someone who has lingered or whose pointer has left towards the top of the window — once per visit, and never covering the page.
+#### Features
 
-**Nobody can read anyone else's conversation.** Most visitors are anonymous, so there is no `auth.uid()` to write a policy against, and RLS therefore refuses `anon` everything on all five tables — including `select`, because a readable `chat_sessions` row is a list of every lead's email address and phone number. A visitor reaches their own conversation through `rwp_chat_start`, `rwp_chat_post`, `rwp_chat_history` and friends, each of which re-checks the session's own 48-character token. The token is handed over once, at creation, and kept in `localStorage`; losing it starts a new conversation and nothing more. Staff read and write through ordinary RLS: `moderate_comments` for the inbox, `manage_options` to delete a transcript or curate canned responses.
+- **Floating launcher** on every public page (`after_footer` slot), plus `[rwp_chat_box]` to place
+  it on specific pages and `[rwp_inline_chat]` for a whole conversation embedded in a page — both
+  also exist as Page Builder widgets.
+- **AI assistant** powered by Google Gemini, answering from the site's own published pages and,
+  on a product page, the product's real title/price/stock. It never invents a price, a policy, or
+  a delivery promise, and never asks for payment details.
+- **Pre-chat lead form** — name, email and phone, configurably required — so a lead is captured
+  even if the visitor leaves right after.
+- **File attachments** (images, PDFs, text; 8 MB limit), stored in their own Media Library folder
+  so support screenshots don't clutter the main library.
+- **Proactive invitations** — a speech bubble after N seconds on the page, or on exit intent —
+  shown at most once per visit.
+- **Live agent handover**, four ways: an internal admin inbox (free, always available), a free
+  Telegram bot notification, a free `wa.me` deep link, or a paid WhatsApp Business API push
+  (UltraMsg / Twilio / 360dialog style). The visitor's request is recorded first regardless of
+  channel, so a failed notification never loses the request itself.
+- **Admin inbox & CRM** (`Chat → Inbox`) — every conversation, filterable by lead email/phone or
+  status, with a reply box, canned responses (`/shortcut` expansion), claim/close/delete, and the
+  pending agent-request queue.
+- **Shop integration**, opt-in and dependency-free: an in-chat product card with a real price and
+  an "Add to cart" button, and a "Track my order" flow that needs the order number *and* the email
+  it was placed with (never the number alone — that's in every confirmation email).
+- **Full transcript logging** for every message — visitor, bot and agent — including which Gemini
+  model answered each bot reply, for auditing AI quality over time.
 
-**The AI is on the server, and so is the transcript it reads.** With `GEMINI_API_KEY` set (server-only, see `.env.example`), the browser asks `POST /api/plugins/rwp-chat/ai/reply` with nothing but a session id and its token. The server loads the messages itself with the secret key, calls Gemini and writes the answer back as an ordinary `chat_messages` row with the model on it. So a visitor cannot forge what the assistant "said" by editing the history they send, and **Chat → Inbox** shows a complete, auditable log of which half answered what. The system prompt in [`plugins/rwp-chat/serverAi.mjs`](./plugins/rwp-chat/serverAi.mjs) forbids inventing a price, a delivery time or a policy, and forbids asking for a card number. Without a key the chat still works — every message simply waits for a person.
+#### Setup
 
-**Reaching a person is four things, not one.** Whichever is chosen, the request is recorded first, so a notification that fails loses the buzz and never the request. *Internal* queues it for the admin inbox. *Telegram* (free) sends your bot a message with who is asking, what they said and a link to the inbox. *WhatsApp link* (free) opens `wa.me` with the page and their question already typed. *WhatsApp Business API* (paid — UltraMsg, Twilio, 360dialog) pushes the same notification to your number without sending the visitor away. The bot token and the API token live in `chat_secrets`, which **no browser can read, including the settings screen** — it shows only whether each one is set, because `options` is world-readable and a token there would be downloadable by every visitor.
+1. Set `GEMINI_API_KEY` in `.env.local` (free key from
+   [aistudio.google.com/apikey](https://aistudio.google.com/apikey)) if you want the AI assistant.
+   Server-only — never `VITE_GEMINI_API_KEY`, which would be compiled into the public bundle.
+2. Activate **rwp-chat** under **Plugins**. It installs
+   [`plugins/rwp-chat/schema.sql`](./plugins/rwp-chat/schema.sql) on its own; the same text is
+   [`supabase/migrations/20261008_chat_system.sql`](./supabase/migrations/20261008_chat_system.sql)
+   for sites that prefer the SQL Editor.
+3. On a shop site, also run
+   [`supabase/migrations/20261009_shop_chat.sql`](./supabase/migrations/20261009_shop_chat.sql) (or
+   reinstall the shop's schema) to get the product card and order tracker.
+4. Configure the widget and, if wanted, a live-agent channel under **Chat → General & AI** /
+   **Chat → Live agent** (see below). Nothing beyond step 1–2 is required — the chat works with the
+   AI off and the channel left on the default "Internal".
 
-**On a shop.** The chat shows a card for the product being viewed, with the price from the same SQL the catalogue uses, so it can never quote one checkout would refuse; "Add to cart" works without leaving the conversation; and **Track my order** answers "where is my order?" given the order number *and* the email it was placed with — both, because an order number appears in confirmation emails and browser history and is not a password. None of this is a dependency: the chatbot has no reference to a shop table anywhere, and looks these up by name at run time, so the buttons simply hide themselves on a site with no shop.
+#### Admin settings (`Chat` in the sidebar)
+
+| Tab | What it controls |
+| --- | --- |
+| **General & AI** | Bot name/avatar/welcome message, launcher position & theme, whether the AI answers, pre-chat form fields, attachments on/off, proactive invitation timing and wording. |
+| **Live agent** | Which channel "Talk to a person" uses, its button label, the public WhatsApp number (for the free link), and the Telegram / WhatsApp API credentials. |
+| **Products & orders** | Whether a product card and "Track my order" appear, and the cart/product-page nudge timing and wording. Inert without `rwp-shop`. |
+| **Inbox** | The live queue and transcripts — reply, claim, close or delete a conversation, and manage canned responses. Needs `moderate_comments`; the other tabs need `manage_options`. |
+
+**Configuring a live-agent channel**, from **Chat → Live agent**:
+
+- *Internal* (default) — nothing to configure. Requests wait in **Chat → Inbox** for a signed-in
+  staff member to answer.
+- *Telegram* — create a bot with [@BotFather](https://t.me/BotFather), copy its token, send the
+  bot a message (or add it to your team's group), then read the chat id from
+  `https://api.telegram.org/bot<token>/getUpdates`. Paste both in.
+- *WhatsApp link* — set your WhatsApp number (digits only, country code, no `+`). Free; the visitor
+  is redirected to `wa.me` with their question pre-filled.
+- *WhatsApp API* — set the provider endpoint, API token, optional instance id, and the number to
+  notify. Requires a paid WhatsApp Business API provider.
+
+#### How it works
+
+**Nobody can read anyone else's conversation.** Most visitors are anonymous, so there is no
+`auth.uid()` to write a policy against, and RLS therefore refuses `anon` everything on all five
+tables — including `select`, because a readable `chat_sessions` row is a list of every lead's email
+address and phone number. A visitor reaches their own conversation through `rwp_chat_start`,
+`rwp_chat_post`, `rwp_chat_history` and friends, each of which re-checks the session's own
+64-character token. The token is handed over once, at creation, and kept in `localStorage`; losing
+it starts a new conversation and nothing more. Staff read and write through ordinary RLS:
+`moderate_comments` for the inbox, `manage_options` to delete a transcript or curate canned
+responses.
+
+**The AI is on the server, and so is the transcript it reads.** The browser asks
+`POST /api/plugins/rwp-chat/ai/reply` with nothing but a session id and its token. The server loads
+the messages itself with the secret key, calls Gemini, and writes the answer back as an ordinary
+`chat_messages` row with the model on it. So a visitor cannot forge what the assistant "said" by
+editing the history they send, and **Chat → Inbox** shows a complete, auditable log of which half
+answered what. The system prompt in
+[`plugins/rwp-chat/serverAi.mjs`](./plugins/rwp-chat/serverAi.mjs) forbids inventing a price, a
+delivery time or a policy, and forbids asking for a card number. Without a key the chat still
+works — every message simply waits for a person.
+
+**Credentials never reach the browser.** The Telegram bot token and the WhatsApp API token live in
+`chat_secrets`, which **no browser can read, including the settings screen** — it shows only
+whether each one is set, because `options` is world-readable (the public site reads `site_title`
+before anyone signs in) and a token there would be downloadable by every visitor.
+
+**On a shop.** The chat shows a card for the product being viewed, with the price from the same
+SQL the catalogue uses, so it can never quote one checkout would refuse; "Add to cart" works
+without leaving the conversation; and **Track my order** answers "where is my order?" given the
+order number *and* the email it was placed with — both, because an order number appears in
+confirmation emails and browser history and is not a password. None of this is a dependency: the
+chatbot has no reference to a shop table anywhere, and looks these up by name at run time
+(`rwp_chat_card_product`, `rwp_chat_order_status`), so the buttons simply hide themselves on a
+site with no shop.
+
+**Attachments have their own folder.** A file goes to Cloudinary under
+`plugins/rwp-chat/chat_media` and is recorded in the Media Library as folder `chat_media` — by the
+server, since `public.media` only accepts inserts from someone with `upload_files` and most
+visitors have no account at all. The Media Library keeps `chat_media` out of **All media** and
+shows it only when you click **💬 Chatbot media** in the folder sidebar.
 
 **Attachments have their own folder.** A file goes to Cloudinary under `plugins/rwp-chat/chat_media` and is recorded in the Media Library as `chat_media` — by the server, because `public.media` only accepts inserts from someone with `upload_files` and most visitors have no account at all. The Media Library keeps `chat_media` out of **All media** and shows it only when you click **💬 Chatbot media** in the folder sidebar, so a support inbox full of screenshots does not bury the site's own pictures.
 
