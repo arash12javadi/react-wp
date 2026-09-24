@@ -1,45 +1,412 @@
+<div align="center">
+
 # React-WP
 
-React-WP uses one Supabase project per deployed website, just like WordPress uses one database for one site. Configure the site's Supabase connection in the deployment environment so every browser loads the same content.
+**A lightweight, modular, WordPress-style CMS built on React 19, Vite and Supabase.**
 
-Copy `.env.example` to `.env.local` and set:
+Familiar to WordPress users (Setup Wizard, roles, plugins, themes, page builder, media library),
+but a single-page app on top of Postgres instead of a monolith on top of PHP.
 
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_PUBLISHABLE_KEY`
+[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev)
+[![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)](https://vite.dev)
+[![Node.js](https://img.shields.io/badge/Node.js-20%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
+[![Supabase](https://img.shields.io/badge/Supabase-Postgres%20%2B%20Auth-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com)
+[![Version](https://img.shields.io/badge/version-1.3.1-blue)](./package.json)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#contributing)
+[![Stars](https://img.shields.io/github/stars/arash12javadi/react-wp?style=flat&logo=github)](https://github.com/arash12javadi/react-wp/stargazers)
 
-The publishable key is safe for browser use when Row Level Security is configured. Never expose `SUPABASE_SECRET_KEY` to the browser or commit `.env.local`.
+[Key Features](#key-features) · [Architecture](#architecture--tech-stack) · [Deployment](#deployment-options) · [Quick Start](#getting-started) · [Security](#security--data-isolation) · [Reference](#technical-reference)
 
-The browser-local setup wizard remains a development fallback when the Vite environment variables are absent. For a deployed site, configure the variables in the hosting provider (for example, Vercel) and redeploy.
+</div>
 
-## Self-hosted WordPress-style installation
+<a name="table-of-contents"></a>
 
-For a host with a persistent Node.js process and writable storage, use the portable server:
+## 📑 Table of Contents
 
-```bash
-npm run build
-npm start
-```
+1. [Overview](#overview)
+2. [Key Features](#key-features)
+3. [Architecture & Tech Stack](#architecture--tech-stack)
+4. [Deployment Options](#deployment-options)
+5. [Getting Started](#getting-started)
+6. [Security & Data Isolation](#security--data-isolation)
+7. [Contributing](#contributing)
+8. [License](#license)
+9. [Technical Reference](#technical-reference) (security engine, plugin API, media, shop, builder, i18n, chat…)
 
-`npm start` rebuilds the frontend before starting the server, so changes to a
-plugin manifest or source are included. If you run `node server.mjs` directly,
-run `npm run build` first.
+---
 
-For hot-reloading development, start `npm start` first and then run
-`npm run dev`. Vite serves the frontend at `http://localhost:5173`, reads the
-same `data/react-wp-config.json`, and proxies `/api` requests to port 3000, so
-both ports use the same Supabase installation.
+<a name="overview"></a>
 
-The first installation writes the public site configuration to:
+## Overview
+
+React-WP keeps the parts of WordPress people actually like and drops the parts they don't.
+
+| | Traditional monolithic CMS | React-WP |
+|---|---|---|
+| **Backend** | PHP + MySQL you operate | Supabase (Postgres + Auth), managed |
+| **Frontend** | Server-rendered PHP themes | React SPA, themed from a JSON layout |
+| **Install** | Unzip, edit `wp-config.php` | Browser Setup Wizard |
+| **Extending** | PHP plugins loaded on every request | Plugins as ES modules, loaded at runtime, with their own SQL schema |
+| **Permissions** | PHP capability checks | Same capability map in the UI **and** Postgres Row Level Security |
+| **Hosting** | Shared PHP hosting | A Node.js process/VPS, or serverless (Vercel) |
+
+**One Supabase project = one website**, exactly as one WordPress database = one site.
+
+> 💡 **Note:** The database is the whole backend. There is no API layer to keep in sync with the UI:
+> the browser talks to Supabase directly and Row Level Security decides what each visitor may do.
+> A small Node server (`server.mjs`) exists only for the things a browser must not do
+> (secrets, DDL, payments, SEO tags for crawlers, rate limiting).
+
+[🔝 Back to top](#table-of-contents)
+
+---
+
+<a name="key-features"></a>
+
+## Key Features
+
+| Feature | What you get |
+|---|---|
+| 🧙 **WordPress-style Setup Wizard** | Enter your Supabase details in the browser; the installer creates the schema, the first administrator and default content (Home, Blog, policies, account pages). |
+| 🔐 **Role-based access control** | Roles live in `public.profiles` (not user-editable metadata). Capabilities are enforced in Postgres via `user_has_cap()`, mirrored in `src/lib/roles.ts` for the UI, with per-role and per-user grants under *Settings → Roles*. |
+| 🔌 **Runtime plugin registry** | Plugins are ES modules with a `manifest.json`. They register routes, admin pages, header items, hooks, server routes and their **own database schema**, installed on activation and removable (with backup) on uninstall. WordPress-style actions and filters share one hook registry. |
+| 🧱 **Visual page builder** | Drag-and-drop layouts, site templates (header, footer, single, archive, 404), per-language layouts, forms, dynamic tags, and an SEO audit tab. Ships as a plugin. |
+| 🖼️ **External media pipelines** | Media Library backed by Cloudinary or ImageKit, with folders, quotas, scoped access, and signed server-side deletes. |
+| 🔎 **SEO engine** | Meta/Open Graph tags written server-side (what crawlers read) and client-side, `/sitemap.xml`, `/robots.txt`, redirects and per-page SEO fields. |
+| 🛡️ **Security engine** | Rate limiting, anti-bot (Turnstile / reCAPTCHA), signed sessions, a page cache and response compression, all configured in *Settings → Security*. |
+| 🌍 **Multilingual and RTL** | Per-language settings, database-editable translations, logical CSS so `dir="rtl"` just works. |
+| 🛒 **Optional plugins** | Shop (Stripe/PayPal, computed in SQL), Chat with an AI assistant, Code Snippets, Persian Origins (bilingual content). |
+
+<details>
+<summary><b>Bundled plugins</b></summary>
+
+| Plugin | Folder | Purpose |
+|---|---|---|
+| Page Builder | `plugins/rwp-page-builder` | Visual editor, site templates, widgets, AI Section Refine |
+| Shop | `plugins/rwp-shop` | Products, cart, checkout, coupons, stock, backup/import |
+| Chat | `plugins/rwp-chat` | Live chat, Telegram/WhatsApp hand-off, Gemini assistant |
+| Code Snippets | `plugins/rwp-code-snippets` | PHP-style snippets and an AI developer assistant |
+| Persian Origins | `plugins/persian-origins` | Bilingual (EN/FA) content and site text translation |
+| Sample Plugin | `plugins/rwp-sample-plugin` | Minimal starting point for your own plugin |
+
+Each plugin that owns tables ships `schema.sql` (run on activation) and `uninstall.sql`
+(run only when an administrator explicitly wipes its data). A site that never enables the shop
+never gets its `shop_*` tables.
+
+</details>
+
+[🔝 Back to top](#table-of-contents)
+
+---
+
+<a name="architecture--tech-stack"></a>
+
+## Architecture & Tech Stack
+
+| Layer | Technology | Role |
+|---|---|---|
+| Frontend | React 19, Vite 8 | SPA, admin, public site, editor canvas |
+| Rich text | TipTap (ProseMirror) | Classic content editor |
+| Data + Auth | Supabase (PostgreSQL, PostgREST, Auth) | The whole backend, secured by RLS |
+| Server | Node.js (`server.mjs`) | Static files, SEO tags, security middleware, plugin server routes, DDL |
+| Serverless | Vercel functions (`api/`) | Installer and plugin routes where no persistent process exists |
+| Media | Cloudinary / ImageKit | External file storage |
+| Email / AI | Nodemailer (SMTP), Google Gemini | Order and form email, optional AI features |
 
 ```text
-data/react-wp-config.json
+                        ┌────────────────────────────┐
+                        │        Browser (SPA)       │
+                        │  React 19 · Vite bundle    │
+                        └───────┬─────────────┬──────┘
+        publishable key + RLS   │             │  /api/*  (secrets, DDL, payments)
+                                ▼             ▼
+                ┌──────────────────┐   ┌──────────────────────────┐
+                │     Supabase     │◄──│   server.mjs (Node.js)   │
+                │ Postgres · Auth  │   │ SEO · security · plugins │
+                │ RLS · SQL funcs  │   │ uses SUPABASE_SECRET_KEY │
+                └──────────────────┘   └───────────┬──────────────┘
+                                                   │
+                                     Cloudinary · ImageKit · Stripe
+                                     PayPal · SMTP · Gemini
 ```
 
-This is the React-WP equivalent of `wp-config.php`. It is created by the installer, is excluded from Git, and is served only through the public values needed by the browser. Database passwords and PostgreSQL connection strings are never returned to browsers.
+<details>
+<summary><b>Setup Wizard flow</b></summary>
 
-Keep the `data/` directory on a persistent volume. If the host clears that directory on restart, React-WP will ask for installation again.
+```text
+ Open site ──► not installed? ──► Setup Wizard
+                                     │ 1. Supabase URL + publishable key
+                                     │ 2. DB password (or Session pooler string)
+                                     │ 3. Administrator account
+                                     ▼
+                    server runs supabase/schema.sql (23 core tables)
+                                     ▼
+              writes data/react-wp-config.json  (public values only)
+                                     ▼
+                 installs default content (Home, Blog, account pages)
+                                     ▼
+                              Dashboard ready
+```
 
-The installer first tries the generated PostgreSQL host. If that is unavailable from the host, enter the exact Supabase Session pooler connection string in the setup wizard. The server uses it to install the schema and then stores the shared public Supabase configuration for every browser.
+</details>
+
+<details>
+<summary><b>Repository layout</b></summary>
+
+```text
+react-wp/
+├─ src/                 React app: admin, public site, theme engine, lib/
+├─ plugins/<id>/        manifest.json, schema.sql, uninstall.sql, server.mjs, UI
+├─ server/              Middleware (security, cache, compression), SEO, DB, plugin loader
+├─ server.mjs           Self-hosted Node entry point
+├─ api/                 Vercel serverless functions
+├─ supabase/
+│  ├─ schema.sql        Core CMS schema (23 tables)
+│  └─ migrations/       Run by hand in the Supabase SQL Editor
+├─ data/                react-wp-config.json (created by the installer, git-ignored)
+└─ updates.json         Version manifest used by Dashboard → Updates
+```
+
+</details>
+
+<details>
+<summary><b>Core schema vs. plugin schema</b></summary>
+
+- `supabase/schema.sql` is **core only**: pages, posts, categories, comments, profiles, options, menus, media, plugins, theme settings, roles, translations, engagement tables and more.
+- A plugin's `schema.sql` may depend on core, but **core never references a plugin object**, and one plugin never references another. Optional integrations are found by name at run time.
+- Every migration must be safely re-runnable: `if not exists`, `drop policy/trigger if exists` before create, and a final `notify pgrst, 'reload schema';`.
+
+</details>
+
+[🔝 Back to top](#table-of-contents)
+
+---
+
+<a name="deployment-options"></a>
+
+## Deployment Options
+
+| | **Self-hosted Node.js / VPS** | **Serverless (Vercel / Netlify)** |
+|---|---|---|
+| Process model | One persistent `server.mjs` | Static SPA plus functions |
+| Setup Wizard | ✅ Full | ✅ Via `api/install-schema.ts` |
+| Config storage | `data/react-wp-config.json` (persistent volume) | Environment variables |
+| Plugin install / uninstall SQL | ✅ | ⚠️ Not available (no direct DDL) |
+| Site reset, plugin folder delete | ✅ | ❌ |
+| Server-side SEO tags | ✅ | ❌ Client-side only |
+| Rate limiting, page cache, compression | ✅ | ❌ |
+| Best for | Full feature set | Simple, low-ops public sites |
+
+> ⚠️ **Warning:** On a static or serverless host, plugins can still be activated, but running their
+> `schema.sql` needs a direct Postgres connection that only `server.mjs` provides. Apply plugin SQL
+> by hand in the Supabase SQL Editor there.
+
+[🔝 Back to top](#table-of-contents)
+
+---
+
+<a name="getting-started"></a>
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 20 or newer and npm
+- A free [Supabase](https://supabase.com) project (one per site)
+- A persistent directory for `data/` if you self-host
+
+### Self-hosted quick start
+
+```bash
+git clone https://github.com/arash12javadi/react-wp.git
+cd react-wp
+npm install
+cp .env.example .env.local     # then edit it (see below)
+npm run build
+npm start                      # builds again, then serves on http://localhost:3000
+```
+
+Open `http://localhost:3000` and follow the **Setup Wizard**.
+
+`npm start` rebuilds the frontend first, so plugin changes are picked up. If you run
+`node server.mjs` directly, run `npm run build` first.
+
+### Minimum environment
+
+```dotenv
+VITE_SUPABASE_URL=https://your-project-ref.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=your_publishable_or_anon_key
+```
+
+<details>
+<summary><b>Full environment variable reference (<code>.env.local</code>)</b></summary>
+
+```dotenv
+# Public, safe for the browser when RLS is on
+VITE_SUPABASE_URL=https://your-project-ref.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=your_publishable_or_anon_key
+
+# Server-only: never use a VITE_ prefix
+SUPABASE_SECRET_KEY=your_server_secret_key
+SUPABASE_DB_URL=postgres://postgres:password@db.your-project-ref.supabase.co:5432/postgres  # Session mode, port 5432
+
+# Shop (optional)
+SITE_URL=https://shop.example.com
+STRIPE_SECRET_KEY=sk_test_xxx
+STRIPE_WEBHOOK_SECRET=whsec_xxx
+PAYPAL_CLIENT_ID=...
+PAYPAL_CLIENT_SECRET=...
+PAYPAL_MODE=sandbox
+
+# Email (shop orders, builder forms)
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=...
+SMTP_PASS=...
+SMTP_FROM=shop@example.com
+
+# AI features (Section Refine, Code Snippets assistant, Chat assistant)
+GEMINI_API_KEY=...
+GEMINI_MODEL=
+
+# Security engine (all optional)
+ANTI_BOT_SECRET_KEY=
+TRUST_PROXY=false          # true ONLY behind a proxy that sets X-Forwarded-For
+SESSION_COOKIE_SECRET=
+
+# Media
+CLOUDINARY_CLOUD_NAME=...
+CLOUDINARY_API_KEY=...     # deletes only; uploads are unsigned
+CLOUDINARY_API_SECRET=...
+IMAGEKIT_PRIVATE_KEY=...
+```
+
+See [`.env.example`](./.env.example) for the annotated version.
+
+</details>
+
+### Development with hot reload
+
+```bash
+npm start        # terminal 1: server on :3000
+npm run dev      # terminal 2: Vite on :5173, proxies /api to :3000
+```
+
+Both ports share the same `data/react-wp-config.json`, so they use the same Supabase installation.
+
+### Checks
+
+```bash
+npm run build    # production build
+npm run lint     # ESLint (.js/.jsx only; there is no TypeScript compiler configured)
+```
+
+> 💡 **Note:** The installer first tries the generated PostgreSQL host. If it is unreachable from
+> your machine, paste the exact Supabase **Session pooler** connection string into the wizard.
+
+> ⚠️ **Warning:** Keep `data/` on a persistent volume. If the host wipes it on restart, React-WP
+> will ask you to install again.
+
+<details>
+<summary><b>Deploying to Vercel</b></summary>
+
+1. Import the repository and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`.
+2. Redeploy. `vercel.json` routes `/api/plugins/*` to the plugin function and everything else to `index.html`.
+3. Run the installer from the browser, or paste `supabase/schema.sql` into the Supabase SQL Editor.
+
+Remember the limits in [Deployment Options](#deployment-options).
+
+</details>
+
+<details>
+<summary><b>Updating an existing site</b></summary>
+
+Migrations in `supabase/migrations/` are **run by hand in the Supabase SQL Editor**; the app
+cannot apply them. Dashboard → Updates only *checks* `updates.json`; it never installs anything.
+Run any new migrations it lists, then pull and rebuild.
+
+</details>
+
+[🔝 Back to top](#table-of-contents)
+
+---
+
+<a name="security--data-isolation"></a>
+
+## Security & Data Isolation
+
+**Zero secret leakage** is the design rule: the browser only ever holds the publishable key.
+
+| Concern | How it is handled |
+|---|---|
+| Browser secrets | Only `VITE_SUPABASE_*` reach the bundle. Secret, DB, payment, SMTP, Gemini and CAPTCHA keys are server-only. |
+| Authorization | Postgres RLS via `user_has_cap()`. Roles come from `public.profiles`, never from `user_metadata`. |
+| Credentials in the database | Stored in tables with RLS on and **no policy** (`chat_secrets`, `rwp_security_secrets`), reachable only with the server's secret key. Never in `options`, which is world-readable. |
+| Prices and stock | Computed in SQL (`shop_calculate`, `shop_place_order`); the browser's amounts are never trusted. |
+| Visitor privacy | Views and likes store only salted, daily-rotated hashes; never raw IPs. |
+| Backups | Exports skip `profiles` and secret tables so a downloaded file cannot leak credentials. |
+| Rate limiting and bots | Per-process memory, not tables. `X-Forwarded-For` is trusted only with `TRUST_PROXY=true`. |
+| Destructive actions | Plugin wipe needs typing `DELETE`; site reset needs your password and typing `RESET`. |
+
+### Stateful vs. stateless deployments
+
+| | Self-hosted (stateful) | Serverless (stateless) |
+|---|---|---|
+| Config | `data/react-wp-config.json` (public values only, git-ignored) | Env vars |
+| Rate-limit counters, page cache | In process memory | Not available |
+| DB passwords | Used during install, never written to disk or returned to browsers | Same |
+
+> ⚠️ **Warning:** Never commit `.env`, `.env.local`, database dumps, connection strings, or
+> service-role keys. `SUPABASE_DB_URL` is a superuser credential for your whole database.
+
+<details>
+<summary><b>Auth and anti-bot: what is and is not protected</b></summary>
+
+Sign-in goes browser → Supabase, so the anti-bot check on login, register and comments runs
+**before** the request. It stops bots driving a real page; Supabase's own auth limits, email
+confirmation and the comment RLS policies stop the rest. Forms that reach `server.mjs` exchange a
+solved challenge for a clearance ticket that the server verifies, and those cannot be bypassed.
+
+</details>
+
+[🔝 Back to top](#table-of-contents)
+
+---
+
+<a name="contributing"></a>
+
+## Contributing
+
+Pull requests are welcome.
+
+1. Fork the repo and create a branch: `git checkout -b feature/my-change`.
+2. Read the [Technical Reference](#technical-reference) for the area you are changing.
+3. Run `npm run build` and `npm run lint`.
+4. For database changes, add a migration that is **safely re-runnable**, and keep it in sync with `supabase/schema.sql` or the plugin's `schema.sql`.
+5. Open a pull request describing what changed and why.
+
+Building a plugin? Start from `plugins/rwp-sample-plugin` and the [plugin API](#rwp-plugin-and-hook-api).
+
+[🔝 Back to top](#table-of-contents)
+
+---
+
+<a name="license"></a>
+
+## License
+
+No license file is included in this repository yet, so all rights are reserved by default.
+Add a `LICENSE` file (for example MIT) and update this section and the badge if you want others to use it freely.
+
+[🔝 Back to top](#table-of-contents)
+
+---
+
+<a name="technical-reference"></a>
+
+# Technical Reference
+
+Detailed, per-feature documentation and the reasoning behind each design decision.
 
 ## Security, rate limiting, caching and the SEO routes
 
@@ -824,18 +1191,3 @@ The repository contains only placeholders. Each person can download or clone the
 The installer creates `data/react-wp-config.json` locally on that installation. The file is intentionally ignored by Git, so it is not uploaded to GitHub. It contains only the public Supabase URL/key used by browsers; database passwords and PostgreSQL connection strings are used by the server during installation and are not written to that file.
 
 Never commit `.env`, `.env.local`, database dumps, connection strings, database passwords, secret keys, or service-role keys. The tracked [`react-wp.config.example.json`](./react-wp.config.example.json) contains placeholders only.
-
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
-
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
