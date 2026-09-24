@@ -2,9 +2,13 @@
   "format": "rwp-update-feed",
   "version": 1,
   "app": {
-    "version": "1.3.0",
-    "released": "2026-09-23",
+    "version": "1.3.1",
+    "released": "2026-09-24",
     "notes": [
+      "Response compression (Brotli/gzip) on HTML, JSON, JS and CSS responses — on by default, independent of page caching, and skipped for images/fonts/video.",
+      "Cached pages are compressed once, at store time, so a cache hit costs zero compression CPU; built JS/CSS bundles are compressed once per process and reused.",
+      "Settings → Security → Rate limiting & Speed: a toggle for whether saving content auto-purges the page cache, and for response compression. The manual purge button always works regardless of the auto-purge toggle.",
+      "Images inside page and post content get loading=\"lazy\" and decoding=\"async\" automatically unless the author set loading by hand.",
       "Settings → Security: session lifetime and cookie policy, anti-bot, rate limiting, page caching and the SEO routes, all read live by the server.",
       "Anti-bot: an invisible honeypot on public forms, plus optional Cloudflare Turnstile or Google reCAPTCHA v3. The secret key is stored where no visitor can read it, never in the options table.",
       "Rate limiting on every /api route, counted per address and per account, with separate ceilings for authentication and for ordinary traffic.",
@@ -21,7 +25,8 @@
     ],
     "migrations": [
       "supabase/migrations/20261004_engagement.sql",
-      "supabase/migrations/20261010_security_engine.sql"
+      "supabase/migrations/20261010_security_engine.sql",
+      "supabase/migrations/20261011_cache_advanced.sql"
     ],
     "download_url": "https://github.com/arash12javadi/react-wp/archive/refs/heads/main.zip",
     "changelog_url": "https://github.com/arash12javadi/react-wp/commits/main"

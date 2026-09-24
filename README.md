@@ -122,11 +122,39 @@ Never cached: anything but `GET`, any request with an `Authorization` header **o
 `X-RWP-Cache` response header says `HIT`, `STALE`, `MISS` or `BYPASS:<reason>`, so a page you
 expected to be cached tells you why it is not.
 
-Invalidation is explicit: the admin purges after content and settings saves, and `stale-while-
-revalidate` means a page past its lifetime is served immediately while the next render replaces it.
-`ETag` and `If-None-Match` give a 304 to anyone who already has the current body. Fingerprinted
-files under `/assets/` are served `immutable`; everything else in `dist/` gets five minutes and a
-revalidation.
+Invalidation is explicit: the admin purges after content and settings saves (unless
+`cache_auto_purge_on_save` is off — see below), and `stale-while-revalidate` means a page past its
+lifetime is served immediately while the next render replaces it. `ETag` and `If-None-Match` give a
+304 to anyone who already has the current body. Fingerprinted files under `/assets/` are served
+`immutable`; everything else in `dist/` gets five minutes and a revalidation.
+
+**Auto-purge on save** (`cache_auto_purge_on_save`, on by default) governs only the *automatic*
+purge that runs after a page, post or settings save. The admin's own **"Purge the whole page
+cache"** button always runs regardless of this toggle — turning auto-purge off is for a busy site
+that would rather tolerate the TTL's staleness than pay a purge on every edit, not a way to disable
+manual purging too.
+
+### Response compression
+
+Independent of the page cache above — it is a pure transport optimisation with none of the page
+cache's staleness or privacy trade-offs, so unlike page caching it is **on by default**
+(`cache_enable_compression`). Brotli when the browser offers it, gzip otherwise, and never for
+images, fonts or video: compressing an already-compressed format burns CPU to make the response
+*larger* more often than smaller.
+
+Two different cost models, deliberately:
+
+* A **page cache entry** is compressed exactly once, when it is stored (a MISS or a background
+  stale re-render) — every `HIT` after that reuses the precomputed bytes and pays zero compression
+  cost. That split is the entire point of caching output rather than bolting a per-request
+  compression middleware in front of it.
+* A **built asset** under `dist/` (the app's JS/CSS bundles, SVGs) is compressed the first time it
+  is requested and kept in memory for the rest of the process's life — safe because Vite
+  fingerprints every asset by content hash, so the same pathname never means different bytes during
+  one run.
+
+`Vary: Accept-Encoding` is sent whenever compression is a possibility for that response, and a body
+under 256 bytes is left uncompressed on purpose: framing overhead can make a tiny response *bigger*.
 
 ### Sitemap and robots.txt
 

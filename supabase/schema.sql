@@ -2926,6 +2926,9 @@ insert into public.options (option_name, option_value) values
   ('cache_ttl_seconds', '3600'),
   ('cache_stale_while_revalidate_seconds', '86400'),
   ('cache_static_max_age_seconds', '31536000'),
+  -- Added by 20261011_cache_advanced.sql on a site that installed before it existed.
+  ('cache_auto_purge_on_save', 'true'),
+  ('cache_enable_compression', 'true'),
   ('robots_txt_content', ''),
   ('sitemap_enabled', 'true')
 on conflict (option_name) do nothing;

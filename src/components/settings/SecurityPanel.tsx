@@ -82,11 +82,24 @@ function ServerState({ status, error, onRefresh, busy }: {
         {status.stale && <> Its last attempt failed: <code>{status.error || 'unknown error'}</code>, so it is still applying the previous values.</>}
       </p>
       <p>
-        Rate limiter: <code>{status.rate_limits.keys}</code> live counters.{' '}
-        Page cache: <code>{status.cache.entries}</code> pages, <code>{formatBytes(status.cache.bytes)}</code>,{' '}
-        <code>{status.cache.hits}</code> hits / <code>{status.cache.misses}</code> misses.{' '}
-        Flagged addresses: <code>{status.anti_bot.flagged_addresses}</code>.
+        Rate limiter: <code>{status.rate_limits?.keys ?? 0}</code> live counters.{' '}
+        Page cache: <code>{status.cache?.entries ?? 0}</code> pages, <code>{formatBytes(status.cache?.bytes ?? null)}</code>,{' '}
+        <code>{status.cache?.hits ?? 0}</code> hits / <code>{status.cache?.misses ?? 0}</code> misses.{' '}
+        Flagged addresses: <code>{status.anti_bot?.flagged_addresses ?? 0}</code>.
       </p>
+      {status.settings?.cache_enable_compression && status.cache && (
+        <p>
+          Compression: <code>{status.cache.compressed_entries ?? 0}</code> of <code>{status.cache.entries ?? 0}</code>{' '}
+          cached page(s) have a precomputed Brotli/gzip copy ({formatBytes(status.cache.stored_bytes ?? null)} held in
+          memory for all of them together); <code>{status.cache.cached_assets ?? 0}</code> built asset(s) compressed
+          and reused.
+          {status.cache.compressed_entries === undefined && (
+            // The running server process predates this field: it has not been restarted since the
+            // last update. Said plainly, because "undefined" numbers here are otherwise a silent bug.
+            <> <em>(The server appears to be running an older build — restart it to see these numbers.)</em></>
+          )}
+        </p>
+      )}
       <button type="button" className={styles.secondaryButton} disabled={busy} onClick={onRefresh}>
         {busy ? 'Refreshing…' : 'Make the server re-read now'}
       </button>
@@ -399,15 +412,36 @@ export default function SecurityPanel({ tab }: { tab: SecurityTab }) {
                 unit="seconds" min={0} max={34560000}
                 help="Only files under /assets/ whose name carries a content hash. Everything else gets five minutes and a revalidation."
                 onChange={(value) => field('cache_static_max_age_seconds', value)} />
+              <Toggle checked={form.cache_auto_purge_on_save} onChange={(value) => field('cache_auto_purge_on_save', value)}>
+                Purge automatically when a page, post or setting is saved
+              </Toggle>
+              <p className={styles.help}>
+                Switching this off means an edit will not be visible until the lifetime above runs out — the "Purge
+                the whole page cache" button below always works regardless of this toggle.
+              </p>
               <div className={styles.actions}>
                 <button type="button" className={styles.secondaryButton} disabled={busy === 'purge'}
                   onClick={() => void run('purge', async () => {
-                    const result = await purgePageCache();
+                    const result = await purgePageCache(undefined, 'manual');
                     return `Page cache emptied: ${result.removed} page(s) removed. The sitemap will be rebuilt on the next request.`;
                   })}>
                   {busy === 'purge' ? 'Purging…' : 'Purge the whole page cache'}
                 </button>
               </div>
+            </fieldset>
+
+            <fieldset className={styles.fieldset}>
+              <legend>Response compression</legend>
+              <Toggle checked={form.cache_enable_compression} onChange={(value) => field('cache_enable_compression', value)}>
+                Compress HTML, JSON and JavaScript/CSS responses with Brotli or gzip
+              </Toggle>
+              <p className={styles.help}>
+                Independent of the page cache above: it applies to every text response this server sends, whether or
+                not that page is cached, and never to images, fonts or video — compressing an already-compressed
+                format wastes CPU for no gain. Cached pages are compressed once, when stored, so a cache hit pays no
+                compression cost at all; a built JavaScript or CSS file is compressed the first time it is requested
+                and reused for the rest of this process's life. Safe to leave on.
+              </p>
             </fieldset>
           </>
         )}

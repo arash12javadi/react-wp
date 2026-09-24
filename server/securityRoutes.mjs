@@ -11,7 +11,7 @@
  * manage_options:
  *   GET  /api/security/status          settings, cache and limiter statistics, secret set / not set
  *   POST /api/security/refresh         re-read the options now instead of on the next timer tick
- *   POST /api/security/cache/purge     { paths?: string[] }
+ *   POST /api/security/cache/purge     { paths?: string[], reason?: 'auto' | 'manual' }
  *
  * Administrator or Super Admin (profiles.role, not a capability):
  *   POST /api/security/sessions/revoke { user_id }
@@ -30,6 +30,7 @@ import {
   minimumFormSeconds, timestampField, verifyCaptcha, addressFlagged,
 } from './middleware/antiBot.mjs';
 import { pageCachePurge, pageCacheStats } from './middleware/pageCache.mjs';
+import { compressionAssetCacheStats } from './middleware/compression.mjs';
 import { rateLimitStats } from './middleware/rateLimiter.mjs';
 import { purgeSitemap } from './sitemap.mjs';
 
@@ -306,9 +307,21 @@ async function revokeSessions(config, headers, body) {
   };
 }
 
-/** POST /api/security/cache/purge { paths?: string[] } */
+/**
+ * POST /api/security/cache/purge { paths?: string[], reason?: 'auto' | 'manual' }
+ *
+ * `reason: 'manual'` is the admin's own "Purge the whole page cache" button and always runs —
+ * an administrator asking for a purge is not something a setting should be able to refuse.
+ * Anything else is `purgePageCacheQuietly`'s automatic call after a content or settings save
+ * (src/lib/security.ts), and honours `cache_auto_purge_on_save`: turning that off is meant to stop
+ * exactly these calls, on a site that would rather eat the TTL's staleness than pay the purge cost
+ * on every edit.
+ */
 async function purgeCache(config, headers, body) {
   await requireCapability(config, headers, 'manage_options');
+  if (body?.reason !== 'manual' && !securitySettings().cache_auto_purge_on_save) {
+    return { status: 200, body: { success: true, removed: 0, scope: 'skipped', reason: 'cache_auto_purge_on_save is off' } };
+  }
   const result = pageCachePurge(body?.paths);
   purgeSitemap();
   // A settings change is the common reason for a full purge, and it is also the change the
@@ -344,7 +357,7 @@ export async function handleSecurityRequest({ method, pathname, headers, body, c
         headers: { 'Cache-Control': 'no-store' },
         body: {
           ...securityStatus(),
-          cache: pageCacheStats(),
+          cache: { ...pageCacheStats(), ...compressionAssetCacheStats() },
           rate_limits: rateLimitStats(),
           anti_bot: antiBotStats(),
           // So the panel can say whether the revoke button will work before someone presses it.

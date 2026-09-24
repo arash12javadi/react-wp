@@ -25,6 +25,7 @@ export const securityOptionNames = [
   'rate_limit_window_minutes', 'rate_limit_auth_max', 'rate_limit_api_max',
   'anti_bot_provider', 'anti_bot_site_key', 'anti_bot_honeypot', 'anti_bot_forms', 'anti_bot_flag_minutes',
   'cache_enabled', 'cache_ttl_seconds', 'cache_stale_while_revalidate_seconds', 'cache_static_max_age_seconds',
+  'cache_auto_purge_on_save', 'cache_enable_compression',
   'robots_txt_content', 'sitemap_enabled',
   // Not ours, but the sitemap and robots.txt need them and this is already the one fetch.
   'site_title', 'home_page_id',
@@ -46,6 +47,13 @@ export const defaultSecuritySettings = {
   cache_ttl_seconds: 3600,
   cache_stale_while_revalidate_seconds: 86400,
   cache_static_max_age_seconds: 31536000,
+  // Auto-purge is on by default because a stale cache is a silent bug (an admin edits a page and
+  // it doesn't change). Compression is also on by default, unlike page caching: it carries none of
+  // the privacy/staleness trade-offs that keep cache_enabled off — it is a pure transport
+  // optimisation, already skipped for binary content, and safe for every response regardless of
+  // whether the page cache itself is ever turned on.
+  cache_auto_purge_on_save: true,
+  cache_enable_compression: true,
   robots_txt_content: '',
   sitemap_enabled: true,
   site_title: '',
@@ -95,6 +103,8 @@ export function normalizeSecuritySettings(values = {}) {
     cache_ttl_seconds: toNumber(values.cache_ttl_seconds, defaultSecuritySettings.cache_ttl_seconds, { min: 1, max: 60 * 60 * 24 * 30 }),
     cache_stale_while_revalidate_seconds: toNumber(values.cache_stale_while_revalidate_seconds, defaultSecuritySettings.cache_stale_while_revalidate_seconds, { min: 0, max: 60 * 60 * 24 * 365 }),
     cache_static_max_age_seconds: toNumber(values.cache_static_max_age_seconds, defaultSecuritySettings.cache_static_max_age_seconds, { min: 0, max: 60 * 60 * 24 * 400 }),
+    cache_auto_purge_on_save: toBoolean(values.cache_auto_purge_on_save, defaultSecuritySettings.cache_auto_purge_on_save),
+    cache_enable_compression: toBoolean(values.cache_enable_compression, defaultSecuritySettings.cache_enable_compression),
     robots_txt_content: String(values.robots_txt_content || ''),
     sitemap_enabled: toBoolean(values.sitemap_enabled, defaultSecuritySettings.sitemap_enabled),
     site_title: String(values.site_title || ''),

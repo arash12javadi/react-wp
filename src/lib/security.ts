@@ -55,6 +55,11 @@ export interface SecuritySettings {
   cache_ttl_seconds: number;
   cache_stale_while_revalidate_seconds: number;
   cache_static_max_age_seconds: number;
+  /** Whether saving content or settings purges the page cache automatically. */
+  cache_auto_purge_on_save: boolean;
+  /** Brotli/gzip on HTML, JSON and text assets. Independent of cache_enabled — a pure transport
+   *  optimisation with none of the staleness/privacy trade-offs that keep the page cache opt-in. */
+  cache_enable_compression: boolean;
   /** Empty means "serve the generated default", which is not the same as an empty file. */
   robots_txt_content: string;
   sitemap_enabled: boolean;
@@ -76,6 +81,8 @@ export const defaultSecuritySettings: SecuritySettings = {
   cache_ttl_seconds: 3600,
   cache_stale_while_revalidate_seconds: 86400,
   cache_static_max_age_seconds: 31536000,
+  cache_auto_purge_on_save: true,
+  cache_enable_compression: true,
   robots_txt_content: '',
   sitemap_enabled: true,
 };
@@ -134,6 +141,8 @@ export const loadSecuritySettings = async (): Promise<SecuritySettings> => {
     cache_ttl_seconds: toNumber(values.cache_ttl_seconds, defaultSecuritySettings.cache_ttl_seconds, 1, 60 * 60 * 24 * 30),
     cache_stale_while_revalidate_seconds: toNumber(values.cache_stale_while_revalidate_seconds, defaultSecuritySettings.cache_stale_while_revalidate_seconds, 0, 60 * 60 * 24 * 365),
     cache_static_max_age_seconds: toNumber(values.cache_static_max_age_seconds, defaultSecuritySettings.cache_static_max_age_seconds, 0, 60 * 60 * 24 * 400),
+    cache_auto_purge_on_save: toBoolean(values.cache_auto_purge_on_save, defaultSecuritySettings.cache_auto_purge_on_save),
+    cache_enable_compression: toBoolean(values.cache_enable_compression, defaultSecuritySettings.cache_enable_compression),
     robots_txt_content: values.robots_txt_content || '',
     sitemap_enabled: toBoolean(values.sitemap_enabled, defaultSecuritySettings.sitemap_enabled),
   };
@@ -186,7 +195,14 @@ export interface ServerSecurityStatus {
   refresh_interval_seconds: number;
   stale: boolean;
   error: string;
-  cache: { hits: number; misses: number; stale: number; stores: number; purges: number; entries: number; bytes: number; max_entries: number };
+  cache: {
+    hits: number; misses: number; stale: number; stores: number; purges: number; entries: number;
+    bytes: number; max_entries: number;
+    /** Compressed copies kept alongside the raw body, and what all of that together holds in memory. */
+    stored_bytes: number; compressed_entries: number;
+    /** Built assets (JS/CSS/SVG bundles) compressed once and reused — separate from the page cache. */
+    cached_assets: number;
+  };
   rate_limits: { keys: number; swept_at: string };
   anti_bot: { flagged_addresses: number };
   /** False when the server has no database credentials, so "sign out everywhere" would fail. */
@@ -232,11 +248,16 @@ export const refreshServerSecurity = () => request<ServerSecurityStatus>('/api/s
  * Empties the page cache. With no paths the whole cache goes and the server re-reads its settings,
  * which is what a settings or theme change needs; with paths only those pages go, so publishing
  * one post does not discard the rest of the site.
+ *
+ * `reason: 'manual'` is the admin's explicit "Purge the whole page cache" button and always runs.
+ * The default, `'auto'`, is what every automatic call after a save sends, and the server skips it
+ * when `cache_auto_purge_on_save` has been switched off — that setting exists to silence exactly
+ * these calls, not the deliberate one.
  */
-export const purgePageCache = (paths?: string[]) =>
-  request<{ success: boolean; removed: number; scope: 'all' | 'paths'; paths?: string[] }>(
+export const purgePageCache = (paths?: string[], reason: 'auto' | 'manual' = 'auto') =>
+  request<{ success: boolean; removed: number; scope: 'all' | 'paths' | 'skipped'; paths?: string[]; reason?: string }>(
     '/api/security/cache/purge',
-    { method: 'POST', body: JSON.stringify({ paths: paths || [] }) },
+    { method: 'POST', body: JSON.stringify({ paths: paths || [], reason }) },
   );
 
 /**
@@ -246,7 +267,7 @@ export const purgePageCache = (paths?: string[]) =>
  */
 export const purgePageCacheQuietly = async (paths?: string[]): Promise<void> => {
   try {
-    await purgePageCache(paths);
+    await purgePageCache(paths, 'auto');
   } catch {
     // Deliberate: the TTL is the backstop.
   }

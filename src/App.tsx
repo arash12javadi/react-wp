@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import { type Session, type SupabaseClient } from '@supabase/supabase-js';
 import SetupWizard from './components/SetupWizard';
 import AdminLayout from './components/AdminLayout';
+import AdminErrorBoundary from './components/AdminErrorBoundary';
 import SiteSettings from './components/SiteSettings';
 import MenusScreen from './components/MenusScreen';
 import CommentsManager from './components/CommentsManager';
@@ -374,7 +375,9 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
     >
       {/* Plugins add banners, notices or extra tools around any admin screen. */}
       <HookSlot name="admin_before_content" args={{ section, subsection, role }} />
-      {content}
+      {/* Keyed so switching sections gives a fresh boundary — see AdminErrorBoundary's own note on
+          why a children-reference check would not do this safely. */}
+      <AdminErrorBoundary key={`${section}:${subsection}`}>{content}</AdminErrorBoundary>
       <HookSlot name="admin_after_content" args={{ section, subsection, role }} />
     </AdminLayout>
   );

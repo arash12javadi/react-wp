@@ -17,9 +17,12 @@ import { buildRobots, buildSitemap, purgeSitemap } from './server/sitemap.mjs';
 import { configureSecuritySettings, refreshSecuritySettings, securitySettings } from './server/middleware/securitySettings.mjs';
 import { consumeRateLimit, rateLimitHeaders, rateLimitMessage, rateLimitTier } from './server/middleware/rateLimiter.mjs';
 import {
-  assetCacheHeaders, htmlCacheHeaders, notModified, pageCacheKey, pageCacheLookup, pageCachePurge,
-  pageCacheStore,
+  assetCacheHeaders, htmlCacheHeaders, notModified, pageCacheBody, pageCacheKey, pageCacheLookup,
+  pageCachePurge, pageCacheStore,
 } from './server/middleware/pageCache.mjs';
+import {
+  clearAssetCompressionCache, compressedAsset, compressForResponse, compressibleContentType, negotiateEncoding,
+} from './server/middleware/compression.mjs';
 import { resolveConnectionString, withClient } from './server/db.mjs';
 
 const port = Number(process.env.PORT || 3000);
@@ -39,9 +42,22 @@ const contentTypes = {
   '.webp': 'image/webp',
 };
 
-const json = (response, status, value, headers = {}) => {
-  response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', ...headers });
-  response.end(JSON.stringify(value));
+/**
+ * Writes a JSON response, compressed when the settings and the request's Accept-Encoding both
+ * allow it. `request` is only used for negotiation — every call site already has it in scope, as
+ * the handler closure's own parameter.
+ */
+const json = (request, response, status, value, headers = {}) => {
+  const encoding = negotiateEncoding(request.headers['accept-encoding'], securitySettings());
+  const { body, contentEncoding } = compressForResponse(JSON.stringify(value), encoding);
+  response.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    Vary: 'Accept-Encoding',
+    'Content-Length': String(Buffer.byteLength(body)),
+    ...(contentEncoding ? { 'Content-Encoding': contentEncoding } : {}),
+    ...headers,
+  });
+  response.end(body);
 };
 
 /**
@@ -142,47 +158,79 @@ const serveFile = async (request, response, pathname, seoPath = pathname, url = 
       const cacheable = url ? pageCacheKey(request, url, settings) : { cacheable: false, reason: 'no-url' };
       const lookup = cacheable.cacheable ? pageCacheLookup(cacheable.key, settings) : { state: 'off' };
 
+      // Negotiated once per request. A cache entry was compressed (or not) according to the
+      // setting at *store* time; this only decides which of what is already there to send.
+      const encoding = negotiateEncoding(request.headers['accept-encoding'], settings);
+
       if (lookup.state === 'fresh' || lookup.state === 'stale') {
         const { entry } = lookup;
+        const picked = pageCacheBody(entry, encoding);
         const headers = {
           'Content-Type': 'text/html; charset=utf-8',
           'Cache-Control': htmlCacheHeaders(settings, true),
+          Vary: 'Accept-Encoding',
           ETag: entry.etag,
           'X-RWP-Cache': lookup.state === 'fresh' ? 'HIT' : 'STALE',
           Age: String(Math.floor(lookup.age / 1000)),
+          ...(picked.contentEncoding ? { 'Content-Encoding': picked.contentEncoding } : {}),
         };
+        // ETag identifies the content, not the encoding, so a 304 decision never depends on which
+        // representation (br/gzip/raw) happens to be picked — the spec's own rule for a weak ETag.
         if (notModified(request, entry.etag)) {
           response.writeHead(304, headers);
           response.end();
         } else {
-          response.writeHead(200, headers);
-          response.end(entry.body);
+          response.writeHead(200, { ...headers, 'Content-Length': String(Buffer.byteLength(picked.body)) });
+          response.end(picked.body);
         }
         if (lookup.state === 'stale') {
           // After the response, and swallowed: a failed background render must leave the stale
           // entry in place rather than crashing the process on an unhandled rejection.
           renderIndex(request, filePath, seoPath, resolvedConfig)
-            .then((fresh) => pageCacheStore(cacheable.key, fresh))
+            .then((fresh) => pageCacheStore(cacheable.key, fresh, { compress: settings.cache_enable_compression }))
             .catch((error) => console.error(`Background re-render of ${cacheable.key} failed:`, error));
         }
         return true;
       }
 
       const body = await renderIndex(request, filePath, seoPath, resolvedConfig);
-      const entry = cacheable.cacheable ? pageCacheStore(cacheable.key, body) : null;
+      const entry = cacheable.cacheable ? pageCacheStore(cacheable.key, body, { compress: settings.cache_enable_compression }) : null;
+      // A cached MISS already has its compressed copies from pageCacheStore; an uncacheable
+      // (BYPASS) render compresses this one response on the fly — there is nothing to store it in.
+      const picked = entry ? pageCacheBody(entry, encoding) : compressForResponse(body, encoding);
       response.writeHead(200, {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': htmlCacheHeaders(settings, Boolean(entry)),
+        Vary: 'Accept-Encoding',
+        'Content-Length': String(Buffer.byteLength(picked.body)),
         ...(entry ? { ETag: entry.etag } : {}),
+        ...(picked.contentEncoding ? { 'Content-Encoding': picked.contentEncoding } : {}),
         'X-RWP-Cache': entry ? 'MISS' : `BYPASS:${cacheable.reason || 'uncacheable'}`,
       });
-      response.end(body);
+      response.end(picked.body);
     } else {
-      response.writeHead(200, {
-        'Content-Type': contentTypes[path.extname(filePath).toLowerCase()] || 'application/octet-stream',
+      const contentType = contentTypes[path.extname(filePath).toLowerCase()] || 'application/octet-stream';
+      const compressible = compressibleContentType(contentType);
+      const headers = {
+        'Content-Type': contentType,
         'Cache-Control': assetCacheHeaders(pathname, settings),
-      });
-      createReadStream(filePath).pipe(response);
+        // Present whenever compression is even a possibility for this content type, so a proxy or
+        // browser cache between here and the visitor varies its own cache on the header correctly —
+        // not only on the requests where this particular caller happened to accept it.
+        ...(compressible && settings.cache_enable_compression ? { Vary: 'Accept-Encoding' } : {}),
+      };
+      const encoding = compressible ? negotiateEncoding(request.headers['accept-encoding'], settings) : null;
+      // Cached by pathname after the first request (compression.mjs): every asset here is
+      // Vite-fingerprinted or otherwise static for the life of this process, so compressing it
+      // once and reusing the bytes is correct, not just an optimisation.
+      const compressed = encoding ? await compressedAsset(pathname, filePath, contentType, encoding) : null;
+      if (compressed) {
+        response.writeHead(200, { ...headers, 'Content-Encoding': encoding, 'Content-Length': String(compressed.length) });
+        response.end(compressed);
+      } else {
+        response.writeHead(200, headers);
+        createReadStream(filePath).pipe(response);
+      }
     }
     return true;
   } catch (error) {
@@ -207,7 +255,7 @@ const server = http.createServer(async (request, response) => {
       const tier = rateLimitTier(url.pathname, request.method);
       const decision = consumeRateLimit(request, tier, securitySettings());
       if (!decision.allowed) {
-        json(response, 429, { error: rateLimitMessage(decision) }, rateLimitHeaders(decision));
+        json(request, response, 429, { error: rateLimitMessage(decision) }, rateLimitHeaders(decision));
         return;
       }
       response.setHeader('X-RateLimit-Limit', String(decision.limit));
@@ -226,7 +274,7 @@ const server = http.createServer(async (request, response) => {
       });
       // Unlike the plugin routes, an unknown /api/security/ path is a mistake, not something a
       // plugin might own — answering 404 beats falling through to the SPA and returning HTML.
-      json(response, result ? result.status : 404, result ? result.body : { error: `No security endpoint at ${url.pathname}.` }, result?.headers || {});
+      json(request, response, result ? result.status : 404, result ? result.body : { error: `No security endpoint at ${url.pathname}.` }, result?.headers || {});
       return;
     }
 
@@ -241,20 +289,30 @@ const server = http.createServer(async (request, response) => {
         return;
       }
       const xml = await buildSitemap(`http://${request.headers.host || 'localhost'}`, config);
+      const xmlEncoding = negotiateEncoding(request.headers['accept-encoding'], securitySettings());
+      const xmlSent = compressForResponse(xml, xmlEncoding);
       response.writeHead(200, {
         'Content-Type': 'application/xml; charset=utf-8',
         'Cache-Control': `public, max-age=${securitySettings().cache_ttl_seconds}`,
+        Vary: 'Accept-Encoding',
+        'Content-Length': String(Buffer.byteLength(xmlSent.body)),
+        ...(xmlSent.contentEncoding ? { 'Content-Encoding': xmlSent.contentEncoding } : {}),
       });
-      response.end(xml);
+      response.end(xmlSent.body);
       return;
     }
     if (url.pathname === '/robots.txt' && request.method === 'GET') {
       await currentConfig();
+      const robotsEncoding = negotiateEncoding(request.headers['accept-encoding'], securitySettings());
+      const robotsSent = compressForResponse(buildRobots(`http://${request.headers.host || 'localhost'}`), robotsEncoding);
       response.writeHead(200, {
         'Content-Type': 'text/plain; charset=utf-8',
         'Cache-Control': 'public, max-age=300',
+        Vary: 'Accept-Encoding',
+        'Content-Length': String(Buffer.byteLength(robotsSent.body)),
+        ...(robotsSent.contentEncoding ? { 'Content-Encoding': robotsSent.contentEncoding } : {}),
       });
-      response.end(buildRobots(`http://${request.headers.host || 'localhost'}`));
+      response.end(robotsSent.body);
       return;
     }
 
@@ -267,12 +325,12 @@ const server = http.createServer(async (request, response) => {
     if (url.pathname === '/api/imagekit-auth' && request.method === 'GET') {
       const privateKey = process.env.IMAGEKIT_PRIVATE_KEY;
       if (!privateKey) {
-        json(response, 501, { error: 'IMAGEKIT_PRIVATE_KEY is not configured on this server.' });
+        json(request, response, 501, { error: 'IMAGEKIT_PRIVATE_KEY is not configured on this server.' });
         return;
       }
       const config = publicConfig(await readConfig());
       if (!config?.supabaseUrl || !config?.supabasePublishableKey) {
-        json(response, 501, { error: 'This site is not installed, so uploads cannot be authorised.' });
+        json(request, response, 501, { error: 'This site is not installed, so uploads cannot be authorised.' });
         return;
       }
       // Previously anyone could fetch upload credentials; now only uploaders within quota can.
@@ -283,7 +341,7 @@ const server = http.createServer(async (request, response) => {
         url.searchParams.get('bytes'),
       );
       if (!auth.ok) {
-        json(response, auth.status, { error: auth.error });
+        json(request, response, auth.status, { error: auth.error });
         return;
       }
       const token = randomUUID();
@@ -296,14 +354,14 @@ const server = http.createServer(async (request, response) => {
     if (url.pathname === '/api/media-delete' && request.method === 'POST') {
       const config = publicConfig(await readConfig());
       if (!config?.supabaseUrl || !config?.supabasePublishableKey) {
-        json(response, 501, { error: 'This site is not installed, so media cannot be deleted.' });
+        json(request, response, 501, { error: 'This site is not installed, so media cannot be deleted.' });
         return;
       }
       const token = (request.headers.authorization || '').replace(/^Bearer\s+/i, '');
       const body = await readBody(request);
       const auth = await authorizeMediaDelete(config.supabaseUrl, config.supabasePublishableKey, token, body.id);
       if (!auth.ok) {
-        json(response, auth.status, { error: auth.error });
+        json(request, response, auth.status, { error: auth.error });
         return;
       }
       const result = await deleteFromProvider(
@@ -314,10 +372,10 @@ const server = http.createServer(async (request, response) => {
         config.supabasePublishableKey,
       );
       if (!result.ok) {
-        json(response, result.status, { error: result.error });
+        json(request, response, result.status, { error: result.error });
         return;
       }
-      json(response, 200, { success: true, skipped: Boolean(result.skipped) });
+      json(request, response, 200, { success: true, skipped: Boolean(result.skipped) });
       return;
     }
     // Per-plugin schema install, plugin uninstall and the site reset. Returns null for anything
@@ -334,18 +392,18 @@ const server = http.createServer(async (request, response) => {
         config: publicConfig(await readConfig()),
       });
       if (adminResult) {
-        json(response, adminResult.status, adminResult.body);
+        json(request, response, adminResult.status, adminResult.body);
         return;
       }
     }
     if (url.pathname === '/api/admin/plugins/upload') {
       if (request.method !== 'POST') {
-        json(response, 405, { error: 'Method not allowed' });
+        json(request, response, 405, { error: 'Method not allowed' });
         return;
       }
       const config = publicConfig(await readConfig());
       if (!config?.supabaseUrl || !config?.supabasePublishableKey) {
-        json(response, 501, { error: 'This site is not installed, so plugins cannot be uploaded.' });
+        json(request, response, 501, { error: 'This site is not installed, so plugins cannot be uploaded.' });
         return;
       }
       // Checked before the body is read, so nobody without permission can make the server buffer 25 MB.
@@ -355,7 +413,7 @@ const server = http.createServer(async (request, response) => {
         (request.headers.authorization || '').replace(/^Bearer\s+/i, ''),
       );
       if (!auth.ok) {
-        json(response, auth.status, { error: auth.error });
+        json(request, response, auth.status, { error: auth.error });
         return;
       }
       const contentType = String(request.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
@@ -363,13 +421,13 @@ const server = http.createServer(async (request, response) => {
       if (contentType === 'application/json') {
         const body = await readBody(request).catch(() => null);
         if (!body || typeof body.url !== 'string' || !body.url.trim()) {
-          json(response, 400, { error: 'Send JSON like {"url": "https://…/plugin.zip"}.' });
+          json(request, response, 400, { error: 'Send JSON like {"url": "https://…/plugin.zip"}.' });
           return;
         }
         source = { url: body.url.trim() };
       } else if (['application/zip', 'application/x-zip-compressed', 'application/octet-stream'].includes(contentType)) {
         if (Number(request.headers['content-length']) > MAX_ZIP_BYTES) {
-          json(response, 413, { error: `Plugin ZIPs may be at most ${MAX_ZIP_BYTES / 1024 / 1024} MB.` });
+          json(request, response, 413, { error: `Plugin ZIPs may be at most ${MAX_ZIP_BYTES / 1024 / 1024} MB.` });
           return;
         }
         const chunks = [];
@@ -379,14 +437,14 @@ const server = http.createServer(async (request, response) => {
           if (size > MAX_ZIP_BYTES) {
             // Close the connection once the error is flushed, instead of reading the rest of the upload.
             response.on('finish', () => request.destroy());
-            json(response, 413, { error: `Plugin ZIPs may be at most ${MAX_ZIP_BYTES / 1024 / 1024} MB.` });
+            json(request, response, 413, { error: `Plugin ZIPs may be at most ${MAX_ZIP_BYTES / 1024 / 1024} MB.` });
             return;
           }
           chunks.push(chunk);
         }
         source = { zip: Buffer.concat(chunks) };
       } else {
-        json(response, 415, { error: `Send the ZIP as application/zip, or a download URL as application/json (got "${contentType || 'no content type'}").` });
+        json(request, response, 415, { error: `Send the ZIP as application/zip, or a download URL as application/json (got "${contentType || 'no content type'}").` });
         return;
       }
 
@@ -410,7 +468,7 @@ const server = http.createServer(async (request, response) => {
     if (url.pathname === '/api/plugin-files' || url.pathname === '/api/plugin-files/delete') {
       const config = publicConfig(await readConfig());
       if (!config?.supabaseUrl || !config?.supabasePublishableKey) {
-        json(response, 501, { error: 'This site is not installed, so plugins cannot be managed.' });
+        json(request, response, 501, { error: 'This site is not installed, so plugins cannot be managed.' });
         return;
       }
       const auth = await authorizePluginManager(
@@ -419,11 +477,11 @@ const server = http.createServer(async (request, response) => {
         (request.headers.authorization || '').replace(/^Bearer\s+/i, ''),
       );
       if (!auth.ok) {
-        json(response, auth.status, { error: auth.error });
+        json(request, response, auth.status, { error: auth.error });
         return;
       }
       if (url.pathname === '/api/plugin-files' && request.method === 'GET') {
-        json(response, 200, await listPluginFolders());
+        json(request, response, 200, await listPluginFolders());
         return;
       }
       if (url.pathname === '/api/plugin-files/delete' && request.method === 'POST') {
@@ -432,10 +490,10 @@ const server = http.createServer(async (request, response) => {
           status: Number(error?.status) || 500,
           body: { error: `Deleting plugins/${String(body.id)} failed: ${error instanceof Error ? error.message : 'unknown error'}` },
         }));
-        json(response, result.status, result.body);
+        json(request, response, result.status, result.body);
         return;
       }
-      json(response, 405, { error: 'Method not allowed' });
+      json(request, response, 405, { error: 'Method not allowed' });
       return;
     }
     if (url.pathname.startsWith('/api/plugins/')) {
@@ -459,13 +517,13 @@ const server = http.createServer(async (request, response) => {
         response.writeHead(result.status, result.headers || { 'Content-Type': 'text/plain; charset=utf-8' });
         response.end(result.text);
       } else {
-        json(response, result.status, result.body ?? {});
+        json(request, response, result.status, result.body ?? {});
       }
       return;
     }
     if (url.pathname === '/api/media-config' && request.method === 'GET') {
       // Reports only whether deletion is possible; never echoes a secret.
-      json(response, 200, describeDeleteSupport());
+      json(request, response, 200, describeDeleteSupport());
       return;
     }
     if (url.pathname === '/api/install-schema' && request.method === 'POST') {
@@ -474,10 +532,11 @@ const server = http.createServer(async (request, response) => {
       // The site the engine was told about no longer exists, and neither does anything rendered
       // from it. Re-point it and start again from the new project's settings.
       pageCachePurge();
+      clearAssetCompressionCache();
       purgeSitemap();
       configureSecuritySettings(await currentConfig());
       await refreshSecuritySettings();
-      json(response, 200, { success: true });
+      json(request, response, 200, { success: true });
       return;
     }
     const config = request.method === 'GET' ? await currentConfig() : null;
@@ -490,7 +549,7 @@ const server = http.createServer(async (request, response) => {
       response.end('dist/index.html is missing. Run "npm run build" before starting the server.\n');
       return;
     }
-    json(response, 405, { error: 'Method not allowed' });
+    json(request, response, 405, { error: 'Method not allowed' });
   } catch (error) {
     // Named after the route that actually failed. This used to say "Database setup failed" for
     // every request, which sent people to check their Supabase password over a media or plugin bug.
@@ -503,7 +562,7 @@ const server = http.createServer(async (request, response) => {
     })();
     const detail = error instanceof Error ? error.message : 'Unknown server error';
     console.error(`${request.method} ${pathname} failed:`, error);
-    json(response, 500, {
+    json(request, response, 500, {
       error: pathname === '/api/install-schema'
         ? `Database setup failed: ${detail}`
         : `${request.method} ${pathname} failed on the server: ${detail}`,

@@ -17,11 +17,17 @@
  *     path alone would serve /search?s=cats to /search?s=dogs.
  *
  * Invalidation is explicit, not hopeful: POST /api/security/cache/purge is called by the admin
- * after any content or settings save (src/lib/security.ts), and the TTL is the backstop for
- * anything that misses. Stale-while-revalidate means a page past its TTL is still served
- * immediately while the next render replaces it, so a purge never produces a latency spike.
+ * after any content or settings save (src/lib/security.ts) unless `cache_auto_purge_on_save` has
+ * been switched off, and the TTL is the backstop for anything that misses. Stale-while-revalidate
+ * means a page past its TTL is still served immediately while the next render replaces it, so a
+ * purge never produces a latency spike.
+ *
+ * When `cache_enable_compression` is on, a stored entry's Brotli and gzip bytes are computed once,
+ * here, at store time (a MISS or a background stale re-render) — never per hit. See
+ * server/middleware/compression.mjs for why that split exists.
  */
 import { createHash } from 'node:crypto';
+import { compressSync } from './compression.mjs';
 
 const MAX_ENTRIES = 500;
 const MAX_ENTRY_BYTES = 2 * 1024 * 1024;
@@ -83,8 +89,15 @@ export function pageCacheLookup(key, settings) {
   return { state: 'miss' };
 }
 
-/** Stores a rendered page. Oversized bodies are skipped rather than evicting everything else. */
-export function pageCacheStore(key, body) {
+/**
+ * Stores a rendered page. Oversized bodies are skipped rather than evicting everything else.
+ *
+ * `compress: true` (from `settings.cache_enable_compression`) precomputes the Brotli and gzip
+ * bytes right here, so every future HIT or STALE serve just picks whichever the request already
+ * accepts — see `pageCacheBody`. The raw body is always kept too: a client that sent no
+ * Accept-Encoding still needs an uncompressed copy.
+ */
+export function pageCacheStore(key, body, { compress = false } = {}) {
   const bytes = Buffer.byteLength(body);
   if (bytes > MAX_ENTRY_BYTES) return null;
   if (entries.size >= MAX_ENTRIES && !entries.has(key)) {
@@ -93,11 +106,30 @@ export function pageCacheStore(key, body) {
     const oldest = entries.keys().next().value;
     if (oldest !== undefined) entries.delete(oldest);
   }
-  const entry = { body, bytes, etag: weakEtag(body), storedAt: Date.now() };
+  const entry = {
+    body,
+    bytes,
+    etag: weakEtag(body),
+    storedAt: Date.now(),
+    br: compress ? compressSync(body, 'br') : null,
+    gzip: compress ? compressSync(body, 'gzip') : null,
+  };
   entries.delete(key);
   entries.set(key, entry);
   stats.stores += 1;
   return entry;
+}
+
+/**
+ * The best representation of a stored entry for a request's negotiated encoding: precomputed
+ * Brotli or gzip bytes when both the entry has them and the request accepts that encoding,
+ * otherwise the raw, uncompressed body. `encoding` is the result of `negotiateEncoding` — already
+ * settings-and-Accept-Encoding-aware, so this function does no negotiation of its own.
+ */
+export function pageCacheBody(entry, encoding) {
+  if (encoding === 'br' && entry.br) return { body: entry.br, contentEncoding: 'br' };
+  if (encoding === 'gzip' && entry.gzip) return { body: entry.gzip, contentEncoding: 'gzip' };
+  return { body: entry.body, contentEncoding: null };
 }
 
 /**
@@ -121,12 +153,24 @@ export function pageCachePurge(paths) {
   return { removed, scope: 'paths', paths: list };
 }
 
-export const pageCacheStats = () => ({
-  ...stats,
-  entries: entries.size,
-  bytes: [...entries.values()].reduce((total, entry) => total + entry.bytes, 0),
-  max_entries: MAX_ENTRIES,
-});
+export const pageCacheStats = () => {
+  let rawBytes = 0;
+  let storedBytes = 0; // What is actually held in memory: compressed copies plus the raw body.
+  let compressedEntries = 0;
+  for (const entry of entries.values()) {
+    rawBytes += entry.bytes;
+    storedBytes += entry.bytes + (entry.br?.length || 0) + (entry.gzip?.length || 0);
+    if (entry.br || entry.gzip) compressedEntries += 1;
+  }
+  return {
+    ...stats,
+    entries: entries.size,
+    bytes: rawBytes,
+    stored_bytes: storedBytes,
+    compressed_entries: compressedEntries,
+    max_entries: MAX_ENTRIES,
+  };
+};
 
 /**
  * Cache-Control for an HTML page. `no-store` when the cache is off, because a shared proxy holding

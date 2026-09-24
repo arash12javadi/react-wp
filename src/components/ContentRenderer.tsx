@@ -16,6 +16,15 @@ export const sanitizeHtml = (html: string) => {
       }
     });
   });
+  // Deferred image loading, applied here rather than by whoever wrote the content: the classic
+  // editor, imported HTML and anything a plugin's `the_content` filter adds all end up in this one
+  // sanitizer, so this is the one place that sees every <img> a page will ever render. An author
+  // who wants a specific image to load eagerly (a hero image above the fold) sets loading="eager"
+  // by hand and it is left alone — only images that never declared an opinion get one here.
+  template.content.querySelectorAll<HTMLImageElement>('img:not([loading])').forEach((image) => {
+    image.setAttribute('loading', 'lazy');
+    if (!image.hasAttribute('decoding')) image.setAttribute('decoding', 'async');
+  });
   return template;
 };
 
