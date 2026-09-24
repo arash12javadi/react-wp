@@ -175,27 +175,52 @@ body.po-theme-dark .rwp-site :is(hr, table, td, th) { border-color: var(--po-bor
   .po-switch__badge { transition: none; }
 }
 
-/* Floating: a tab on the left edge that slides out on hover or focus, on LTR and RTL pages alike. */
+/* Floating: a compact pill at the top-left, clear of the header, on LTR and RTL pages alike. Only
+   the language badges show; the target language's name slides out on hover or focus. The header's
+   height is not known here, so the offset is a variable Custom CSS can change. */
 .po-switch-outer--floating {
   position: fixed;
-  left: 0;
-  bottom: 96px;
+  top: var(--po-float-top, 140px);
+  left: 15px;
   /* Above page content, below the header layer (9800) and every full-screen overlay. */
-  z-index: 9700;
+  z-index: 97000;
 }
 
 .po-switch-outer--floating .po-switch {
-  border-left: 0;
-  border-radius: 0 999px 999px 0;
-  box-shadow: var(--po-shadow);
-  transform: translateX(-62%);
-  transition: transform 0.3s ease, border-color 0.2s;
+  gap: 0;
+  padding: 5px;
+  border-color: color-mix(in srgb, var(--po-border) 70%, transparent);
+  background: color-mix(in srgb, var(--po-surface) 88%, transparent);
+  box-shadow: 0 6px 20px rgb(15 23 42 / 14%), 0 1px 3px rgb(15 23 42 / 10%);
+  backdrop-filter: blur(8px);
+  transition: gap 0.25s ease, padding 0.25s ease, border-color 0.2s, box-shadow 0.2s;
+}
+
+.po-switch-outer--floating .po-switch__label {
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  white-space: nowrap;
+  transition: max-width 0.25s ease, opacity 0.2s ease;
 }
 
 .po-switch-outer--floating .po-switch:hover,
-.po-switch-outer--floating .po-switch:focus-visible { transform: translateX(0); }
+.po-switch-outer--floating .po-switch:focus-visible {
+  gap: 10px;
+  padding-inline-end: 14px;
+  box-shadow: 0 8px 26px rgb(15 23 42 / 20%), 0 1px 3px rgb(15 23 42 / 12%);
+}
 
-.po-switch-outer--floating .po-switch__badges { order: 2; }
+.po-switch-outer--floating .po-switch:hover .po-switch__label,
+.po-switch-outer--floating .po-switch:focus-visible .po-switch__label {
+  max-width: 10em;
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .po-switch-outer--floating .po-switch,
+  .po-switch-outer--floating .po-switch__label { transition: none; }
+}
 
 .po-switch-outer--header .po-switch { padding-block: 3px; }
 
@@ -213,9 +238,10 @@ body.po-theme-dark .rwp-site :is(hr, table, td, th) { border-color: var(--po-bor
 
 .po-settings--panel {
   position: fixed;
-  right: 20px;
-  bottom: 20px;
-  z-index: 9700;
+  /* Bottom-left: core's Floating Login defaults to the bottom-right corner. */
+  left: 15px;
+  bottom: 15px;
+  z-index: 97000;
 }
 
 .po-settings__toggle {
@@ -241,7 +267,7 @@ body.po-theme-dark .rwp-site :is(hr, table, td, th) { border-color: var(--po-bor
 
 .po-settings__popover {
   position: absolute;
-  right: 0;
+  left: 0;
   bottom: 60px;
   width: min(340px, calc(100vw - 40px));
   border: 1px solid var(--po-border);
@@ -425,8 +451,9 @@ body.po-theme-dark .rwp-site :is(hr, table, td, th) { border-color: var(--po-bor
 
 .po-translator__toggle {
   position: fixed;
+  /* Stacked above the display-settings button, which owns the bottom-left corner. */
   left: 16px;
-  bottom: 24px;
+  bottom: 84px;
   z-index: 9700;
   border: 0;
   border-radius: 999px;
@@ -445,7 +472,7 @@ body.po-theme-dark .rwp-site :is(hr, table, td, th) { border-color: var(--po-bor
 .po-translator__tip {
   position: fixed;
   left: 16px;
-  bottom: 70px;
+  bottom: 130px;
   z-index: 9700;
   border-radius: 8px;
   padding: 8px 12px;
