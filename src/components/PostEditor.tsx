@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { getSupabaseClient } from '../lib/db';
+import { client } from '../lib/db';
 import type { Post, PostInput } from '../lib/types';
 import { canManageAllPosts, canPublishPosts, type UserRole } from '../lib/roles';
 import styles from './PostEditor.module.css';
@@ -76,7 +76,7 @@ export default function PostEditor({ post, onSaved, onCancel, role }: PostEditor
       if (!payload.title || !payload.slug) {
         throw new Error('A title and slug are required.');
       }
-      const supabase = getSupabaseClient();
+      const supabase = client;
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) throw new Error('You must be signed in to save posts.');
       if (payload.status === 'published' && !canPublishPosts(role)) {

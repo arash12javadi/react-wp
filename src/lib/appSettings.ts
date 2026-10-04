@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { describeDbError, getSupabaseClient } from './db';
+import { describeDbError, client } from './db';
 import type { UserRole } from './roles';
 import { sanitizeTrackingHtml } from './scriptSanitizer.js';
 
@@ -159,7 +159,7 @@ const listeners = new Set<(settings: AppSettings) => void>();
 export const loadAppSettings = (force = false): Promise<AppSettings> => {
   if (!cached || force) {
     cached = Promise.resolve(
-      getSupabaseClient().from('options').select('option_value').eq('option_name', appSettingsOption).maybeSingle(),
+      client.from('options').select('option_value').eq('option_name', appSettingsOption).maybeSingle(),
     ).then(({ data, error }) => {
       if (error) throw new Error(`Could not load settings: ${describeDbError(error)}`);
       const settings = parseAppSettings(data?.option_value);
@@ -188,7 +188,7 @@ export const saveAppSettings = async (settings: AppSettings): Promise<AppSetting
   clean.seo.header_script = sanitizeTrackingHtml(clean.seo.header_script).html;
   clean.seo.body_script = sanitizeTrackingHtml(clean.seo.body_script).html;
   // .select() because an update refused by row level security returns no error, only no rows.
-  const { data, error } = await getSupabaseClient()
+  const { data, error } = await client
     .from('options')
     .upsert({ option_name: appSettingsOption, option_value: JSON.stringify(clean) })
     .select('option_name');
@@ -265,7 +265,7 @@ const isMissingMigration = (message: string) =>
 
 /** Resolves to null before the 20260920 migration has run, so uploads keep working without quotas. */
 export const fetchUploadAllowance = async (): Promise<UploadAllowance | null> => {
-  const { data, error } = await getSupabaseClient().rpc('rwp_upload_allowance');
+  const { data, error } = await client.rpc('rwp_upload_allowance');
   if (error) {
     const message = describeDbError(error);
     if (isMissingMigration(message)) return null;
@@ -380,7 +380,7 @@ const explainOverrideError = (error: unknown): Error => {
 };
 
 export const fetchQuotaOverrides = async (): Promise<QuotaOverride[]> => {
-  const { data, error } = await getSupabaseClient().from('rwp_quota_overrides').select('email,quota_mb').order('email');
+  const { data, error } = await client.from('rwp_quota_overrides').select('email,quota_mb').order('email');
   if (error) throw explainOverrideError(error);
   return (data || []) as QuotaOverride[];
 };
@@ -389,7 +389,7 @@ export const saveQuotaOverride = async (email: string, quotaMb: number): Promise
   const clean = email.trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+$/.test(clean)) throw new Error(`"${email}" is not an email address.`);
   if (!Number.isInteger(quotaMb) || quotaMb < 0) throw new Error('The quota must be a whole number of megabytes, 0 or more.');
-  const { data, error } = await getSupabaseClient()
+  const { data, error } = await client
     .from('rwp_quota_overrides')
     .upsert({ email: clean, quota_mb: quotaMb })
     .select('email,quota_mb');
@@ -399,13 +399,13 @@ export const saveQuotaOverride = async (email: string, quotaMb: number): Promise
 };
 
 export const deleteQuotaOverride = async (email: string): Promise<void> => {
-  const { data, error } = await getSupabaseClient().from('rwp_quota_overrides').delete().eq('email', email).select('email');
+  const { data, error } = await client.from('rwp_quota_overrides').delete().eq('email', email).select('email');
   if (error) throw explainOverrideError(error);
   if (!data?.length) throw new Error(`No override for ${email} was removed: it no longer exists, or row level security blocked the delete.`);
 };
 
 export const fetchDiskUsageReport = async (): Promise<DiskUsageRow[]> => {
-  const { data, error } = await getSupabaseClient().rpc('rwp_disk_usage_report');
+  const { data, error } = await client.rpc('rwp_disk_usage_report');
   if (error) throw explainOverrideError(error);
   return (Array.isArray(data) ? data : []).map((row: Json) => ({
     email: String(row.email || ''),

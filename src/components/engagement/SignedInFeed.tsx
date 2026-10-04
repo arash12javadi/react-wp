@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getSupabaseClient } from '../../lib/db';
+import { client } from '../../lib/db';
 import { loginHref } from '../../lib/account';
 import SavedCollections from './SavedCollections';
 import FollowingFeed from './FollowingFeed';
@@ -9,7 +9,7 @@ export default function SignedInFeed({ feed }: { feed: 'saved' | 'following' }) 
   const [state, setState] = useState<'loading' | 'in' | 'out'>('loading');
   useEffect(() => {
     let active = true;
-    void getSupabaseClient().auth.getSession().then(({ data }) => { if (active) setState(data.session ? 'in' : 'out'); });
+    void client.auth.getSession().then(({ data }) => { if (active) setState(data.session ? 'in' : 'out'); });
     return () => { active = false; };
   }, []);
   if (state === 'loading') return null;

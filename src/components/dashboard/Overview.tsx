@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getSupabaseClient } from '../../lib/db';
+import { client } from '../../lib/db';
 import { hasCapability, type Capability, type UserRole } from '../../lib/roles';
 import { rwp, type RwpSetupLevel } from '../../lib/rwp';
 import type { AdminStatus } from '../../lib/adminStatus';
@@ -121,7 +121,7 @@ function AtAGlance({ role, navigate }: { role: UserRole; navigate: Navigate }) {
 
   useEffect(() => {
     let mounted = true;
-    const supabase = getSupabaseClient();
+    const supabase = client;
     const count = async (query: PromiseLike<{ count: number | null; error: unknown }>) => {
       const { count: value, error } = await query;
       return error ? null : value ?? 0;

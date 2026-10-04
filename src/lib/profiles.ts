@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { User } from '@supabase/supabase-js';
-import { describeDbError, getSupabaseClient } from './db';
+import type { User } from './db';
+import { describeDbError, client } from './db';
 import { getUserRole, roles, type UserRole } from './roles';
 
 export interface Profile {
@@ -20,7 +20,7 @@ const toRole = (value: unknown): UserRole =>
 const profileColumns = 'id,email,display_name,avatar_url,bio,role,created_at,updated_at';
 
 export const fetchProfile = async (userId: string): Promise<Profile | null> => {
-  const { data, error } = await getSupabaseClient()
+  const { data, error } = await client
     .from('profiles')
     .select(profileColumns)
     .eq('id', userId)
@@ -30,7 +30,7 @@ export const fetchProfile = async (userId: string): Promise<Profile | null> => {
 };
 
 export const fetchProfiles = async (): Promise<Profile[]> => {
-  const { data, error } = await getSupabaseClient()
+  const { data, error } = await client
     .from('profiles')
     .select(profileColumns)
     .order('created_at');
@@ -91,7 +91,7 @@ export const explainProfileDetailsError = (error: unknown): string => {
 };
 
 export const fetchProfileDetails = async (userId: string): Promise<ProfileDetails> => {
-  const { data, error } = await getSupabaseClient()
+  const { data, error } = await client
     .from('profile_details').select('*').eq('id', userId).maybeSingle();
   if (error) throw error;
   if (!data) return emptyProfileDetails;
@@ -129,7 +129,7 @@ export const saveProfileDetails = async (userId: string, details: ProfileDetails
     updated_at: new Date().toISOString(),
   };
   // .select(): an upsert blocked by row level security can return no row and no error.
-  const { data, error } = await getSupabaseClient().from('profile_details').upsert(row).select('id');
+  const { data, error } = await client.from('profile_details').upsert(row).select('id');
   if (error) throw new Error(explainProfileDetailsError(error));
   if (!data?.length) {
     throw new Error('The database accepted the request but saved nothing, which means row level security blocked it. You can only change your own details unless your role can edit users.');

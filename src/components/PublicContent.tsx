@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { getSupabaseClient } from '../lib/db';
+import { client } from '../lib/db';
 import type { Page } from '../lib/types';
 import { fetchProfile } from '../lib/profiles';
 import { canManageAllPosts, getUserRole, type UserRole } from '../lib/roles';
@@ -55,7 +55,7 @@ export default function PublicContent({ slug, pageId, onReconfigure, fallback }:
     let mounted = true;
     const load = async () => {
       try {
-        const supabase = getSupabaseClient();
+        const supabase = client;
         const byKey = pageId ? supabase.from('pages').select('*').eq('id', pageId) : supabase.from('pages').select('*').eq('slug', slug);
         // ?preview=1 (the editor's "Preview page") also loads drafts. Row level security still
         // decides: only the author and roles with edit_others_posts can read one, so visitors get

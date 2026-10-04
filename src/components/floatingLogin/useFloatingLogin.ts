@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import type { User } from '@supabase/supabase-js';
-import { getSupabaseClient, tryGetSupabaseClient } from '../../lib/db';
+import type { User } from '../../lib/db';
+import { client, tryGetClient } from '../../lib/db';
 import { rwp } from '../../lib/rwp';
 import {
   getFloatingLoginState, loadFloatingLoginSettings, redirectTarget, subscribeFloatingLogin, type FloatingLoginSettings,
@@ -75,7 +75,7 @@ export function useFloatingLogin({ preview = false, settings: draft }: UseFloati
 
   useEffect(() => {
     if (preview) return undefined;
-    const supabase = tryGetSupabaseClient();
+    const supabase = tryGetClient();
     if (!supabase) {
       setUser(null);
       return undefined;
@@ -139,7 +139,7 @@ export function useFloatingLogin({ preview = false, settings: draft }: UseFloati
   };
 
   const login = (email: string, password: string) => run(async () => {
-    const { data, error } = await getSupabaseClient().auth.signInWithPassword({ email: email.trim(), password });
+    const { data, error } = await client.auth.signInWithPassword({ email: email.trim(), password });
     if (error) throw error;
     if (!data.session) throw new Error('Supabase accepted the password but returned no session.');
     rwp.actions.do('rwp_user_logged_in', data.session.user);
@@ -149,7 +149,7 @@ export function useFloatingLogin({ preview = false, settings: draft }: UseFloati
   const register = (displayName: string, email: string, password: string) => run(async () => {
     const address = email.trim();
     // Never a role here: handle_new_user gives new accounts the site's default_user_role.
-    const { data, error } = await getSupabaseClient().auth.signUp({
+    const { data, error } = await client.auth.signUp({
       email: address,
       password,
       options: {
@@ -173,7 +173,7 @@ export function useFloatingLogin({ preview = false, settings: draft }: UseFloati
   const forgotPassword = (email: string) => run(async () => {
     const address = email.trim();
     // /lost-password is core's reset screen: the link signs the visitor in there to choose a new password.
-    const { error } = await getSupabaseClient().auth.resetPasswordForEmail(address, {
+    const { error } = await client.auth.resetPasswordForEmail(address, {
       redirectTo: `${window.location.origin}/lost-password`,
     });
     if (error) throw error;

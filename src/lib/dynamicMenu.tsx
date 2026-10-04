@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getSupabaseClient } from './db';
+import { client } from './db';
 import { fetchProfile } from './profiles';
 
 /**
@@ -60,7 +60,7 @@ let viewerPromise: Promise<MenuViewer> | null = null;
 
 const loadViewer = (): Promise<MenuViewer> => {
   if (!viewerPromise) {
-    viewerPromise = getSupabaseClient().auth.getSession().then(async ({ data }) => {
+    viewerPromise = client.auth.getSession().then(async ({ data }) => {
       const user = data.session?.user;
       if (!user) return signedOut;
       const profile = await fetchProfile(user.id).catch(() => null);
@@ -81,7 +81,7 @@ export const useMenuViewer = (): MenuViewer | null => {
   useEffect(() => {
     let mounted = true;
     void loadViewer().then((value) => { if (mounted) setViewer(value); });
-    const { data } = getSupabaseClient().auth.onAuthStateChange((event) => {
+    const { data } = client.auth.onAuthStateChange((event) => {
       if (event !== 'SIGNED_IN' && event !== 'SIGNED_OUT') return;
       viewerPromise = null;
       void loadViewer().then((value) => { if (mounted) setViewer(value); });

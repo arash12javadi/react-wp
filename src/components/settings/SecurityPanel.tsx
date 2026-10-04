@@ -7,7 +7,7 @@ import {
 } from '../../lib/security';
 import { antiBotFormLabels, antiBotForms, forgetAntiBotConfig, type AntiBotForm, type AntiBotProvider } from '../../lib/antiBot';
 import { isEndpointUnavailable } from '../../lib/pluginSchema';
-import { getSupabaseClient } from '../../lib/db';
+import { client } from '../../lib/db';
 import { formatBytes } from '../../lib/uploads';
 import styles from '../SiteSettings.module.css';
 
@@ -155,7 +155,7 @@ export default function SecurityPanel({ tab }: { tab: SecurityTab }) {
         if (/PGRST202|Could not find the function/i.test(message)) setMigrationMissing(true);
         else setError(message);
       }
-      const { data } = await getSupabaseClient()
+      const { data } = await client
         .from('profiles').select('id,email,display_name,role').order('email').limit(500);
       if (mounted) setPeople((data || []) as Person[]);
       await loadStatus();

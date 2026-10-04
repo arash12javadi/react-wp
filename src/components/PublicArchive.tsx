@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { describeDbError, getSupabaseClient } from '../lib/db';
+import { describeDbError, client } from '../lib/db';
 import { resolveExcerpt } from '../lib/excerpt';
 import type { RwpArchive } from '../lib/rwp';
 import { applyDocumentTitle, loadSettings } from '../lib/settings';
@@ -49,7 +49,7 @@ function DefaultArchive({ archive }: { archive: RwpArchive }) {
     let active = true;
     const archive = JSON.parse(archiveKey) as RwpArchive;
     const load = async () => {
-      const supabase = getSupabaseClient();
+      const supabase = client;
       const settings = await loadSettings();
       const perPage = settings.posts_per_page;
       let title = '';

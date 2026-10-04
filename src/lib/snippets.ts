@@ -7,7 +7,7 @@
  * site from building). The plugin's admin screens import from here instead.
  */
 
-import { getSupabaseClient } from './db';
+import { client } from './db';
 
 export const snippetTypes = ['css', 'javascript', 'html', 'hook'] as const;
 export type SnippetType = (typeof snippetTypes)[number];
@@ -91,7 +91,7 @@ export const normalizeSnippet = (row: Record<string, unknown>): CodeSnippet => (
  * anyone signs in; inactive rows are invisible to everyone but a settings manager.
  */
 export async function fetchActiveSnippets(surface: SnippetSurface): Promise<CodeSnippet[]> {
-  const { data, error } = await getSupabaseClient()
+  const { data, error } = await client
     .from('code_snippets')
     .select('*')
     .eq('is_active', true)

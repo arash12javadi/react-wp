@@ -1,4 +1,4 @@
-import { describeDbError, getSupabaseClient } from './db';
+import { describeDbError, client } from './db';
 
 export type CommentStatus = 'pending' | 'approved' | 'spam';
 
@@ -44,7 +44,7 @@ const selectWithAuthor =
   '*,author:profiles!comments_author_id_fkey(display_name,avatar_url,email),page:pages(title,slug)';
 
 export const fetchPageComments = async (pageId: number): Promise<CommentWithAuthor[]> => {
-  const { data, error } = await getSupabaseClient()
+  const { data, error } = await client
     .from('comments')
     .select('*,author:profiles!comments_author_id_fkey(display_name,avatar_url,email)')
     .eq('page_id', pageId)
@@ -54,7 +54,7 @@ export const fetchPageComments = async (pageId: number): Promise<CommentWithAuth
 };
 
 export const fetchAllComments = async (status: string): Promise<CommentWithAuthor[]> => {
-  let query = getSupabaseClient().from('comments').select(selectWithAuthor).order('created_at', { ascending: false });
+  let query = client.from('comments').select(selectWithAuthor).order('created_at', { ascending: false });
   if (status !== 'all') query = query.eq('status', status);
   const { data, error } = await query;
   if (error) throw error;

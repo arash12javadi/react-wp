@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { describeDbError, getSupabaseClient } from '../lib/db';
+import { describeDbError, client } from '../lib/db';
 import { fetchProfiles, missingProfilesTable, type Profile } from '../lib/profiles';
 import { capabilitiesFor, capabilityLabels, roleLabels, roles, type UserRole } from '../lib/roles';
 import { fetchUserGrants, type UserGrant } from '../lib/capabilityGrants';
@@ -25,7 +25,7 @@ export default function UsersManager({ role: currentRole }: { role: UserRole }) 
     setLoading(true);
     setError('');
     try {
-      const { data } = await getSupabaseClient().auth.getUser();
+      const { data } = await client.auth.getUser();
       setCurrentUserId(data.user?.id || '');
       setProfiles(await fetchProfiles());
       // Settings → Roles grants for one person; an empty list before the 20261001 migration.
@@ -61,7 +61,7 @@ export default function UsersManager({ role: currentRole }: { role: UserRole }) 
     setFeedback('');
     const previous = profiles;
     setProfiles((current) => current.map((item) => (item.id === profile.id ? { ...item, role } : item)));
-    const { error: updateError } = await getSupabaseClient()
+    const { error: updateError } = await client
       .from('profiles')
       .update({ role })
       .eq('id', profile.id);
@@ -90,7 +90,7 @@ export default function UsersManager({ role: currentRole }: { role: UserRole }) 
     setError('');
     setFeedback('');
     try {
-      const { data, error: updateError } = await getSupabaseClient()
+      const { data, error: updateError } = await client
         .from('profiles')
         .update({ role: bulkRole })
         .in('id', targets.map((profile) => profile.id))

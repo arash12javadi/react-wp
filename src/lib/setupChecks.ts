@@ -1,4 +1,4 @@
-import { describeDbError, getSupabaseClient } from './db';
+import { describeDbError, client } from './db';
 import { fetchProfile, fetchProfileDetails, profileDetailsMigration } from './profiles';
 import { hasCapability, type Capability, type UserRole } from './roles';
 import { rwp, type RwpSetupLevel, type RwpSetupNotice } from './rwp';
@@ -30,7 +30,7 @@ const can = (role: UserRole, capability: Capability) => hasCapability(role, capa
 
 async function adminNotices(): Promise<RwpSetupNotice[]> {
   const notices: RwpSetupNotice[] = [];
-  const supabase = getSupabaseClient();
+  const supabase = client;
   const [settings, mediaConfig, menuRow, quotaProbe, detailsProbe, themeProbe, localeProbe, grantsProbe, translationsProbe, engagementProbe] = await Promise.all([
     loadSettings(),
     fetch('/api/media-config').then((response) => (response.ok ? response.json() as Promise<{ cloudinary: boolean; imagekit: boolean }> : null)).catch(() => null),
@@ -287,7 +287,7 @@ async function adminNotices(): Promise<RwpSetupNotice[]> {
 
 async function contentNotices(role: UserRole): Promise<RwpSetupNotice[]> {
   const notices: RwpSetupNotice[] = [];
-  const supabase = getSupabaseClient();
+  const supabase = client;
   const [published, pending] = await Promise.all([
     supabase.from('pages').select('id', { count: 'exact', head: true }).eq('status', 'published'),
     can(role, 'moderate_comments')

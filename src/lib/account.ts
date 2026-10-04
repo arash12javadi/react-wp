@@ -1,4 +1,4 @@
-import { getSupabaseClient } from './db';
+import { client } from './db';
 import { loadCapabilityGrants } from './capabilityGrants';
 import { fetchProfile } from './profiles';
 import { canAccessAdmin } from './roles';
@@ -113,7 +113,7 @@ export const signOutAndRedirect = async (settings?: SiteSettings) => {
   // Clears the governed session cookie as well as the Supabase session. Leaving it behind would
   // keep the page cache switched off for this browser long after the person signed out.
   await endGovernedSession();
-  await getSupabaseClient().auth.signOut();
+  await client.auth.signOut();
   rwp.actions.do('rwp_user_logged_out');
   if (target && isSafeUrl(target)) window.location.href = target;
   else window.location.reload();

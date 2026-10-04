@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { describeDbError, getSupabaseClient, updateOption } from '../lib/db';
+import { describeDbError, client, updateOption } from '../lib/db';
 import { rwp, type RwpInstalledPlugin } from '../lib/rwp';
 import { BulkBar, RowCheckbox, SelectAllCheckbox, useBulkSelection } from './BulkActions';
 import PluginUploadModal, { readPendingInstallResult } from './PluginUploadModal';
@@ -94,7 +94,7 @@ export default function PluginsManager() {
   useEffect(() => {
     let mounted = true;
     const loadPlugins = async () => {
-      const supabase = getSupabaseClient();
+      const supabase = client;
       const registeredPlugins = rwp.getPlugins();
       const [{ data: sessionData }, { data: existingRows, error: existingError }, { data: activeRow, error: activeError }] = await Promise.all([
         supabase.auth.getSession(),
@@ -248,7 +248,7 @@ export default function PluginsManager() {
           }
         }
       }
-      const supabase = getSupabaseClient();
+      const supabase = client;
       const { data, error: updateError } = await supabase
         .from('plugins')
         .update({ active: nextActive, updated_at: new Date().toISOString() })
@@ -293,7 +293,7 @@ export default function PluginsManager() {
     const deletedIds: string[] = [];
     const failures: string[] = [];
     try {
-      const supabase = getSupabaseClient();
+      const supabase = client;
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData.session?.access_token;
       if (!accessToken) throw new Error('Your session has expired. Sign in again.');

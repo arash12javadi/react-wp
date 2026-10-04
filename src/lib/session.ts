@@ -21,7 +21,7 @@
  * cannot reach it must still be able to use the site — so a failure leaves the Supabase session
  * exactly as it was.
  */
-import { getSupabaseClient } from './db';
+import { client } from './db';
 
 export interface GovernedSession {
   valid: boolean;
@@ -40,7 +40,7 @@ const CHECK_MS = 60_000;
  */
 export const openGovernedSession = async (remember = false): Promise<GovernedSession | null> => {
   try {
-    const { data } = await getSupabaseClient().auth.getSession();
+    const { data } = await client.auth.getSession();
     const token = data.session?.access_token;
     if (!token) return null;
     const response = await fetch('/api/security/session', {

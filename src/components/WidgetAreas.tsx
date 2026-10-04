@@ -1,5 +1,5 @@
 import { useEffect, useState, type DragEvent } from 'react';
-import { getSupabaseClient } from '../lib/db';
+import { client } from '../lib/db';
 import {
   areaLabels, createWidget, emptyAreas, loadWidgetAreas, saveWidgetAreas,
   widgetTypes, type Widget, type WidgetAreaId, type WidgetAreas as Areas, type WidgetType,
@@ -29,7 +29,7 @@ export default function WidgetAreas() {
       try {
         const [stored, { data }] = await Promise.all([
           loadWidgetAreas(),
-          getSupabaseClient().from('menus').select('id,name').order('name'),
+          client.from('menus').select('id,name').order('name'),
         ]);
         setAreas(stored);
         setMenus((data || []) as MenuOption[]);

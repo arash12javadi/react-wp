@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { getSupabaseClient } from '../lib/db';
+import { client } from '../lib/db';
 import type { Post, PostStatus } from '../lib/types';
 import { canManageAllPosts, canPublishPosts, type UserRole } from '../lib/roles';
 import styles from './PostsManager.module.css';
@@ -29,7 +29,7 @@ export default function PostsManager({ onCreate, onEdit, role }: PostsManagerPro
     setLoading(true);
     setError('');
     try {
-      const supabase = getSupabaseClient();
+      const supabase = client;
       const from = (page - 1) * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
       let query = supabase
@@ -71,7 +71,7 @@ export default function PostsManager({ onCreate, onEdit, role }: PostsManagerPro
     setUpdatingId(post.id);
     setError('');
     try {
-      const supabase = getSupabaseClient();
+      const supabase = client;
       const { error: updateError } = await supabase
         .from('posts')
         .update({ status: nextStatus, updated_at: new Date().toISOString() })
@@ -90,7 +90,7 @@ export default function PostsManager({ onCreate, onEdit, role }: PostsManagerPro
     setDeletingId(post.id);
     setError('');
     try {
-      const supabase = getSupabaseClient();
+      const supabase = client;
       const { error: deleteError } = await supabase.from('posts').delete().eq('id', post.id);
       if (deleteError) throw deleteError;
       if (posts.length === 1 && page > 1) {

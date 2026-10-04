@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import type { Session } from '@supabase/supabase-js';
-import { getSupabaseClient } from '../../lib/db';
+import type { Session } from '../../lib/db';
+import { client } from '../../lib/db';
 import { defaultSettings, loadSettings, type SiteSettings } from '../../lib/settings';
 import { afterLoginUrl, requestedRedirect, signOutAndRedirect } from '../../lib/account';
 import { openGovernedSession } from '../../lib/session';
@@ -74,7 +74,7 @@ export default function AuthForm({
 
   useEffect(() => {
     let mounted = true;
-    const supabase = getSupabaseClient();
+    const supabase = client;
     void Promise.all([loadSettings().catch(() => defaultSettings), supabase.auth.getSession()]).then(async ([loaded, { data }]) => {
       if (!mounted) return;
       setSettings(loaded);
@@ -100,7 +100,7 @@ export default function AuthForm({
     setError('');
     setNotice('');
     try {
-      const supabase = getSupabaseClient();
+      const supabase = client;
       // Before anything is sent to Supabase: a form that failed the human check must not also
       // count against the account's sign-in attempts.
       await human.verify();
@@ -167,7 +167,7 @@ export default function AuthForm({
     setError('');
     try {
       const requested = requestedRedirect();
-      const { error: oauthError } = await getSupabaseClient().auth.signInWithOAuth({
+      const { error: oauthError } = await client.auth.signInWithOAuth({
         provider,
         options: {
           redirectTo: `${window.location.origin}/login${requested ? `?redirect=${encodeURIComponent(requested)}` : ''}`,

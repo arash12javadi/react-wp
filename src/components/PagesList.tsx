@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { getSupabaseClient } from '../lib/db';
+import { client } from '../lib/db';
 import type { Category, Page } from '../lib/types';
 import { canManageAllPosts, canPublishPosts, type UserRole } from '../lib/roles';
 import { rwp } from '../lib/rwp';
@@ -36,7 +36,7 @@ export default function PagesList({ onCreate, onEdit, role }: { onCreate: (isPos
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const supabase = getSupabaseClient();
+      const supabase = client;
       let query = supabase.from('pages').select('*').order('updated_at', { ascending: false });
       let trashQuery = supabase.from('pages').select('id', { count: 'exact', head: true }).eq('status', 'trash');
       if (type === 'templates') query = query.eq('is_site_template', true);
@@ -80,7 +80,7 @@ export default function PagesList({ onCreate, onEdit, role }: { onCreate: (isPos
   const toggle = async (page: PageRow) => {
     const next = page.status === 'published' ? 'draft' : 'published';
     if (next === 'published' && !canPublish) return;
-    const { error: updateError } = await getSupabaseClient().from('pages').update({ status: next, updated_at: new Date().toISOString() }).eq('id', page.id);
+    const { error: updateError } = await client.from('pages').update({ status: next, updated_at: new Date().toISOString() }).eq('id', page.id);
     if (updateError) setError(explainContentError(updateError));
     else {
       // Publishing or unpublishing changes both the page itself and any list that includes it.
@@ -156,7 +156,7 @@ export default function PagesList({ onCreate, onEdit, role }: { onCreate: (isPos
     setBusy('category'); setError(''); setSuccess('');
     try {
       // .select(): rows row level security skips come back missing, not as an error.
-      const { data, error: updateError } = await getSupabaseClient().from('pages')
+      const { data, error: updateError } = await client.from('pages')
         .update({ ...changes, updated_at: new Date().toISOString() })
         .in('id', rows.map((row) => row.id))
         .select('id');
@@ -187,7 +187,7 @@ export default function PagesList({ onCreate, onEdit, role }: { onCreate: (isPos
   );
 
   const emptyTrash = async () => {
-    const { data, error: loadError } = await getSupabaseClient().from('pages').select('id,title,is_post').eq('status', 'trash');
+    const { data, error: loadError } = await client.from('pages').select('id,title,is_post').eq('status', 'trash');
     if (loadError) return setError(explainContentError(loadError));
     const rows = (data || []) as PageRow[];
     if (!rows.length || !window.confirm(`Permanently delete all ${plural(rows.length, 'item')} in the Trash? This cannot be undone.`)) return;

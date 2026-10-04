@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getSupabaseClient } from '../lib/db';
+import { client } from '../lib/db';
 import { loginHref, signOutAndRedirect } from '../lib/account';
 import styles from './LoginButton.module.css';
 
@@ -15,7 +15,7 @@ export default function LoginButton({ label, variant = 'button' }: LoginButtonPr
 
   useEffect(() => {
     let mounted = true;
-    const supabase = getSupabaseClient();
+    const supabase = client;
     supabase.auth.getSession()
       .then(({ data }) => {
         if (!mounted) return;

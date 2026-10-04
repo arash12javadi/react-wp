@@ -1,4 +1,4 @@
-import { describeDbError, getSupabaseClient } from './db';
+import { describeDbError, client } from './db';
 
 /** The folder every media row belongs to unless another is chosen (the column default). */
 export const DEFAULT_MEDIA_FOLDER = 'general';
@@ -53,14 +53,14 @@ const explainFolderError = (error: unknown): Error => {
 
 /** All folder paths, or null when the folder manager migration has not been run. */
 export async function listMediaFolders(): Promise<string[] | null> {
-  const { data, error } = await getSupabaseClient().from('media_folders').select('path').order('path');
+  const { data, error } = await client.from('media_folders').select('path').order('path');
   if (error) return null;
   return ((data || []) as Array<{ path: string }>).map((row) => row.path);
 }
 
 /** Creates a folder and any missing parents. Creating one that exists is not an error. */
 export async function createMediaFolder(path: string): Promise<void> {
-  const { error } = await getSupabaseClient()
+  const { error } = await client
     .from('media_folders')
     .upsert(folderLineage(path).map((entry) => ({ path: entry })), { onConflict: 'path', ignoreDuplicates: true });
   if (error) throw explainFolderError(error);
@@ -68,7 +68,7 @@ export async function createMediaFolder(path: string): Promise<void> {
 
 /** Renames or moves a folder with everything in it. All-or-nothing, decided by the database. */
 export async function renameMediaFolder(from: string, to: string): Promise<number> {
-  const { data, error } = await getSupabaseClient().rpc('rwp_rename_media_folder', { p_from: from, p_to: to });
+  const { data, error } = await client.rpc('rwp_rename_media_folder', { p_from: from, p_to: to });
   if (error) throw explainFolderError(error);
   return Number((data as { moved?: number } | null)?.moved || 0);
 }
@@ -78,7 +78,7 @@ export async function renameMediaFolder(from: string, to: string): Promise<numbe
  * without it the folder must already be empty.
  */
 export async function deleteMediaFolder(path: string, moveTo?: string): Promise<number> {
-  const { data, error } = await getSupabaseClient().rpc('rwp_delete_media_folder', { p_path: path, p_move_to: moveTo ?? null });
+  const { data, error } = await client.rpc('rwp_delete_media_folder', { p_path: path, p_move_to: moveTo ?? null });
   if (error) throw explainFolderError(error);
   return Number((data as { moved?: number } | null)?.moved || 0);
 }

@@ -1,4 +1,4 @@
-import { getSupabaseClient, updateOption } from './db';
+import { client, updateOption } from './db';
 import { purgePageCacheQuietly } from './security';
 import { defaultExcerptLength, type ExcerptUnit } from './excerpt';
 
@@ -123,7 +123,7 @@ const toBoolean = (value: string | undefined, fallback: boolean) => {
 };
 
 export const loadSettings = async (): Promise<SiteSettings> => {
-  const { data, error } = await getSupabaseClient()
+  const { data, error } = await client
     .from('options')
     .select('option_name,option_value')
     // site_description is the pre-rename key for the tagline.

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react';
-import { describeDbError, getSupabaseClient } from '../lib/db';
+import { describeDbError, client } from '../lib/db';
 import { loadSettings, type SiteSettings, defaultSettings } from '../lib/settings';
 import { describeDimensions, formatBytes, uploadToCloudinary, uploadToImageKit } from '../lib/uploads';
 import { siteMediaFolder } from '../lib/mediaScope';
@@ -131,12 +131,12 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
     setError('');
     try {
       const [{ data, error: queryError }, loadedSettings, { data: userData }, loadedAllowance, { error: folderError }, storedFolders] = await Promise.all([
-        getSupabaseClient().from('media').select('*').order('created_at', { ascending: false }),
+        client.from('media').select('*').order('created_at', { ascending: false }),
         loadSettings().catch(() => defaultSettings),
-        getSupabaseClient().auth.getUser(),
+        client.auth.getUser(),
         fetchUploadAllowance().catch(() => null),
         // Folders need the 20260927 migration; until then the library works exactly as before.
-        getSupabaseClient().from('media').select('folder').limit(1),
+        client.from('media').select('folder').limit(1),
         // Creating, renaming and deleting folders need 20260928; null until it has been run.
         listMediaFolders(),
       ]);
@@ -290,8 +290,8 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
   };
 
   const insertRecord = async (record: Partial<MediaItem>) => {
-    const { data: userData } = await getSupabaseClient().auth.getUser();
-    const { data, error: insertError } = await getSupabaseClient()
+    const { data: userData } = await client.auth.getUser();
+    const { data, error: insertError } = await client
       .from('media')
       .insert({ ...record, uploaded_by: userData.user?.id ?? null })
       .select()
@@ -415,7 +415,7 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
     setMovingFolder(true);
     try {
       // .select() because row level security skips rows silently instead of raising an error.
-      const { data, error: moveError } = await getSupabaseClient()
+      const { data, error: moveError } = await client
         .from('media').update({ folder }).in('id', moving.map((item) => item.id)).select('id');
       if (moveError) throw moveError;
       const moved = new Set(((data || []) as Array<{ id: string }>).map((row) => row.id));
@@ -526,7 +526,7 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
     const next = { ...selected, ...changes };
     setSelected(next);
     setItems((current) => current.map((item) => (item.id === next.id ? next : item)));
-    const { error: updateError } = await getSupabaseClient()
+    const { error: updateError } = await client
       .from('media').update(changes).eq('id', selected.id);
     if (updateError) setError(explainMediaError(updateError));
   };
@@ -552,7 +552,7 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
   };
 
   const accessToken = async () => {
-    const { data: sessionData } = await getSupabaseClient().auth.getSession();
+    const { data: sessionData } = await client.auth.getSession();
     return sessionData.session?.access_token || '';
   };
 
@@ -576,7 +576,7 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
         }
       }
 
-      const { error: deleteError } = await getSupabaseClient().from('media').delete().eq('id', selected.id);
+      const { error: deleteError } = await client.from('media').delete().eq('id', selected.id);
       if (deleteError) throw deleteError;
       setItems((current) => current.filter((item) => item.id !== selected.id));
       setChecked((current) => current.filter((id) => id !== selected.id));
@@ -637,7 +637,7 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
       let deletedCount = 0;
       if (removable.length) {
         // .select() because row level security skips rows silently instead of raising an error.
-        const { data, error: deleteError } = await getSupabaseClient()
+        const { data, error: deleteError } = await client
           .from('media').delete().in('id', removable.map((item) => item.id)).select('id');
         if (deleteError) throw deleteError;
         const deleted = new Set(((data || []) as Array<{ id: string }>).map((row) => row.id));

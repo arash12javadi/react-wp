@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
-import { describeDbError, getSupabaseClient } from '../../lib/db';
+import { describeDbError, client } from '../../lib/db';
 import {
   createBackup,
   downloadBlob,
@@ -41,7 +41,7 @@ export default function BackupPanel() {
 
   useEffect(() => {
     void (async () => {
-      const { data, error } = await getSupabaseClient().from('media').select('provider,bytes');
+      const { data, error } = await client.from('media').select('provider,bytes');
       if (error) return;
       const rows = (data || []) as Array<{ provider: string; bytes: number | null }>;
       const hosted = rows.filter((row) => row.provider !== 'external');

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { getSupabaseClient } from '../../lib/db';
+import { client } from '../../lib/db';
 import {
   applySiteIcon, brandingFrom, brandParts, defaultSettings, headerDisplayLabels, loadSettings, saveSettings,
   type HeaderDisplay, type SiteBranding, type SiteSettings,
@@ -30,7 +30,7 @@ export default function SiteSettingsPanel({ onBrandingChange }: { onBrandingChan
     try {
       const [settings, { data }] = await Promise.all([
         loadSettings(),
-        getSupabaseClient().from('pages').select('id,title,status').eq('is_post', false).or('status.is.null,status.neq.trash').order('title'),
+        client.from('pages').select('id,title,status').eq('is_post', false).or('status.is.null,status.neq.trash').order('title'),
       ]);
       setForm(settings);
       setPages((data || []) as PageOption[]);

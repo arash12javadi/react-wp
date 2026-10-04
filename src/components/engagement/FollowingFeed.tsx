@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getSupabaseClient } from '../../lib/db';
+import { client } from '../../lib/db';
 import { fetchFollowingFeed, fetchMyFollows, type FeedEntry } from '../../lib/engagement';
 import { formatDate } from '../../lib/i18n';
 import { useTranslation } from '../../context/I18nContext';
@@ -60,9 +60,9 @@ export default function FollowingFeed() {
       window.clearTimeout(timer);
       timer = window.setTimeout(() => void refresh(), 1500);
     };
-    let channel: ReturnType<ReturnType<typeof getSupabaseClient>['channel']> | null = null;
+    let channel: ReturnType<ReturnType<typeof client>['channel']> | null = null;
     try {
-      channel = getSupabaseClient()
+      channel = client
         .channel('rwp-following-feed')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'pages', filter: 'status=eq.published' }, later)
         .subscribe();
@@ -76,7 +76,7 @@ export default function FollowingFeed() {
       window.clearTimeout(timer);
       window.clearInterval(poll);
       document.removeEventListener('visibilitychange', onVisible);
-      if (channel) void getSupabaseClient().removeChannel(channel);
+      if (channel) void client.removeChannel(channel);
     };
   }, [refresh]);
 

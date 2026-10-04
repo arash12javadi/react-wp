@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { User } from '@supabase/supabase-js';
-import { getSupabaseClient } from '../../lib/db';
+import type { User } from '../../lib/db';
+import { client } from '../../lib/db';
 import { fetchProfile, type Profile } from '../../lib/profiles';
 import { canAccessAdmin, getUserRole, roleLabels, type UserRole } from '../../lib/roles';
 import { defaultSettings, loadSettings, type SiteSettings } from '../../lib/settings';
@@ -31,7 +31,7 @@ function SignedIn({ children, what }: { children: (viewer: Viewer, settings: Sit
     void (async () => {
       const [settings, { data }] = await Promise.all([
         loadSettings().catch(() => defaultSettings),
-        getSupabaseClient().auth.getSession(),
+        client.auth.getSession(),
       ]);
       const user = data.session?.user;
       const profile = user ? await fetchProfile(user.id).catch(() => null) : null;

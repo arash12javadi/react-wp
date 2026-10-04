@@ -3,7 +3,7 @@ import {
   adminToolbarLabels, defaultSettings, loadSettings, saveSettings, type AdminToolbarMode, type SiteSettings,
 } from '../../lib/settings';
 import { roleLabels } from '../../lib/roles';
-import { getSupabaseClient } from '../../lib/db';
+import { client } from '../../lib/db';
 import { accountPages, isSafeUrl } from '../../lib/account';
 import AccountPagePicker, { type PickerPage } from './AccountPagePicker';
 import styles from '../SiteSettings.module.css';
@@ -63,7 +63,7 @@ export default function AccountsPanel() {
   useEffect(() => {
     Promise.all([
       loadSettings(),
-      getSupabaseClient().from('pages').select('id,title,status').eq('is_post', false).or('status.is.null,status.neq.trash').order('title'),
+      client.from('pages').select('id,title,status').eq('is_post', false).or('status.is.null,status.neq.trash').order('title'),
     ])
       .then(([settings, { data }]) => {
         setForm(settings);

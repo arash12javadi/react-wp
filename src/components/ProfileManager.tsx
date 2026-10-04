@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { describeDbError, getSupabaseClient } from '../lib/db';
+import { describeDbError, client } from '../lib/db';
 import {
   emptyProfileDetails, explainProfileDetailsError, fetchProfile, fetchProfileDetails, saveProfileDetails, socialNetworks,
   type Profile, type ProfileDetails,
@@ -47,7 +47,7 @@ export default function ProfileManager({ role, embedded = false }: { role: UserR
   useEffect(() => {
     const load = async () => {
       try {
-        const { data } = await getSupabaseClient().auth.getUser();
+        const { data } = await client.auth.getUser();
         if (!data.user) throw new Error('You are not signed in.');
         setEmail(data.user.email || '');
         setCurrentEmail(data.user.email || '');
@@ -80,7 +80,7 @@ export default function ProfileManager({ role, embedded = false }: { role: UserR
     setError('');
     setFeedback('');
     try {
-      const supabase = getSupabaseClient();
+      const supabase = client;
       const { data: userData } = await supabase.auth.getUser();
       const id = profile?.id || userData.user?.id;
       if (!id) throw new Error('You are not signed in.');
@@ -132,7 +132,7 @@ export default function ProfileManager({ role, embedded = false }: { role: UserR
     setDetailsError('');
     setDetailsFeedback('');
     try {
-      const { data } = await getSupabaseClient().auth.getUser();
+      const { data } = await client.auth.getUser();
       if (!data.user) throw new Error('You are not signed in.');
       setDetails(await saveProfileDetails(data.user.id, details));
       setDetailsFeedback('Details saved.');
@@ -149,7 +149,7 @@ export default function ProfileManager({ role, embedded = false }: { role: UserR
     setError('');
     setFeedback('');
     try {
-      const supabase = getSupabaseClient();
+      const supabase = client;
       const messages: string[] = [];
 
       if (password) {

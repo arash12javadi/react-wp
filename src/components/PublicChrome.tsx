@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { getSupabaseClient } from '../lib/db';
+import { client } from '../lib/db';
 import { fetchProfile } from '../lib/profiles';
 import { getUserRole, type UserRole } from '../lib/roles';
 import { defaultSettings, loadSettings, type SiteSettings } from '../lib/settings';
@@ -33,7 +33,7 @@ const defaultMenuLinks: MenuLink[] = [{ label: 'Home', url: '/' }];
 const loadChromeState = async (): Promise<PublicChromeState> => {
   const [settings, { data: sessionData }] = await Promise.all([
     loadSettings().catch(() => defaultSettings),
-    getSupabaseClient().auth.getSession(),
+    client.auth.getSession(),
   ]);
   const user = sessionData.session?.user;
   let role: UserRole = 'subscriber';
@@ -75,7 +75,7 @@ export default function PublicChrome({ children, layout = 'wide' }: { children: 
     const load = async () => {
       const [chromeState, { data: menuOption }] = await Promise.all([
         loadChromeState(),
-        getSupabaseClient().from('options').select('option_value').eq('option_name', 'menu_links').maybeSingle(),
+        client.from('options').select('option_value').eq('option_name', 'menu_links').maybeSingle(),
       ]);
       if (!mounted) return;
       if (menuOption?.option_value) {

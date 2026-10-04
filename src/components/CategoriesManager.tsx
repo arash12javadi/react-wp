@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { getSupabaseClient } from '../lib/db';
+import { client } from '../lib/db';
 import type { Category } from '../lib/types';
 import styles from './CategoriesManager.module.css';
 
@@ -26,7 +26,7 @@ export default function CategoriesManager() {
     setLoading(true);
     setError('');
     try {
-      const supabase = getSupabaseClient();
+      const supabase = client;
       const [{ data, error: categoryError }, { data: pages, error: pagesError }] = await Promise.all([
         supabase.from('categories').select('id,name,slug,description').order('name'),
         supabase.from('pages').select('category_id'),
@@ -76,7 +76,7 @@ export default function CategoriesManager() {
     const cleanSlug = slugify(slug);
     try {
       if (!cleanName || !cleanSlug) throw new Error('Category name and slug are required.');
-      const supabase = getSupabaseClient();
+      const supabase = client;
       const payload = { name: cleanName, slug: cleanSlug, description: description.trim() || null };
       const result = editing
         ? await supabase.from('categories').update(payload).eq('id', editing.id)
@@ -100,7 +100,7 @@ export default function CategoriesManager() {
     setError('');
     setFeedback('');
     try {
-      const { error: deleteError } = await getSupabaseClient().from('categories').delete().eq('id', category.id);
+      const { error: deleteError } = await client.from('categories').delete().eq('id', category.id);
       if (deleteError) throw deleteError;
       setFeedback('Category deleted successfully.');
       if (editing?.id === category.id) resetForm();

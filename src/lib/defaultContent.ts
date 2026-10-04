@@ -1,4 +1,4 @@
-import { describeDbError, getSupabaseClient } from './db';
+import { describeDbError, client } from './db';
 import { accountIdKey, accountPages } from './account';
 import { rwp } from './rwp';
 
@@ -79,7 +79,7 @@ let running: Promise<void> | null = null;
 export const installDefaultContent = (): Promise<void> => {
   if (running) return running;
   running = (async () => {
-    const supabase = getSupabaseClient();
+    const supabase = client;
     // The function before this migration would turn the Sample Post into a page and choose no front
     // page, then mark 'site' as done for good; the capability table arrived with it, so it is the probe.
     const probe = await supabase.from('rwp_role_capabilities').select('role', { count: 'exact', head: true });

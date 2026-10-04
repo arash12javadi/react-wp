@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { getSupabaseClient } from '../../lib/db';
+import { client } from '../../lib/db';
 import { fetchProfile, fetchProfiles, type Profile } from '../../lib/profiles';
 import {
   capabilities, capabilityLabels, grantableRoles, roleCapabilities, roleLabels, sensitiveCapabilities,
@@ -87,7 +87,7 @@ export default function RolesPanel() {
     setLoading(true);
     setError('');
     try {
-      const { data } = await getSupabaseClient().auth.getUser();
+      const { data } = await client.auth.getUser();
       const [me, grants, perUser, people] = await Promise.all([
         data.user ? fetchProfile(data.user.id) : Promise.resolve(null),
         fetchRoleGrants(),

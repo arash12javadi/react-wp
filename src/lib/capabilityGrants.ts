@@ -1,4 +1,4 @@
-import { describeDbError, getSupabaseClient } from './db';
+import { describeDbError, client } from './db';
 import {
   grantableRoles, isCapability, roles, setRoleGrants, setViewerGrants, type Capability, type UserRole,
 } from './roles';
@@ -41,14 +41,14 @@ const groupByRole = (rows: Array<{ role: string; capability: string }>) => {
 };
 
 export const fetchRoleGrants = async (): Promise<Partial<Record<UserRole, Capability[]>>> => {
-  const { data, error } = await getSupabaseClient().from('rwp_role_capabilities').select('role,capability');
+  const { data, error } = await client.from('rwp_role_capabilities').select('role,capability');
   if (error) throw explainGrantError(error);
   return groupByRole((data || []) as Array<{ role: string; capability: string }>);
 };
 
 /** Everyone's grants (list_users), or only your own for anyone else — the table's policy decides. */
 export const fetchUserGrants = async (userId?: string): Promise<UserGrant[]> => {
-  let query = getSupabaseClient().from('rwp_user_capabilities').select('user_id,capability');
+  let query = client.from('rwp_user_capabilities').select('user_id,capability');
   if (userId) query = query.eq('user_id', userId);
   const { data, error } = await query;
   if (error) throw explainGrantError(error);
@@ -61,7 +61,7 @@ export const fetchUserGrants = async (userId?: string): Promise<UserGrant[]> => 
  * even when the tables are missing (migration not run): the built-in capabilities still apply.
  */
 export const loadCapabilityGrants = async (): Promise<void> => {
-  const supabase = getSupabaseClient();
+  const supabase = client;
   const [roleResult, { data: sessionData }] = await Promise.all([
     fetchRoleGrants().catch((error: unknown) => {
       console.warn(`Role capability grants were not loaded: ${describeDbError(error)}`);
@@ -91,28 +91,28 @@ const checkWritten = (rows: unknown[] | null, what: string) => {
 
 export const addRoleGrant = async (role: UserRole, capability: Capability) => {
   if (!(grantableRoles as readonly string[]).includes(role)) throw new Error(`The ${role} role already has every capability.`);
-  const { data, error } = await getSupabaseClient().from('rwp_role_capabilities')
+  const { data, error } = await client.from('rwp_role_capabilities')
     .upsert({ role, capability }, { onConflict: 'role,capability' }).select('role');
   if (error) throw explainGrantError(error);
   checkWritten(data, 'Adding the capability');
 };
 
 export const removeRoleGrant = async (role: UserRole, capability: Capability) => {
-  const { data, error } = await getSupabaseClient().from('rwp_role_capabilities')
+  const { data, error } = await client.from('rwp_role_capabilities')
     .delete().eq('role', role).eq('capability', capability).select('role');
   if (error) throw explainGrantError(error);
   checkWritten(data, 'Removing the capability');
 };
 
 export const addUserGrant = async (userId: string, capability: Capability) => {
-  const { data, error } = await getSupabaseClient().from('rwp_user_capabilities')
+  const { data, error } = await client.from('rwp_user_capabilities')
     .upsert({ user_id: userId, capability }, { onConflict: 'user_id,capability' }).select('user_id');
   if (error) throw explainGrantError(error);
   checkWritten(data, 'Adding the capability');
 };
 
 export const removeUserGrant = async (userId: string, capability: Capability) => {
-  const { data, error } = await getSupabaseClient().from('rwp_user_capabilities')
+  const { data, error } = await client.from('rwp_user_capabilities')
     .delete().eq('user_id', userId).eq('capability', capability).select('user_id');
   if (error) throw explainGrantError(error);
   checkWritten(data, 'Removing the capability');

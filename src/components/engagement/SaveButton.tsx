@@ -4,7 +4,7 @@ import { useAppSettings } from '../../lib/appSettings';
 import {
   defaultCollection, engagementVisible, fetchMyBookmarks, useEngagement, type EngagementPlacement, type EngagementTargetType,
 } from '../../lib/engagement';
-import { getSupabaseClient } from '../../lib/db';
+import { client } from '../../lib/db';
 import { loginHref } from '../../lib/account';
 import { useTranslation } from '../../context/I18nContext';
 import './engagement.css';
@@ -54,7 +54,7 @@ export default function SaveButton({ targetId, targetType = 'page', placement = 
 
   const openMenu = async () => {
     if (open) { setOpen(false); return; }
-    const { data } = await getSupabaseClient().auth.getSession();
+    const { data } = await client.auth.getSession();
     if (!data.session) { window.location.href = loginHref(); return; }
     setMenuError('');
     setOpen(true);

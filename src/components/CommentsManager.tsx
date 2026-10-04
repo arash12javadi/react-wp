@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { getSupabaseClient } from '../lib/db';
+import { client } from '../lib/db';
 import { explainCommentError, fetchAllComments, type CommentWithAuthor } from '../lib/comments';
 import styles from './CommentsManager.module.css';
 
@@ -41,7 +41,7 @@ export default function CommentsManager() {
     setBusy(true);
     setError('');
     setFeedback('');
-    const { error: updateError } = await getSupabaseClient()
+    const { error: updateError } = await client
       .from('comments').update({ status: next }).in('id', targets);
     if (updateError) setError(explainCommentError(updateError));
     else {
@@ -55,7 +55,7 @@ export default function CommentsManager() {
     if (targets.length === 0) return;
     if (!window.confirm(`Delete ${targets.length} comment${targets.length === 1 ? '' : 's'} and any replies?`)) return;
     setBusy(true);
-    const { error: deleteError } = await getSupabaseClient().from('comments').delete().in('id', targets);
+    const { error: deleteError } = await client.from('comments').delete().in('id', targets);
     if (deleteError) setError(explainCommentError(deleteError));
     else {
       setFeedback('Deleted.');

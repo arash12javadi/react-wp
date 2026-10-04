@@ -1,110 +1,91 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+/**
+ * Unified client database helper.
+ *
+ * This is the one file the rest of the application imports for data access. It no longer exposes any
+ * Supabase-specific entry point — `client` is gone. Everything routes through the
+ * universal `client` / `db` / `auth` facade (see `./client.ts`), which resolves the runtime config
+ * and dispatches to the selected `DBAdapter` / `AuthAdapter` / `StorageAdapter`.
+ */
+import { client, tryGetClient, resetClient as resetClientInstance, type AuthFacade, type Client, type Session, type User } from './client';
+import { getDbAdapter, resetDbAdapter as resetDbAdapterInstance, type DBAdapter } from './db/index';
+import { resetAuthAdapter } from './auth/index';
+import { createStorageAdapter } from './storage/index';
+import { resolveRuntimeConfig, type DbType, type RuntimeConfig } from './runtime';
 
-let client: SupabaseClient | null = null;
+export type { Client, Session, User, DbType, RuntimeConfig };
+export { client, tryGetClient, resolveRuntimeConfig };
 
-/** Resolution order: server-injected config, Vite env vars, then localStorage (dev only). */
-export const resolveSupabaseConfig = (): { url: string; key: string } | null => {
-  const configWindow = window as Window & { __REACT_WP_CONFIG__?: { supabaseUrl?: string; supabasePublishableKey?: string } | null };
-  const serverConfig = configWindow.__REACT_WP_CONFIG__;
-  const serverMode = Object.prototype.hasOwnProperty.call(configWindow, '__REACT_WP_CONFIG__');
-  const url = serverConfig?.supabaseUrl || (import.meta as any).env?.VITE_SUPABASE_URL || (serverMode ? null : localStorage.getItem('supabase_url'));
-  const key =
-    serverConfig?.supabasePublishableKey ||
-    (import.meta as any).env?.VITE_SUPABASE_PUBLISHABLE_KEY ||
-    (import.meta as any).env?.VITE_SUPABASE_ANON_KEY ||
-    (serverMode ? null : localStorage.getItem('supabase_key'));
-  return url && key ? { url, key } : null;
+let cachedConfig: RuntimeConfig | null = null;
+
+/** The resolved runtime config, cached for the lifetime of the bundle. */
+export const getRuntimeConfig = (): RuntimeConfig => {
+  if (!cachedConfig) cachedConfig = resolveRuntimeConfig();
+  return cachedConfig;
 };
 
-export const getSupabaseClient = (): SupabaseClient => {
-  if (client) return client;
-  const config = resolveSupabaseConfig();
-  if (!config) {
-    throw new Error('CMS is not configured.');
-  }
-  client = createClient(config.url, config.key);
-  return client;
-};
-
-export const tryGetSupabaseClient = (): SupabaseClient | null => {
-  try {
-    return getSupabaseClient();
-  } catch {
-    return null;
-  }
-};
+export { describeDbError } from './db/index';
 
 /**
- * Supabase returns PostgrestError, a plain object rather than an Error, so `instanceof Error`
- * checks miss it and the real reason gets replaced by a generic fallback.
+ * The shared auth facade (Supabase auth in Supabase mode; universal JWT auth otherwise). Lazy on
+ * purpose: touching it must not build the client at module load, or an unconfigured site would throw
+ * before the Setup Wizard can render.
  */
-export const describeDbError = (error: unknown): string => {
-  if (error instanceof Error) return error.message;
-  if (error && typeof error === 'object') {
-    const { message, details, hint, code } = error as Record<string, string | undefined>;
-    const parts = [message, details, hint].filter(Boolean);
-    if (parts.length) return `${parts.join(' — ')}${code ? ` (${code})` : ''}`;
-  }
-  return 'Unknown database error.';
+export const auth: AuthFacade = new Proxy({} as AuthFacade, {
+  get(_target, prop: string) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (client.auth as any)[prop];
+  },
+});
+
+/** The shared DBAdapter, exposed for callers that want the universal interface directly. */
+export const getDb = (): DBAdapter => getDbAdapter();
+
+/**
+ * Drops the cached runtime config plus the client/database/auth adapters so a configuration change
+ * (the Setup Wizard's Step 5, or the admin "reconfigure" flow) takes effect on the next call. The
+ * Setup Wizard invokes this before it hard-navigates to the dashboard.
+ */
+export const resetClient = (): void => {
+  cachedConfig = null;
+  resetClientInstance();
+  resetDbAdapterInstance();
+  resetAuthAdapter();
 };
+
+/** Backward-compatible alias for {@link resetClient}. */
+export const resetDbAdapter = resetClient;
+
+export const getStorageAdapter = () => createStorageAdapter(getRuntimeConfig());
 
 // WordPress-style Options API
-export const getOption = async <T = string>(optionName: string, defaultValue: T | null = null): Promise<T | null> => {
-  const supabase = getSupabaseClient();
-  const { data, error } = await supabase
-    .from('options')
-    .select('option_value')
-    .eq('option_name', optionName)
-    .single();
+export const getOption = async <T = string>(optionName: string, defaultValue: T | null = null): Promise<T | null> =>
+  getDbAdapter().getOption<T>(optionName, defaultValue);
 
-  if (error || !data) return defaultValue;
-  try {
-    return JSON.parse(data.option_value) as T;
-  } catch {
-    return data.option_value as unknown as T;
-  }
-};
+export const updateOption = async (optionName: string, optionValue: unknown): Promise<boolean> =>
+  getDbAdapter().setOption(optionName, optionValue);
 
-export const updateOption = async (optionName: string, optionValue: any): Promise<boolean> => {
-  const supabase = getSupabaseClient();
-  const valueString = typeof optionValue === 'object' ? JSON.stringify(optionValue) : String(optionValue);
-
-  const { error } = await supabase
-    .from('options')
-    .upsert({ option_name: optionName, option_value: valueString });
-
-  return !error;
-};
-
-// Generic DB Abstraction for plugins ($wpdb equivalent)
+/**
+ * The universal data interface. `from(table)` returns the dialect-independent query builder
+ * (`.select().eq().order().single()…`, `.insert/update/upsert/delete`); the `select/insert/update/
+ * delete` methods below are the plugin `$wpdb`-style helpers kept for backward compatibility.
+ */
 export const db = {
-  select: async (table: string, query: Record<string, any> = {}) => {
-    const supabase = getSupabaseClient();
-    let builder = supabase.from(table).select('*');
-    Object.entries(query).forEach(([k, v]) => { builder = builder.eq(k, v); });
-    const { data, error } = await builder;
-    if (error) throw error;
-    return data;
-  },
+  from: (table: string) => client.from(table),
+  rpc: (fn: string, args?: Record<string, unknown>) => client.rpc(fn, args),
 
-  insert: async (table: string, payload: Record<string, any>) => {
-    const supabase = getSupabaseClient();
-    const { data, error } = await supabase.from(table).insert(payload).select();
-    if (error) throw error;
-    return data;
-  },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  select: async (table: string, query: Record<string, any> = {}) =>
+    getDbAdapter().select(table, { where: query }),
 
-  update: async (table: string, id: string | number, payload: Record<string, any>) => {
-    const supabase = getSupabaseClient();
-    const { data, error } = await supabase.from(table).update(payload).eq('id', id).select();
-    if (error) throw error;
-    return data;
-  },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  insert: async (table: string, payload: Record<string, any>) =>
+    getDbAdapter().insert(table, payload),
 
-  delete: async (table: string, id: string | number) => {
-    const supabase = getSupabaseClient();
-    const { error } = await supabase.from(table).delete().eq('id', id);
-    if (error) throw error;
-    return true;
-  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  update: async (table: string, id: string | number, payload: Record<string, any>) =>
+    getDbAdapter().update(table, { where: { id } }, payload),
+
+  delete: async (table: string, id: string | number) =>
+    (await getDbAdapter().delete(table, { where: { id } })).length > 0,
 };
+

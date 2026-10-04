@@ -9,7 +9,7 @@ import ContentRenderer from '../ContentRenderer';
 import LoginButton from '../LoginButton';
 import LanguageSwitcher from '../LanguageSwitcher';
 import WidgetRenderer from '../WidgetRenderer';
-import { getSupabaseClient } from '../../lib/db';
+import { client } from '../../lib/db';
 import { injectSnippet, useAppSettings } from '../../lib/appSettings';
 import { MenuLabel, resolveMenuLinks, useMenuViewer, type DynamicMenuLink, type ResolvedMenuLink } from '../../lib/dynamicMenu';
 import { rwp } from '../../lib/rwp';
@@ -203,7 +203,7 @@ function useMenuLinks(menuId: string): ResolvedMenuLink[] {
   useEffect(() => {
     if (!menuId) return undefined;
     let mounted = true;
-    getSupabaseClient().from('menus').select('items').eq('id', menuId).maybeSingle()
+    client.from('menus').select('items').eq('id', menuId).maybeSingle()
       .then(({ data }) => {
         if (mounted) setStored(Array.isArray(data?.items) ? data.items as DynamicMenuLink[] : []);
       });

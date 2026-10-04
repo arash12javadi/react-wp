@@ -5,7 +5,7 @@
  * api/, but a host with neither returns 404, which is reported as "this host cannot do it" rather
  * than as a database failure — the two send you to completely different places to look.
  */
-import { getSupabaseClient } from './db';
+import { client } from './db';
 
 export interface PluginSchemaStatus {
   plugin: string;
@@ -73,7 +73,7 @@ export interface DbCredentials {
 }
 
 const accessToken = async (): Promise<string> => {
-  const { data } = await getSupabaseClient().auth.getSession();
+  const { data } = await client.auth.getSession();
   const token = data.session?.access_token;
   if (!token) throw new Error('Your session has expired. Sign in again.');
   return token;

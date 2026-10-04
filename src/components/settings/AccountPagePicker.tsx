@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { describeDbError, getSupabaseClient } from '../../lib/db';
+import { describeDbError, client } from '../../lib/db';
 import { accountPageChoices, isSafeUrl, type AccountPageDefinition } from '../../lib/account';
 import styles from '../SiteSettings.module.css';
 
@@ -49,7 +49,7 @@ export default function AccountPagePicker({ definition, pageId, url, pages, onCh
     setCreating(true);
     setError('');
     try {
-      const supabase = getSupabaseClient();
+      const supabase = client;
       const { data: userData } = await supabase.auth.getUser();
       const { data: taken } = await supabase.from('pages').select('slug').like('slug', `${definition.slug}%`);
       const used = new Set(((taken || []) as Array<{ slug: string }>).map((row) => row.slug));

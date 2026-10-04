@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { getSupabaseClient } from '../lib/db';
+import { client } from '../lib/db';
 import {
   buildCommentTree, countComments, explainCommentError, fetchPageComments,
   type CommentNode, type CommentWithAuthor,
@@ -163,7 +163,7 @@ export default function CommentSection({ pageId, commentsOpen, moderated, maxDep
   const load = useCallback(async () => {
     setError('');
     try {
-      const supabase = getSupabaseClient();
+      const supabase = client;
       const { data: userData } = await supabase.auth.getUser();
       setUserId(userData.user?.id || '');
       if (userData.user) {
@@ -187,7 +187,7 @@ export default function CommentSection({ pageId, commentsOpen, moderated, maxDep
     setError('');
     setNotice('');
     try {
-      const { error: insertError } = await getSupabaseClient().from('comments').insert({
+      const { error: insertError } = await client.from('comments').insert({
         page_id: pageId,
         parent_id: parentId,
         author_id: userId,
@@ -210,7 +210,7 @@ export default function CommentSection({ pageId, commentsOpen, moderated, maxDep
 
   const removeComment = async (id: number) => {
     if (!window.confirm('Delete this comment and its replies?')) return;
-    const { error: deleteError } = await getSupabaseClient().from('comments').delete().eq('id', id);
+    const { error: deleteError } = await client.from('comments').delete().eq('id', id);
     if (deleteError) setError(explainCommentError(deleteError));
     else await load();
   };

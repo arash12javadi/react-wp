@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getSupabaseClient } from '../lib/db';
+import { client } from '../lib/db';
 import type { Category } from '../lib/types';
 import type { Widget } from '../lib/widgets';
 import LoginButton from './LoginButton';
@@ -20,7 +20,7 @@ function SearchWidget({ widget }: { widget: Widget }) {
 function RecentPostsWidget({ widget }: { widget: Widget }) {
   const [posts, setPosts] = useState<Array<{ id: number; title: string; slug: string }>>([]);
   useEffect(() => {
-    getSupabaseClient()
+    client
       .from('pages')
       .select('id,title,slug')
       .eq('status', 'published')
@@ -40,7 +40,7 @@ function CategoriesWidget({ widget }: { widget: Widget }) {
   const [categories, setCategories] = useState<Array<Category & { count: number }>>([]);
   useEffect(() => {
     const load = async () => {
-      const supabase = getSupabaseClient();
+      const supabase = client;
       const [{ data: cats }, { data: pages }] = await Promise.all([
         supabase.from('categories').select('id,name,slug,description').order('name'),
         supabase.from('pages').select('category_id').eq('status', 'published'),
@@ -78,7 +78,7 @@ function MenuWidget({ widget }: { widget: Widget }) {
   useEffect(() => {
     const menuId = String(widget.settings.menuId || '');
     if (!menuId) return;
-    getSupabaseClient()
+    client
       .from('menus')
       .select('items')
       .eq('id', menuId)

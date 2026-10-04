@@ -1,4 +1,4 @@
-import { describeDbError, getSupabaseClient, tryGetSupabaseClient } from './db';
+import { describeDbError, client, tryGetClient } from './db';
 import {
   currentI18nSettings, getLocale, setDatabaseTranslations, setMissingKeyHandler, subscribeLocale,
   translate, type I18nSurface, type TranslationDictionary,
@@ -109,7 +109,7 @@ const writeCache = (code: string, entries: TranslationDictionary) => {
 export function loadDatabaseTranslations(codes: string[], force = false): Promise<void> {
   const wanted = [...new Set(codes.map((code) => String(code || '').trim().toLowerCase()).filter(Boolean))];
   const missing = wanted.filter((code) => force || !requested.has(code));
-  const supabase = tryGetSupabaseClient();
+  const supabase = tryGetClient();
   if (missing.length && tableAvailable && supabase) {
     const job = fetchAll<Pick<TranslationRow, 'translation_key' | 'locale' | 'translation_value'>>((from, to) => supabase
       .from('rwp_translations').select('translation_key,locale,translation_value')
@@ -181,7 +181,7 @@ const maxReportsPerVisit = 500;
 
 const flushReports = async () => {
   flushTimer = undefined;
-  const supabase = tryGetSupabaseClient();
+  const supabase = tryGetClient();
   const batches = [...queue.entries()];
   queue.clear();
   if (!supabase) return;
@@ -214,7 +214,7 @@ const reportMissing = (key: string, shown: string, locale: string, surface: I18n
 
 /** Reads the option and turns reporting on or off for this visit. */
 export async function loadDiscoverySetting(): Promise<boolean> {
-  const supabase = tryGetSupabaseClient();
+  const supabase = tryGetClient();
   if (!supabase) return false;
   const { data } = await supabase.from('options').select('option_value').eq('option_name', discoveryOption).maybeSingle();
   const enabled = data?.option_value === 'true';
@@ -223,7 +223,7 @@ export async function loadDiscoverySetting(): Promise<boolean> {
 }
 
 export async function setAutoDiscovery(enabled: boolean): Promise<void> {
-  const { data, error } = await getSupabaseClient()
+  const { data, error } = await client
     .from('options').upsert({ option_name: discoveryOption, option_value: String(enabled) }).select('option_name');
   if (error) throw new Error(describeTranslationError(error));
   // An upsert RLS refused can come back empty instead of failing.
@@ -237,7 +237,7 @@ export async function setAutoDiscovery(enabled: boolean): Promise<void> {
 export async function getTranslations(filter: { locale?: string; group?: string } = {}): Promise<TranslationRow[]> {
   try {
     return await fetchAll<TranslationRow>((from, to) => {
-      let query = getSupabaseClient().from('rwp_translations')
+      let query = client.from('rwp_translations')
         .select('id,translation_key,locale,translation_value,source_text,group_name,updated_at');
       if (filter.locale) query = query.eq('locale', filter.locale);
       if (filter.group) query = query.eq('group_name', filter.group);
@@ -279,7 +279,7 @@ export async function upsertTranslation(raw: TranslationInput): Promise<Translat
   const input = normalizeInput(raw);
   const problem = validate(input);
   if (problem) throw new Error(problem);
-  const { data, error } = await getSupabaseClient().from('rwp_translations')
+  const { data, error } = await client.from('rwp_translations')
     .upsert({
       translation_key: input.key,
       locale: input.locale,
@@ -296,7 +296,7 @@ export async function upsertTranslation(raw: TranslationInput): Promise<Translat
 export async function deleteTranslations(ids: string[]): Promise<number> {
   let deleted = 0;
   for (let start = 0; start < ids.length; start += 200) {
-    const { data, error } = await getSupabaseClient().from('rwp_translations')
+    const { data, error } = await client.from('rwp_translations')
       .delete().in('id', ids.slice(start, start + 200)).select('id');
     if (error) throw new Error(describeTranslationError(error));
     deleted += data?.length || 0;
@@ -344,7 +344,7 @@ export async function importTranslations(entries: TranslationInput[], overwrite:
   const payload = [...rows.values()];
   for (let start = 0; start < payload.length; start += 500) {
     const chunk = payload.slice(start, start + 500);
-    const { data, error } = await getSupabaseClient().from('rwp_translations')
+    const { data, error } = await client.from('rwp_translations')
       .upsert(chunk, { onConflict: 'translation_key,locale' }).select('id');
     if (error) throw new Error(`Import stopped after ${start} of ${payload.length} strings: ${describeTranslationError(error)}`);
     if ((data?.length || 0) < chunk.length) {

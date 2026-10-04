@@ -14,7 +14,7 @@
  * Every server call here needs server.mjs. On a static host they fail as EndpointUnavailableError
  * so the screen can say "this host cannot do it" rather than reporting a database fault.
  */
-import { getSupabaseClient, describeDbError, updateOption } from './db';
+import { client, describeDbError, updateOption } from './db';
 import { EndpointUnavailableError } from './pluginSchema';
 import type { AntiBotForm, AntiBotProvider } from './antiBot';
 
@@ -108,7 +108,7 @@ const knownForms: AntiBotForm[] = ['login', 'register', 'lost_password', 'commen
  * server is not actually using.
  */
 export const loadSecuritySettings = async (): Promise<SecuritySettings> => {
-  const { data, error } = await getSupabaseClient()
+  const { data, error } = await client
     .from('options')
     .select('option_name,option_value')
     .in('option_name', securitySettingKeys);
@@ -172,14 +172,14 @@ export interface SecretStatus {
 }
 
 export const loadSecretStatus = async (): Promise<SecretStatus> => {
-  const { data, error } = await getSupabaseClient().rpc('rwp_security_secrets_status');
+  const { data, error } = await client.rpc('rwp_security_secrets_status');
   if (error) throw new Error(describeDbError(error));
   return data as SecretStatus;
 };
 
 /** An empty string clears the stored secret; undefined would leave it untouched, so callers send ''. */
 export const saveAntiBotSecret = async (key: string): Promise<SecretStatus> => {
-  const { data, error } = await getSupabaseClient()
+  const { data, error } = await client
     .rpc('rwp_security_save_secrets', { p_payload: { anti_bot_secret_key: key } });
   if (error) throw new Error(describeDbError(error));
   return data as SecretStatus;
@@ -210,7 +210,7 @@ export interface ServerSecurityStatus {
 }
 
 const accessToken = async (): Promise<string> => {
-  const { data } = await getSupabaseClient().auth.getSession();
+  const { data } = await client.auth.getSession();
   const token = data.session?.access_token;
   if (!token) throw new Error('Your session has expired. Sign in again.');
   return token;

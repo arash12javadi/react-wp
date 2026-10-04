@@ -1,5 +1,5 @@
 import { useEffect, useState, type DragEvent } from 'react';
-import { getSupabaseClient, updateOption } from '../lib/db';
+import { client, updateOption } from '../lib/db';
 import type { Page } from '../lib/types';
 import styles from './MenuManager.module.css';
 import { rwp } from '../lib/rwp';
@@ -72,7 +72,7 @@ export default function MenuManager() {
   useEffect(() => {
     const load = async () => {
       try {
-        const supabase = getSupabaseClient();
+        const supabase = client;
         const [{ data: menuData, error: menuError }, { data: contentData, error: contentError }] = await Promise.all([
           supabase.from('menus').select('id,name,slug,location,items').order('name'),
           supabase.from('pages').select('id,title,slug,content,excerpt,status,is_post,category_id,featured_category_id,posts_limit,display_layout,author_id,created_at,updated_at').eq('status', 'published').order('updated_at', { ascending: false }),
@@ -96,7 +96,7 @@ export default function MenuManager() {
     const cleanName = name.trim();
     if (!cleanName) return setError('Enter a menu name first.');
     setError('');
-    const supabase = getSupabaseClient();
+    const supabase = client;
     const { data, error: createError } = await supabase.from('menus').insert({
       name: cleanName,
       slug: slugify(cleanName),
@@ -143,7 +143,7 @@ export default function MenuManager() {
     setFeedback('');
     setError('');
     try {
-      const supabase = getSupabaseClient();
+      const supabase = client;
       const { error: saveError } = await supabase.from('menus').update({ items: activeMenu.items }).eq('id', activeMenu.id);
       if (saveError) throw saveError;
       if (activeMenu.location === 'primary') {

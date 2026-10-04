@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { getSupabaseClient } from '../lib/db';
+import { client } from '../lib/db';
 import styles from './PluginUploadModal.module.css';
 
 /** Kept equal to MAX_ZIP_BYTES in server/pluginInstaller.mjs. */
@@ -242,7 +242,7 @@ export default function PluginUploadModal({ onClose: close, onInstalled, initial
     let failed = false;
     let lastStep: StepId = order[0];
     try {
-      const { data } = await getSupabaseClient().auth.getSession();
+      const { data } = await client.auth.getSession();
       const token = data.session?.access_token;
       if (!token) throw new Error('Your session has expired. Sign in again, then retry the upload.');
       if (mode === 'file') advance('uploading');

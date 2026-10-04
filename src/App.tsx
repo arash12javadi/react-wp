@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { type Session, type SupabaseClient } from '@supabase/supabase-js';
+import type { Client, Session } from './lib/db';
 import SetupWizard from './components/SetupWizard';
 import AdminLayout from './components/AdminLayout';
 import AdminErrorBoundary from './components/AdminErrorBoundary';
@@ -26,7 +26,7 @@ import { pageViewLink } from './lib/contentBulk';
 import { accountPageByPath, accountTarget, signOutAndRedirect, type AccountPageKey } from './lib/account';
 import { startSessionGovernor } from './lib/session';
 import { useCurrentProfile } from './lib/profiles';
-import { describeDbError, resolveSupabaseConfig, tryGetSupabaseClient } from './lib/db';
+import { client, describeDbError, tryGetClient } from './lib/db';
 import {
   applyDocumentTitle, applySiteIcon, brandingFrom, defaultSettings, loadSettings, placeholderTitle,
   type SiteBranding, type SiteSettings as SiteSettingsValue,
@@ -80,7 +80,7 @@ const readPluginIds = (value: string | null | undefined): string[] => {
   }
 };
 
-const initializePlugins = async (supabase: SupabaseClient) => {
+const initializePlugins = async (supabase: Client) => {
   const { data: activeRow } = await supabase
     .from('options').select('option_value').eq('option_name', 'rwp_active_plugins').maybeSingle();
   const registered = rwp.getPlugins();
@@ -91,32 +91,19 @@ const initializePlugins = async (supabase: SupabaseClient) => {
 };
 
 const checkDatabase = async (): Promise<boolean> => {
-  const config = resolveSupabaseConfig();
-  if (!config) return false;
-
-  const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), 5000);
   try {
-    const headers = { apikey: config.key, Authorization: `Bearer ${config.key}` };
-    const baseUrl = config.url.replace(/\/$/, '');
-    const responses = await Promise.all([
-      fetch(`${baseUrl}/rest/v1/options?select=option_name&limit=1`, { headers, signal: controller.signal }),
-      fetch(`${baseUrl}/rest/v1/posts?select=id&limit=1`, { headers, signal: controller.signal }),
-      fetch(`${baseUrl}/rest/v1/menus?select=id&limit=1`, { headers, signal: controller.signal }),
-    ]);
-    return responses.every((response) => response.ok);
+    const { error } = await client.from('options').select('option_name').limit(1);
+    return !error;
   } catch {
     return false;
-  } finally {
-    window.clearTimeout(timeoutId);
   }
 };
 
 const wait = (milliseconds: number) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 
-const checkDatabaseWithRetry = async (): Promise<SupabaseClient | null> => {
+const checkDatabaseWithRetry = async (): Promise<Client | null> => {
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const client = tryGetSupabaseClient();
+    const client = tryGetClient();
     if (client && await checkDatabase()) return client;
     if (attempt < 2) await wait(400);
   }
@@ -131,7 +118,7 @@ interface PublicRouting {
   postsPageHasLayout: boolean;
 }
 
-const loadPublicRouting = async (supabase: SupabaseClient): Promise<PublicRouting> => {
+const loadPublicRouting = async (supabase: Client): Promise<PublicRouting> => {
   const settings = await loadSettings();
   applySiteIcon(settings.site_icon);
   // Screens that are not page rows (login, register, plugin routes) never set a title, so
@@ -190,7 +177,7 @@ function ConnectionError({ detail, onReconfigure }: { detail: string; onReconfig
   );
 }
 
-function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseClient; onReconfigure: () => void }) {
+function InstalledDashboard({ supabase, onReconfigure }: { supabase: Client; onReconfigure: () => void }) {
   const [session, setSession] = useState<Session | null>(null);
   const [requested, setRequested] = useState(requestedLocation);
   const [editingPage, setEditingPage] = useState<import('./lib/types').Page | null>(null);
@@ -384,7 +371,7 @@ function InstalledDashboard({ supabase, onReconfigure }: { supabase: SupabaseCli
 }
 
 export default function App() {
-  const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
+  const [supabase, setSupabase] = useState<Client | null>(null);
   const [routing, setRouting] = useState<PublicRouting>(emptyRouting);
   const [checkingDatabase, setCheckingDatabase] = useState(true);
   const isAdminRoute = window.location.pathname.replace(/\/+$/, '') === '/admin';
@@ -465,9 +452,8 @@ export default function App() {
   }
 
   if (!supabase) {
-    return <SetupWizard onComplete={() => {
-      window.location.reload();
-    }} />;
+    // The wizard resets the cached adapters, clears its scratch keys and hard-navigates to / itself.
+    return <SetupWizard />;
   }
 
   if (isAdminRoute) {

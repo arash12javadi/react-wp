@@ -1,5 +1,5 @@
 import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate';
-import { describeDbError, getSupabaseClient } from './db';
+import { describeDbError, client } from './db';
 import { loadSettings } from './settings';
 import { uploadToCloudinary, uploadToImageKit } from './uploads';
 import { siteMediaFolder } from './mediaScope';
@@ -99,7 +99,7 @@ const optionValue = (data: BackupData, name: string) =>
 
 export async function createBackup(includeMedia: boolean, onProgress: Progress) {
   onProgress('Reading the database…');
-  const { data, error } = await getSupabaseClient().rpc('rwp_backup_export');
+  const { data, error } = await client.rpc('rwp_backup_export');
   if (error) throw new Error(explainRpcError(error, 'export'));
   const backup = data as BackupData;
   backup.site = { title: optionValue(backup, 'site_title'), origin: window.location.origin };
@@ -271,7 +271,7 @@ export async function restoreBackup(loaded: LoadedBackup, reuploadMedia: boolean
   // The files travel in the ZIP; the database only needs the manifest-free JSON.
   delete data.media_files;
   onProgress('Restoring the database…');
-  const { data: result, error } = await getSupabaseClient().rpc('rwp_backup_import', { p_backup: data });
+  const { data: result, error } = await client.rpc('rwp_backup_import', { p_backup: data });
   if (error) {
     const leftover = uploaded ? ` The ${uploaded} media file(s) uploaded for this restore stay in your media account, unused.` : '';
     throw new Error(`${explainRpcError(error, 'restore')}${leftover}`);

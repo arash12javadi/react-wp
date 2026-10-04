@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type Dispatch } from 'react';
-import { describeDbError, getSupabaseClient } from '../../lib/db';
+import { describeDbError, client } from '../../lib/db';
 import { loadSettings, saveSettings } from '../../lib/settings';
 import {
   clearPreviewDraft, defaultTheme, fetchTheme, saveTheme, themeAreaIds, themeAreaLabels, themeMigration,
@@ -184,7 +184,7 @@ export default function ThemeEditor() {
     try {
       const [theme, menuResult, siteSettings] = await Promise.all([
         fetchTheme(),
-        getSupabaseClient().from('menus').select('id,name').order('name'),
+        client.from('menus').select('id,name').order('name'),
         loadSettings().catch(() => null),
       ]);
       dispatch({ type: 'load', theme });

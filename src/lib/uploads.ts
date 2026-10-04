@@ -1,6 +1,6 @@
 import type { MediaItem, MediaProvider } from './types';
 import type { SiteSettings } from './settings';
-import { getSupabaseClient } from './db';
+import { client } from './db';
 
 export interface UploadResult {
   url: string;
@@ -91,7 +91,7 @@ export const uploadToImageKit = async (
   }
   // The signature needs the private key, so it has to come from the server, which also checks
   // the caller may upload and has room in their disk quota for this file.
-  const { data: sessionData } = await getSupabaseClient().auth.getSession();
+  const { data: sessionData } = await client.auth.getSession();
   const authResponse = await fetch(`/api/imagekit-auth?bytes=${file.size}`, {
     headers: { Authorization: `Bearer ${sessionData.session?.access_token || ''}` },
   });

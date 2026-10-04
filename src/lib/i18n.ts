@@ -1,5 +1,5 @@
 import { applyFilters, doAction } from '../core/hooks';
-import { describeDbError, getSupabaseClient, updateOption } from './db';
+import { describeDbError, client, updateOption } from './db';
 import { coreTranslations } from './locales';
 
 /**
@@ -163,7 +163,7 @@ export const currentI18nSettings = (): I18nSettings => settings;
 export const loadI18nSettings = (force = false): Promise<I18nSettings> => {
   if (!settingsPromise || force) {
     settingsPromise = Promise.resolve(
-      getSupabaseClient().from('options').select('option_name,option_value').in('option_name', [...i18nOptionNames]),
+      client.from('options').select('option_name,option_value').in('option_name', [...i18nOptionNames]),
     ).then(({ data, error }) => {
       // Missing rows are not an error: a site that never ran the migration is a one-language site.
       if (error) throw new Error(`Could not load the language settings: ${describeDbError(error)}`);

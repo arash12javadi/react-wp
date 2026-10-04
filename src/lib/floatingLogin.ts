@@ -1,5 +1,5 @@
 import { isSafeUrl } from './account';
-import { describeDbError, getSupabaseClient, tryGetSupabaseClient } from './db';
+import { describeDbError, client, tryGetClient } from './db';
 
 /**
  * Floating Login (Settings → Floating Login): six floating_login_* rows in the public `options`
@@ -119,7 +119,7 @@ const setState = (next: FloatingLoginState) => {
 export const loadFloatingLoginSettings = (): Promise<FloatingLoginState> => {
   if (pending) return pending;
   pending = (async () => {
-    const supabase = tryGetSupabaseClient();
+    const supabase = tryGetClient();
     if (!supabase) {
       setState({ ...state, loaded: true });
       return state;
@@ -151,7 +151,7 @@ export const saveFloatingLoginSettings = async (next: FloatingLoginSettings): Pr
     Object.fromEntries(floatingLoginOptionNames.map((name) => [name, String(next[name])])),
   );
   const rows = floatingLoginOptionNames.map((name) => ({ option_name: name, option_value: String(clean[name]) }));
-  const { data, error } = await getSupabaseClient().from('options').upsert(rows).select('option_name');
+  const { data, error } = await client.from('options').upsert(rows).select('option_name');
   if (error) throw new Error(`The settings were not saved: ${describeDbError(error)}`);
   // RLS refuses the write without an error and returns no rows.
   if ((data?.length ?? 0) < rows.length) {

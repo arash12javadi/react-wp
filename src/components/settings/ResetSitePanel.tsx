@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getSupabaseClient } from '../../lib/db';
+import { client } from '../../lib/db';
 import { fetchProfile } from '../../lib/profiles';
 import { resetSite, type MediaWipeSummary } from '../../lib/pluginSchema';
 import styles from './ResetSitePanel.module.css';
@@ -46,7 +46,7 @@ export default function ResetSitePanel() {
   useEffect(() => {
     let mounted = true;
     void (async () => {
-      const { data } = await getSupabaseClient().auth.getUser();
+      const { data } = await client.auth.getUser();
       if (!data.user) {
         if (mounted) setRole('');
         return;
@@ -72,7 +72,7 @@ export default function ResetSitePanel() {
       setDone({ usersDeleted: result.usersDeleted, remoteFiles: result.remoteFiles, media: result.media });
       // Local session tokens now point at accounts that no longer exist. Cleared before the
       // redirect, or the wizard loads with a stale session and fails in a confusing way.
-      await getSupabaseClient().auth.signOut().catch(() => {});
+      await client.auth.signOut().catch(() => {});
       try {
         window.localStorage.clear();
         window.sessionStorage.clear();

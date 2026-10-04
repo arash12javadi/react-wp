@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { getSupabaseClient } from '../lib/db';
+import { client } from '../lib/db';
 import { fetchProfile } from '../lib/profiles';
 import { getUserRole, type UserRole } from '../lib/roles';
 import { resolveExcerpt } from '../lib/excerpt';
@@ -114,7 +114,7 @@ export default function PublicHome({ onReconfigure }: { onReconfigure?: () => vo
     let mounted = true;
     const loadHome = async () => {
       try {
-        const supabase = getSupabaseClient();
+        const supabase = client;
         const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
         if (sessionError) throw sessionError;
         const user = sessionData.session?.user;
@@ -178,7 +178,7 @@ export default function PublicHome({ onReconfigure }: { onReconfigure?: () => vo
     setLoadingMore(true);
     try {
       const from = page * settings.posts_per_page;
-      const { data, error: moreError } = await getSupabaseClient()
+      const { data, error: moreError } = await client
         .from('pages')
         .select(postColumns)
         .eq('status', 'published')

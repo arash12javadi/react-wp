@@ -24,6 +24,8 @@ export function publicConfig(config) {
   if (!config) return null;
   return {
     installed: config.installed === true,
+    dbType: config.dbType || 'supabase',
+    storage: config.storage || 'local',
     supabaseUrl: config.supabaseUrl,
     supabasePublishableKey: config.supabasePublishableKey,
   };

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { describeDbError, getSupabaseClient } from './db';
+import { describeDbError, client } from './db';
 import { sanitizeTrackingHtml } from './scriptSanitizer.js';
 
 /**
@@ -712,7 +712,7 @@ export class ThemeMigrationMissingError extends Error {
 
 /** For the editor: the saved row, with errors explained. */
 export const fetchTheme = async (): Promise<ThemeSettings> => {
-  const { data, error } = await getSupabaseClient().from('theme_settings').select('*').limit(1).maybeSingle();
+  const { data, error } = await client.from('theme_settings').select('*').limit(1).maybeSingle();
   if (error) {
     const message = describeDbError(error);
     if (isMissingTable(message)) throw new ThemeMigrationMissingError();
@@ -744,7 +744,7 @@ const explainSaveError = (error: unknown): Error => {
  * administrators cannot silently overwrite each other. Script fields are stored sanitised.
  */
 export const saveTheme = async (theme: ThemeSettings): Promise<ThemeSettings> => {
-  const supabase = getSupabaseClient();
+  const supabase = client;
   const payload = themeToRow(theme);
   scriptFields.forEach((field) => { payload[field] = sanitizeTrackingHtml(payload[field]).html; });
 

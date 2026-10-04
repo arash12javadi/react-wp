@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
-import { getSupabaseClient } from '../lib/db';
+import { client } from '../lib/db';
 import './LiveSearch.css';
 
 interface Result {
@@ -52,7 +52,7 @@ export default function LiveSearch({ placeholder = 'Search posts…', buttonLabe
     setLoading(true);
     // Debounced, so typing a word sends one request rather than one per key.
     const timer = window.setTimeout(() => {
-      void getSupabaseClient().from('pages').select('id,title,slug,is_post')
+      void client.from('pages').select('id,title,slug,is_post')
         .eq('status', 'published').eq('is_site_template', false)
         .ilike('title', likePattern(trimmed))
         .order('is_post', { ascending: false }).order('created_at', { ascending: false })

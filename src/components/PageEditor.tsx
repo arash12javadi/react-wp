@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { getSupabaseClient } from '../lib/db';
+import { client } from '../lib/db';
 import type { Category, Page } from '../lib/types';
 import { canPublishPosts, type UserRole } from '../lib/roles';
 import { defaultExcerptLength, makeExcerpt } from '../lib/excerpt';
@@ -70,7 +70,7 @@ export default function PageEditor({ page, initialIsPost = false, onSaved, onCan
       meta_keywords: page.meta_keywords || '',
     } : { ...empty, is_post: initialIsPost });
     setSlugTouched(Boolean(page));
-    const supabase = getSupabaseClient();
+    const supabase = client;
     void supabase.from('categories').select('*').order('name').then(({ data, error: queryError }) => {
       if (queryError) {
         setError(
@@ -91,7 +91,7 @@ export default function PageEditor({ page, initialIsPost = false, onSaved, onCan
       const slug = slugify(form.slug);
       if (!title || !slug || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error('A valid title and slug are required.');
       if (form.status === 'published' && !canPublishPosts(role)) throw new Error('Your role cannot publish content.');
-      const supabase = getSupabaseClient();
+      const supabase = client;
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) throw new Error('You must be signed in to save content.');
       const { meta_keywords: metaKeywords, show_header: showHeader, show_footer: showFooter, ...fields } = form;

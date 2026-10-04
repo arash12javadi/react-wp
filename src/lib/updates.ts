@@ -1,5 +1,5 @@
 import { version as installedAppVersion } from '../../package.json';
-import { describeDbError, getSupabaseClient } from './db';
+import { describeDbError, client } from './db';
 import { rwp } from './rwp';
 
 /**
@@ -85,7 +85,7 @@ export const compareVersions = (a: string, b: string): number => {
 };
 
 const readJsonOption = async <T>(name: string): Promise<T | null> => {
-  const { data, error } = await getSupabaseClient().from('options').select('option_value').eq('option_name', name).maybeSingle();
+  const { data, error } = await client.from('options').select('option_value').eq('option_name', name).maybeSingle();
   if (error) throw new Error(describeDbError(error));
   if (!data?.option_value) return null;
   try {
@@ -96,7 +96,7 @@ const readJsonOption = async <T>(name: string): Promise<T | null> => {
 };
 
 const writeJsonOption = async (name: string, value: unknown) => {
-  const { data, error } = await getSupabaseClient()
+  const { data, error } = await client
     .from('options').upsert({ option_name: name, option_value: JSON.stringify(value) }).select('option_name');
   if (error) throw new Error(describeDbError(error));
   // Row level security rejects an options write by returning no rows rather than an error.

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
-import { describeDbError, getSupabaseClient } from './db';
+import { describeDbError, client } from './db';
 import { loginHref } from './account';
 import type { AppSettings } from './appSettings';
 
@@ -73,7 +73,7 @@ export const explainEngagementError = (error: unknown): string => {
 };
 
 const rpc = async <T>(name: string, args: Record<string, unknown>): Promise<T> => {
-  const { data, error } = await getSupabaseClient().rpc(name, args);
+  const { data, error } = await client.rpc(name, args);
   if (error) {
     const message = describeDbError(error);
     if (isMissingMigration(message)) noteMissing(message);
@@ -205,7 +205,7 @@ const ensureAuthListener = () => {
   if (authListening) return;
   authListening = true;
   try {
-    getSupabaseClient().auth.onAuthStateChange((event) => {
+    client.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') resetEngagementState();
     });
   } catch {
@@ -216,7 +216,7 @@ const ensureAuthListener = () => {
 // Session -------------------------------------------------------------------------------------------
 
 const signedIn = async () => {
-  const { data } = await getSupabaseClient().auth.getSession();
+  const { data } = await client.auth.getSession();
   return Boolean(data.session?.user);
 };
 
@@ -496,7 +496,7 @@ export const fetchMyBookmarks = async (collection?: string | null): Promise<Save
 
 /** Removes one saved row. `.select()` because a delete refused by RLS reports no error. */
 export const removeBookmark = async (bookmarkId: string) => {
-  const { data, error } = await getSupabaseClient().from('bookmarks').delete().eq('id', bookmarkId).select('id,target_type,target_id');
+  const { data, error } = await client.from('bookmarks').delete().eq('id', bookmarkId).select('id,target_type,target_id');
   if (error) throw new Error(explainEngagementError(error));
   if (!data?.length) throw new Error('Nothing was removed: the item is no longer saved, or it belongs to another account.');
   resetEngagementState();
@@ -527,7 +527,7 @@ export const fetchFollowingFeed = async (limit = 20, before?: string | null): Pr
 
 /** Everyone the signed-in person follows, for the Following tab's list. */
 export const fetchMyFollows = async (): Promise<{ users: Array<{ id: string; name: string }>; categories: Array<{ id: string; name: string; slug: string }> }> => {
-  const supabase = getSupabaseClient();
+  const supabase = client;
   const { data: session } = await supabase.auth.getSession();
   const uid = session.session?.user.id;
   if (!uid) return { users: [], categories: [] };

@@ -1,4 +1,4 @@
-import { describeDbError, getSupabaseClient } from './db';
+import { describeDbError, client } from './db';
 import { rwp } from './rwp';
 
 /** Status values a row in public.pages can hold. 'trash' needs the 20260926 migration. */
@@ -43,7 +43,7 @@ const blockedReason =
  */
 export async function setContentStatus(rows: ContentRef[], status: ContentStatus): Promise<{ changed: number[]; blockedReason: string }> {
   if (!rows.length) return { changed: [], blockedReason };
-  const { data, error } = await getSupabaseClient()
+  const { data, error } = await client
     .from('pages')
     .update({ status, updated_at: new Date().toISOString() })
     .in('id', rows.map((row) => row.id))
@@ -58,7 +58,7 @@ export async function setContentStatus(rows: ContentRef[], status: ContentStatus
 /** Permanently deletes several pages/posts. Returns the ids that were really deleted. */
 export async function deleteContent(rows: ContentRef[]): Promise<{ changed: number[]; blockedReason: string }> {
   if (!rows.length) return { changed: [], blockedReason };
-  const { data, error } = await getSupabaseClient()
+  const { data, error } = await client
     .from('pages')
     .delete()
     .in('id', rows.map((row) => row.id))

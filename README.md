@@ -57,6 +57,70 @@ React-WP keeps the parts of WordPress people actually like and drops the parts t
 > A small Node server (`server.mjs`) exists only for the things a browser must not do
 > (secrets, DDL, payments, SEO tags for crawlers, rate limiting).
 
+---
+
+<a name="universal-mode"></a>
+
+## 🌍 Universal Mode — a platform-agnostic Headless CMS
+
+As well as the Supabase backend described above, React-WP now runs on **any** environment that
+supports Node.js or the Web Fetch API, against **any** of four database backends. The Supabase path
+is fully unchanged (backward compatible); the new abstraction layers sit underneath it.
+
+### The abstraction layers
+
+| Layer | Location | What it does |
+|---|---|---|
+| `DBAdapter` | `src/lib/db/` | One interface for CRUD, table queries, the options key-value store and schema migrations. Four drivers: **Supabase** (`@supabase/supabase-js`), **PostgreSQL** (`pg`), **MySQL/MariaDB** (`mysql2`), **SQLite/LibSQL** (`better-sqlite3` / `@libsql/client`). |
+| `AuthAdapter` | `src/lib/auth/` | **Supabase** mode (native Auth + JWT) or **universal** mode (`bcryptjs` + `jose` JWTs against `rwp_users`). |
+| `StorageAdapter` | `src/lib/storage/` | **Local** uploads on a persistent disk, or **S3-compatible** object storage (AWS S3, Cloudflare R2, Supabase Storage, MinIO). |
+| Hono server | `src/server/` | The whole API engine, written against the standard `Request`/`Response` API so it runs unchanged on Node (`@hono/node-server`), Vercel/Netlify, and Cloudflare Workers/Pages. |
+| Migrations | `src/lib/db/migrations/` | Idempotent, dialect-specific DDL for `pages`, `categories`, `menus`, `options` (plus `posts`, `profiles`, `media`, `comments`, `plugins` and `rwp_users`), provisioned identically across Postgres, MySQL and SQLite. |
+
+### Runtime configuration
+
+Everything is driven by `src/lib/runtime.ts`, which reads a server-injected object
+(`window.__REACT_WP_CONFIG__`) or environment variables — `VITE_DB_TYPE`, `DATABASE_URL`,
+`JWT_SECRET`, `S3_*`, … A persistent server also reads/writes `data/react-wp-config.json`.
+The 5-step Setup Wizard (`/setup`) provisions the database and either writes that file
+(persistent mode) or prints a ready-to-paste `.env` block (serverless/edge mode). See
+[`.env.example`](./.env.example) for every variable.
+
+### Running on each target
+
+**Local SQLite (zero config)**
+```bash
+VITE_DB_TYPE=libsql SQLITE_FILE=data/react-wp.db JWT_SECRET=$(openssl rand -hex 32) npm run start:hono
+# open http://localhost:3000/setup and pick "SQLite / Turso"
+```
+
+**Docker / VPS / DigitalOcean (persistent Node server)**
+```bash
+npm run build
+VITE_DB_TYPE=postgres DATABASE_URL=postgres://… JWT_SECRET=… npm run start:hono
+# mount ./data as a volume so react-wp-config.json and uploads/ survive restarts
+```
+
+**Vercel / Netlify (serverless)** — deploy `src/server/adapters/vercel.ts` as the function; the
+Setup Wizard's serverless path prints the `.env` string (`VITE_DB_TYPE`, `DATABASE_URL`,
+`JWT_SECRET`, `RWP_STORAGE=s3`, `S3_*`) to paste into the platform.
+
+**Cloudflare Workers / Pages (edge)** — deploy `src/server/adapters/cloudflare.ts`; pair it with
+**Turso/LibSQL** (`VITE_DB_TYPE=libsql`, `DATABASE_URL=libsql://…`, `LIBSQL_AUTH_TOKEN`) and an
+S3-compatible bucket (Cloudflare R2). Hono's `fetch` handler is the entire server.
+
+**Supabase (the original path)** — unchanged: `npm start` runs `server.mjs` and the classic
+Supabase Setup Wizard, with RLS, the plugin installer and SEO prerendering.
+
+### Notes
+
+- The universal drivers (`pg`, `mysql2`, `better-sqlite3`, `@libsql/client`, `bcryptjs`, `jose`,
+  `@aws-sdk/client-s3`) are **server-only** and loaded lazily, so they never enter the browser bundle.
+- The Supabase backend keeps the full 23-table `supabase/schema.sql` (RLS + triggers + RPCs); the
+  universal core schema in `src/lib/db/migrations/` is the platform-agnostic equivalent.
+- Run `npm run typecheck` to enforce types across every adapter and driver.
+
+[🔝 Back to top](#table-of-contents)
 [🔝 Back to top](#table-of-contents)
 
 ---

@@ -17,6 +17,13 @@ export default defineConfig({
     // the admin screens in src/App.tsx would shrink the entry chunk further.
     chunkSizeWarningLimit: 600,
     rolldownOptions: {
+      // Server-only drivers are loaded lazily (src/lib/db/adapters, src/lib/auth, src/lib/storage)
+      // and must never be bundled into the browser build. Mark them external so Rolldown leaves the
+      // dynamic import() calls untouched; they only resolve at runtime on a Node/edge server.
+      external: (id) => {
+        const serverOnly = ['pg', 'mysql2', 'better-sqlite3', '@libsql/client', 'bcryptjs', 'jose', '@aws-sdk/client-s3'];
+        return serverOnly.some((module) => id === module || id.startsWith(`${module}/`));
+      },
       output: {
         codeSplitting: {
           groups: [
