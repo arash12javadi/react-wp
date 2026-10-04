@@ -48,7 +48,7 @@ const providerLabels: Record<MediaProvider, string> = {
 };
 
 const migrationHint =
-  'Run supabase/migrations/20260912_profiles_capabilities_media.sql in the Supabase SQL Editor, then reload. Re-running it is safe.';
+  'Run supabase/schema.sql in the Supabase SQL Editor, then reload. Re-running it is safe.';
 
 /** Turns the common Postgres/PostgREST failures on this table into something actionable. */
 const explainMediaError = (error: unknown): string => {

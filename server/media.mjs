@@ -57,7 +57,7 @@ export async function authorizeMediaDelete(supabaseUrl, supabaseKey, accessToken
   if (!item) return { ok: false, status: 404, error: 'That media item is no longer in the library.' };
 
   const permission = await rpc(auth.baseUrl, auth.headers, 'rwp_can_manage_media', { p_uploaded_by: item.uploaded_by });
-  // Before the 20260920 migration there is no ownership rule, and the delete policy lets any
+  // Before the 20260920 schema there is no ownership rule, and the delete policy lets any
   // uploader delete any row, so this matches what the database allows.
   if (!functionMissing(permission)) {
     if (!permission.ok) {

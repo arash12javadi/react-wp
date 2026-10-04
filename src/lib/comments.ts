@@ -29,10 +29,10 @@ export const explainCommentError = (error: unknown): string => {
   // A missing relationship is not a missing table. Conflating the two sent the last round
   // of debugging at the wrong migration entirely.
   if (/relationship|PGRST200/i.test(message)) {
-    return 'Comment authors cannot be linked to profiles. Run supabase/migrations/20260916_comment_author_fk.sql in the Supabase SQL Editor, then reload.';
+    return 'Comment authors cannot be linked to profiles. Run supabase/schema.sql in the Supabase SQL Editor, then reload.';
   }
   if (/schema cache|PGRST205/i.test(message) || /column .*(page_id|parent_id|author_id)/i.test(message)) {
-    return 'The comments table has not been migrated yet. Run supabase/migrations/20260915_comments_profiles_widgets.sql in the Supabase SQL Editor, then reload.';
+    return 'The comments table has not been created yet. Run supabase/schema.sql in the Supabase SQL Editor, then reload.';
   }
   if (/row-level security|violates row-level/i.test(message)) {
     return 'The database rejected this. You must be signed in to comment.';

@@ -18,7 +18,7 @@ import { getSupabaseClient, describeDbError, updateOption } from './db';
 import { EndpointUnavailableError } from './pluginSchema';
 import type { AntiBotForm, AntiBotProvider } from './antiBot';
 
-export const securityMigration = 'supabase/migrations/20261010_security_engine.sql';
+export const securityMigration = 'supabase/schema.sql';
 
 export type SameSitePolicy = 'Lax' | 'Strict' | 'None';
 

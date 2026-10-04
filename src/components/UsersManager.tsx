@@ -33,7 +33,7 @@ export default function UsersManager({ role: currentRole }: { role: UserRole }) 
     } catch (loadError: unknown) {
       const message = loadError instanceof Error ? loadError.message : describeDbError(loadError);
       setError(missingProfilesTable(message)
-        ? 'The profiles table is missing. Run supabase/migrations/20260912_profiles_capabilities_media.sql in the Supabase SQL Editor, then reload.'
+        ? 'The profiles table is missing. Run supabase/schema.sql in the Supabase SQL Editor, then reload.'
         : message);
     } finally {
       setLoading(false);

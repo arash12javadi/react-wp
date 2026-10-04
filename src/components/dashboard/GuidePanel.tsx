@@ -6,22 +6,6 @@ import styles from './Dashboard.module.css';
 
 type Navigate = (section: string, subsection?: string) => void;
 
-const migrations: Array<[string, string]> = [
-  ['20260911_create_plugins.sql', 'The plugins table behind the Plugins screen.'],
-  ['20260911_create_pages_categories.sql', 'Pages, posts and categories in one pages table.'],
-  ['20260912_profiles_capabilities_media.sql', 'Roles in public.profiles (a security fix) and the media library.'],
-  ['20260913_page_layout_seo.sql', 'Page width, sidebar and SEO fields.'],
-  ['20260914_auth_defaults.sql', 'Default role for new accounts and login options.'],
-  ['20260915_comments_profiles_widgets.sql', 'Comments on pages, profile bio and avatar, widgets.'],
-  ['20260916_comment_author_fk.sql', 'Lets comments show their author.'],
-  ['20260917_shop_plugin.sql', 'Everything the RWP Shop plugin stores.'],
-  ['20260918_page_builder.sql', 'Page builder layouts, templates, revisions and forms.'],
-  ['20260919_backup_restore.sql', 'Settings → Backup.'],
-  ['20260920_app_settings.sql', 'Settings → General, Uploads, SEO and Roles, enforced in the database.'],
-  ['20260921_profile_details.sql', 'Optional profile details (Profile → More about you).'],
-  ['20260922_theme_editor.sql', 'Appearance → Theme Editor: header, footer, sidebar, comments and home page layout, and custom code.'],
-];
-
 const envVars: Array<[string, string, string]> = [
   ['VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY', 'Only without the installer', 'The Supabase project the browser connects to. The installer writes these to data/react-wp-config.json instead, so most sites never set them.'],
   ['SUPABASE_SECRET_KEY', 'Shop payments, guest order emails, builder form emails', 'Supabase → Project Settings → API Keys → secret key. Server only: never give it a VITE_ prefix and never paste it into an admin screen.'],
@@ -35,7 +19,7 @@ const envVars: Array<[string, string, string]> = [
 ];
 
 const troubleshooting: Array<[string, string]> = [
-  ['"Could not find the table … in the schema cache" (PGRST205)', 'A migration has not run, or Supabase has not noticed it yet. Run the migration the message names; if you already did, run notify pgrst, \'reload schema\'; in the SQL Editor or wait a minute.'],
+  ['"Could not find the table … in the schema cache" (PGRST205)', 'The table has not been created, or Supabase has not noticed it yet. Run supabase/schema.sql in the SQL Editor; if you already did, run notify pgrst, \'reload schema\'; or wait a minute.'],
   ['"Saved", but nothing changed after a reload', 'Row level security blocked the write. Your role lacks the capability for that screen; check Users → your role.'],
   ['Shop, forms or media deletes fail under npm run dev', 'npm run dev only serves the pages. The /api routes come from npm start, which must also be running (on port 3000).'],
   ['Google or Facebook sign-in returns a redirect error', 'Add https://your-site/login (and http://localhost:3000/login) under Supabase → Authentication → URL Configuration → Redirect URLs.'],
@@ -76,7 +60,7 @@ export default function GuidePanel({ navigate }: { navigate: Navigate }) {
 
   const toc: Array<[string, string, string]> = [
     ['start', '🚀', 'Getting started'],
-    ['database', '🗄️', 'Database & migrations'],
+    ['database', '🗄️', 'Database'],
     ['environment', '🔑', 'Server secrets (.env.local)'],
     ['content', '📝', 'Pages & posts'],
     ['shortcodes', '🧷', 'Shortcodes'],
@@ -113,23 +97,16 @@ export default function GuidePanel({ navigate }: { navigate: Navigate }) {
         <p className={styles.muted}>Running the site: <code>npm start</code> builds and serves everything on port 3000. <code>npm run dev</code> is for editing code and needs <code>npm start</code> running beside it.</p>
       </Section>
 
-      <Section id="database" icon="🗄️" title="Database & migrations">
+      <Section id="database" icon="🗄️" title="Database">
         <p>
-          The installer creates every table from <code>supabase/schema.sql</code>. When an update adds features, it ships a
-          <strong> migration</strong>: a SQL file you run once by hand, because the site cannot change its own database.
+          The installer creates every table from <code>supabase/schema.sql</code>. That file is the whole database
+          schema, and it is safe to run again at any time: it only creates what is missing, so it never loses data.
         </p>
         <ol>
           <li>Open your project at <a href="https://supabase.com/dashboard/projects" target="_blank" rel="noreferrer">supabase.com/dashboard ↗</a> → <strong>SQL Editor</strong> → <strong>New query</strong>.</li>
-          <li>Open the file from the <code>supabase/migrations/</code> folder, copy all of it, paste, and click <strong>Run</strong>.</li>
-          <li>Reload the admin. Every migration is safe to run again, so if one stops halfway, fix the cause and run the whole file again.</li>
+          <li>Open <code>supabase/schema.sql</code>, copy all of it, paste, and click <strong>Run</strong>.</li>
+          <li>Reload the admin. If a run stops halfway, fix the cause and run the whole file again.</li>
         </ol>
-        <p>A site installed with the current version already has all of these. An older site needs the ones added after it was installed, oldest first:</p>
-        <div className={styles.tableWrap}>
-          <table className={styles.table}>
-            <thead><tr><th>File</th><th>What it adds</th></tr></thead>
-            <tbody>{migrations.map(([file, purpose]) => <tr key={file}><td><code>{file}</code></td><td>{purpose}</td></tr>)}</tbody>
-          </table>
-        </div>
         <p className={styles.muted}>
           Security is enforced in the database with row level security, not by hiding buttons. That is why a role without
           permission gets &ldquo;nothing saved&rdquo; rather than a screen error, and why secrets never belong in admin
@@ -272,7 +249,7 @@ export default function GuidePanel({ navigate }: { navigate: Navigate }) {
       <Section id="backup" icon="💾" title="Backup & updates">
         <ul>
           <li><strong>Settings → Backup → Export backup</strong> downloads the whole site (content, settings, shop, media files) as one ZIP. Restore it here or on a fresh installation. It never contains passwords or <code>.env.local</code>, but it does contain customer details: store it safely.</li>
-          <li><strong>Dashboard → Updates</strong> checks for new versions of the app and its plugins, by hand or on a schedule, and lists the migrations each update needs. Back up before installing one.</li>
+          <li><strong>Dashboard → Updates</strong> checks for new versions of the app and its plugins, by hand or on a schedule. Back up before installing one.</li>
         </ul>
       </Section>
 

@@ -49,7 +49,7 @@ export interface Page {
   comments_open?: boolean;
   meta_keywords?: string | null;
   author_id?: string | null;
-  /** A Page Builder site template (header, single post, 404…), not content. See 20260925_site_templates.sql. */
+  /** A Page Builder site template (header, single post, 404…), not content. */
   is_site_template?: boolean;
   template_type?: string | null;
   created_at: string;

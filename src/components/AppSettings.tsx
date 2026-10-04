@@ -276,7 +276,7 @@ function LanguageFields({ value, onChange }: { value: I18nSettings; onChange: (n
         <span className={settingsStyles.help}>
           It sits in the header&rsquo;s action buttons and is hidden automatically while the site offers one language.
           Appearance → Theme Editor → Header action buttons can hide it for one layout without turning it off here.
-          Needs the <code>{i18nMigration}</code> migration.
+          Needs <code>{i18nMigration}</code>.
         </span>
         <div className={styles.grant}>
           <span className={settingsStyles.help}>Preview — these buttons switch this admin screen&rsquo;s language:</span>
@@ -358,8 +358,8 @@ function EngagementFields({ value, onChange }: {
           Enforced by the database: while this is off, no view is recorded at all. A view counts once per browser per
           item every 30 minutes, and never for the author reading their own post. No IP address, account or visitor
           id is stored — only hashes salted with a random value that is replaced every day, so they cannot be traced
-          back once that day is over. Totals are under <strong>Dashboard → Analytics</strong>. Needs the{' '}
-          <code>{engagementMigration}</code> migration.
+          back once that day is over. Totals are under <strong>Dashboard → Analytics</strong>. Needs{' '}
+          <code>{engagementMigration}</code>.
         </span>
         <div>
           <button type="button" className={settingsStyles.secondaryButton} disabled={recounting} onClick={() => void recount()}>
@@ -589,8 +589,8 @@ export default function AppSettings({ tab }: { tab: Tab }) {
                   </Toggle>
                   <span className={settingsStyles.help}>
                     The meta description field is always available in the editor&rsquo;s SEO panel. Google ignores meta
-                    keywords; turn this on only if another search engine or tool you use reads them. Needs the{' '}
-                    <code>{appSettingsMigration}</code> migration.
+                    keywords; turn this on only if another search engine or tool you use reads them. Needs{' '}
+                    <code>{appSettingsMigration}</code>.
                   </span>
                 </fieldset>
 

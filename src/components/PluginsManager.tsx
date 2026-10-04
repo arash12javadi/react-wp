@@ -194,7 +194,7 @@ export default function PluginsManager() {
           const message = loadError instanceof Error ? loadError.message : 'Unable to load plugins.';
           setError(
             message.includes('relation') && message.includes('plugins')
-              ? 'The plugins table is missing. Run supabase/migrations/20260911_create_plugins.sql in the Supabase SQL Editor, then reload this page.'
+              ? 'The plugins table is missing. Run supabase/schema.sql in the Supabase SQL Editor, then reload this page.'
               : message,
           );
         }

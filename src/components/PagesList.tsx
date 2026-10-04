@@ -62,7 +62,7 @@ export default function PagesList({ onCreate, onEdit, role }: { onCreate: (isPos
       const message = explainContentError(loadError);
       setError(
         message.includes('public.pages') || message.includes('relation "pages"')
-          ? 'The pages table is missing. Run supabase/migrations/20260911_create_pages_categories.sql in the Supabase SQL Editor, then reload this page.'
+          ? 'The pages table is missing. Run supabase/schema.sql in the Supabase SQL Editor, then reload this page.'
           : message,
       );
     } finally { setLoading(false); }

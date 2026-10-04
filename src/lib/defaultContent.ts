@@ -34,7 +34,7 @@ export interface DefaultContentItem {
 
 export type DefaultContentGroup = 'site' | 'account';
 
-export const defaultContentMigration = 'supabase/migrations/20261001_account_pages_capabilities.sql';
+export const defaultContentMigration = 'supabase/schema.sql';
 
 const policyText = (name: string) => `<p><strong>This is a starting point, not legal advice.</strong> Replace it with a ${name} that fits your site and the laws that apply to you.</p>`;
 

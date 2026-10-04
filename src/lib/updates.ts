@@ -7,7 +7,7 @@ import { rwp } from './rwp';
  * replace its own code. What runs here is the *checking*: a JSON feed lists the latest app and
  * plugin versions, the result is stored for every administrator, and the check can repeat on a
  * schedule. Installing an update stays a deliberate step on the host (git pull / new ZIP, then
- * npm start), with the feed naming any migrations the update needs.
+ * npm start).
  */
 
 export { installedAppVersion };
@@ -40,8 +40,6 @@ export interface FeedRelease {
   version: string;
   released?: string;
   notes?: string[];
-  /** Repository paths of migrations to run in the Supabase SQL Editor after updating. */
-  migrations?: string[];
   download_url?: string;
   changelog_url?: string;
 }

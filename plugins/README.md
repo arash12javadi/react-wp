@@ -104,7 +104,7 @@ build and only changes after `npm run build` and a server restart.
 `rwp-code-snippets` adds the Code Snippets screen: CSS, JavaScript, HTML and React hook
 snippets stored in `public.code_snippets`, a Gemini-backed code generator and assistant,
 and JSON backup/restore. See the "Code snippets and the AI developer assistant" section of
-the root README, and run `supabase/migrations/20260930_code_snippets.sql` first.
+the root README. The plugin installs its own `plugins/rwp-code-snippets/schema.sql` (`public.code_snippets`) when it is activated.
 
 The runtime that applies snippets lives in core, at `src/core/SnippetInjector.tsx`, because
 core must not import plugin code. The plugin starts it on activation and returns its cleanup,

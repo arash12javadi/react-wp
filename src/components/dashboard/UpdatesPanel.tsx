@@ -28,18 +28,18 @@ function HowToInstall() {
       <ol>
         <li>Stop the server, then run <code>git pull</code> in the project folder.</li>
         <li>Run <code>npm install</code> (new packages may have been added).</li>
-        <li>Run every migration listed with the update in Supabase → SQL Editor, oldest first. Each one is safe to re-run.</li>
+        <li>If the update changed the database, run <code>supabase/schema.sql</code> again in Supabase → SQL Editor. It is safe to re-run.</li>
         <li>Start again with <code>npm start</code> (it rebuilds before starting).</li>
       </ol>
       <h4>If you installed from a ZIP</h4>
       <ol>
         <li>Download the new ZIP and extract it over the old folder, <strong>keeping</strong> <code>.env.local</code> and the <code>data/</code> folder.</li>
-        <li>Run <code>npm install</code>, run the listed migrations, then <code>npm start</code>.</li>
+        <li>Run <code>npm install</code>, run <code>supabase/schema.sql</code> in Supabase if the update changed the database, then <code>npm start</code>.</li>
       </ol>
       <h4>On Vercel</h4>
       <ol>
         <li>Pull the update into the repository Vercel deploys from and push; Vercel rebuilds automatically.</li>
-        <li>Run the listed migrations in Supabase.</li>
+        <li>If the update changed the database, run <code>supabase/schema.sql</code> in Supabase again.</li>
       </ol>
     </details>
   );
@@ -153,12 +153,6 @@ export default function UpdatesPanel({ status }: { status: AdminStatus }) {
           </p>
           {update.release.notes && update.release.notes.length > 0 && (
             <ul className={styles.notes}>{update.release.notes.map((note) => <li key={note}>{note}</li>)}</ul>
-          )}
-          {update.release.migrations && update.release.migrations.length > 0 && (
-            <div className={styles.warning}>
-              <strong>Database migrations to run after updating, in this order:</strong>
-              <ol>{update.release.migrations.map((migration) => <li key={migration}><code>{migration}</code></li>)}</ol>
-            </div>
           )}
           <div className={styles.buttonRow}>
             {update.release.download_url && /^https:\/\//i.test(update.release.download_url) && (

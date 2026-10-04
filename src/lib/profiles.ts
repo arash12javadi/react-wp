@@ -70,7 +70,7 @@ export const emptyProfileDetails: ProfileDetails = {
   timezone: '', phone: '', birth_date: '', social_links: {},
 };
 
-export const profileDetailsMigration = 'supabase/migrations/20260921_profile_details.sql';
+export const profileDetailsMigration = 'supabase/schema.sql';
 
 const detailTextKeys = ['first_name', 'last_name', 'pronouns', 'job_title', 'company', 'website', 'location', 'timezone', 'phone', 'birth_date'] as const;
 

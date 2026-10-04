@@ -225,7 +225,7 @@ export default function SecurityPanel({ tab }: { tab: SecurityTab }) {
     <>
       {migrationMissing && (
         <div className={styles.warning} role="status">
-          <strong>This site has not run the security migration yet.</strong>
+          <strong>This site is missing the security database tables.</strong>
           <p className={styles.cardText}>
             Run <code>{securityMigration}</code> in the Supabase SQL Editor. Until then the settings below fall back to
             their defaults and the CAPTCHA secret has nowhere to be stored.

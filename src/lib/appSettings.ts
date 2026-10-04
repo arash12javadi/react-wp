@@ -65,7 +65,7 @@ export interface AppSettings {
 }
 
 export const appSettingsOption = 'rwp_app_settings';
-export const appSettingsMigration = 'supabase/migrations/20260920_app_settings.sql';
+export const appSettingsMigration = 'supabase/schema.sql';
 
 export const defaultAppSettings: AppSettings = {
   general: { show_page_titles: true, show_post_titles: true, show_post_dates: true, scope_media_to_owner: false },

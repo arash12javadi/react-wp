@@ -4,7 +4,7 @@ import { rwp } from './rwp';
 /** Status values a row in public.pages can hold. 'trash' needs the 20260926 migration. */
 export type ContentStatus = 'draft' | 'published' | 'trash';
 
-export const trashMigration = 'supabase/migrations/20260926_bulk_actions_trash.sql';
+export const trashMigration = 'supabase/schema.sql';
 
 /**
  * "View page" for content being edited. A draft is not public, so it gets a preview address,

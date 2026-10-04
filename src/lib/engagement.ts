@@ -4,7 +4,7 @@ import { loginHref } from './account';
 import type { AppSettings } from './appSettings';
 
 /**
- * Likes, saved items (bookmarks), follows and view counts (supabase/migrations/20261004_engagement.sql).
+ * Likes, saved items (bookmarks), follows and view counts (supabase/schema.sql).
  *
  * Every button on a page reads from one shared store, filled by one request per item type
  * (rwp_engagement_state / rwp_follow_state) however many buttons ask in the same tick. Changes are
@@ -21,7 +21,7 @@ export type EngagementTargetType = 'page' | 'product' | (string & {});
 export type FollowTargetType = 'user' | 'category';
 export type PopularTimeframe = 'week' | 'month' | 'all';
 
-export const engagementMigration = 'supabase/migrations/20261004_engagement.sql';
+export const engagementMigration = 'supabase/schema.sql';
 
 export interface EngagementItemState {
   likes: number;

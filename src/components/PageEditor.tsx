@@ -20,7 +20,7 @@ interface PageEditorProps {
   role: UserRole;
 }
 
-const pageChromeMigration = 'supabase/migrations/20261002_page_header_footer.sql';
+const pageChromeMigration = 'supabase/schema.sql';
 
 const slugify =(value: string) => value.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '-').replace(/^-+|-+$/g, '');
 const empty = {
@@ -75,7 +75,7 @@ export default function PageEditor({ page, initialIsPost = false, onSaved, onCan
       if (queryError) {
         setError(
           queryError.message.includes('public.categories') || queryError.message.includes('relation "categories"')
-            ? 'The categories table is missing. Run supabase/migrations/20260911_create_pages_categories.sql in the Supabase SQL Editor, then reload this page.'
+            ? 'The categories table is missing. Run supabase/schema.sql in the Supabase SQL Editor, then reload this page.'
             : queryError.message,
         );
       }
@@ -119,7 +119,7 @@ export default function PageEditor({ page, initialIsPost = false, onSaved, onCan
           throw new Error(`The pages table has no show_header / show_footer columns yet, so the header and footer cannot be hidden. Run ${pageChromeMigration} in the Supabase SQL Editor, then save again. (${result.error.message})`);
         }
         if (result.error.message.includes('public.pages') || result.error.message.includes('relation "pages"')) {
-          throw new Error('The pages table is missing. Run supabase/migrations/20260911_create_pages_categories.sql in the Supabase SQL Editor, then reload this page.');
+          throw new Error('The pages table is missing. Run supabase/schema.sql in the Supabase SQL Editor, then reload this page.');
         }
         throw new Error(result.error.code === '23505' ? 'That slug is already in use.' : result.error.message);
       }

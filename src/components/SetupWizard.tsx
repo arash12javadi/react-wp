@@ -113,7 +113,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
     }
   };
 
-  // Step 2: Execute migrations, register Superadmin, and update options
+  // Step 2: Execute the schema, register Superadmin, and update options
   const handleCompleteInstallation = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     setLoading(true);

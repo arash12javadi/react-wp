@@ -10,7 +10,7 @@ import {
  * write either table (checked on profiles.role by their policies).
  */
 
-export const capabilityGrantsMigration = 'supabase/migrations/20261001_account_pages_capabilities.sql';
+export const capabilityGrantsMigration = 'supabase/schema.sql';
 
 export interface UserGrant {
   user_id: string;

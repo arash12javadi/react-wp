@@ -14,7 +14,7 @@ import { sanitizeTrackingHtml } from './scriptSanitizer.js';
  * through normalizeLayout: unknown block types, settings and containers are dropped.
  */
 
-export const themeMigration = 'supabase/migrations/20260922_theme_editor.sql';
+export const themeMigration = 'supabase/schema.sql';
 
 export type ThemeAreaId = 'header' | 'footer' | 'sidebar' | 'comments' | 'index';
 

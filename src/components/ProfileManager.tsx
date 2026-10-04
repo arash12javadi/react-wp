@@ -106,7 +106,7 @@ export default function ProfileManager({ role, embedded = false }: { role: UserR
           .select();
         if (insertError) throw insertError;
         if (!created || created.length === 0) {
-          throw new Error('The database accepted the request but changed nothing. Your row level security policy is rejecting this update — check that supabase/migrations/20260912_profiles_capabilities_media.sql has been run.');
+          throw new Error('The database accepted the request but changed nothing. Your row level security policy is rejecting this update — check that supabase/schema.sql has been run.');
         }
         setProfile(created[0] as Profile);
       } else {
@@ -116,7 +116,7 @@ export default function ProfileManager({ role, embedded = false }: { role: UserR
     } catch (saveError: unknown) {
       const message = describeDbError(saveError);
       setError(/column .*(bio|avatar_url)|schema cache/i.test(message)
-        ? 'The profiles table is missing the bio and avatar columns. Run supabase/migrations/20260915_comments_profiles_widgets.sql in the Supabase SQL Editor, then reload.'
+        ? 'The profiles table is missing the bio and avatar columns. Run supabase/schema.sql in the Supabase SQL Editor, then reload.'
         : message);
     } finally {
       setSavingProfile(false);

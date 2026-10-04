@@ -28,8 +28,8 @@ export const quietFolderIcons: Record<string, string> = {
 export const isQuietMediaFolder = (folder: string) =>
   quietMediaFolders.some((root) => folder === root || folder.startsWith(`${root}/`));
 
-export const mediaFoldersMigration = 'supabase/migrations/20260927_media_folders.sql';
-export const folderManagerMigration = 'supabase/migrations/20260928_media_folder_manager.sql';
+export const mediaFoldersMigration = 'supabase/schema.sql';
+export const folderManagerMigration = 'supabase/schema.sql';
 
 /** "blog/2026/may" -> ["blog", "blog/2026", "blog/2026/may"]. */
 export const folderLineage = (path: string) =>

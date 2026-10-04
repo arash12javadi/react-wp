@@ -132,7 +132,7 @@ export interface RwpContentRendererProps {
 
 export interface RwpContentRenderer {
   id: string;
-  /** Receives the full pages row (select *), including columns added by plugin migrations. */
+  /** Receives the full pages row (select *), including columns added by plugins. */
   match: (page: Page) => boolean;
   /** Replaces the title, excerpt and content of a page on the public site. */
   component: ComponentType<RwpContentRendererProps>;

@@ -114,7 +114,7 @@ export const i18nOptionNames = [
   'default_site_language', 'default_admin_language', 'show_header_language_switcher', 'supported_languages',
 ] as const;
 
-export const i18nMigration = 'supabase/migrations/20260929_i18n_hooks.sql';
+export const i18nMigration = 'supabase/schema.sql';
 
 export const defaultI18nSettings: I18nSettings = {
   default_site_language: 'en',

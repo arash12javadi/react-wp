@@ -47,7 +47,7 @@ export interface RestoreReport {
 
 type Progress = (message: string) => void;
 
-const MIGRATION = 'supabase/migrations/20260919_backup_restore.sql';
+const MIGRATION = 'supabase/schema.sql';
 
 // Keys that describe where this site uploads to, rather than what it contains.
 const MEDIA_SETTING_KEYS = ['cloudinary_cloud_name', 'cloudinary_upload_preset', 'imagekit_public_key', 'imagekit_url_endpoint'] as const;

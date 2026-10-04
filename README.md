@@ -161,8 +161,7 @@ react-wp/
 ├─ server.mjs           Self-hosted Node entry point
 ├─ api/                 Vercel serverless functions
 ├─ supabase/
-│  ├─ schema.sql        Core CMS schema (23 tables)
-│  └─ migrations/       Run by hand in the Supabase SQL Editor
+│  └─ schema.sql        Core CMS schema (23 tables); safe to re-run
 ├─ data/                react-wp-config.json (created by the installer, git-ignored)
 └─ updates.json         Version manifest used by Dashboard → Updates
 ```
@@ -174,7 +173,7 @@ react-wp/
 
 - `supabase/schema.sql` is **core only**: pages, posts, categories, comments, profiles, options, menus, media, plugins, theme settings, roles, translations, engagement tables and more.
 - A plugin's `schema.sql` may depend on core, but **core never references a plugin object**, and one plugin never references another. Optional integrations are found by name at run time.
-- Every migration must be safely re-runnable: `if not exists`, `drop policy/trigger if exists` before create, and a final `notify pgrst, 'reload schema';`.
+- The schema must be safely re-runnable: `if not exists`, `drop policy/trigger if exists` before create, and a final `notify pgrst, 'reload schema';`.
 
 </details>
 
@@ -321,9 +320,10 @@ Remember the limits in [Deployment Options](#deployment-options).
 <details>
 <summary><b>Updating an existing site</b></summary>
 
-Migrations in `supabase/migrations/` are **run by hand in the Supabase SQL Editor**; the app
-cannot apply them. Dashboard → Updates only *checks* `updates.json`; it never installs anything.
-Run any new migrations it lists, then pull and rebuild.
+`supabase/schema.sql` is the whole database schema and is **run by hand in the Supabase SQL
+Editor**; the app cannot change its own database. It is safe to re-run: it only creates what is
+missing. Dashboard → Updates only *checks* `updates.json`; it never installs anything. Pull,
+re-run `supabase/schema.sql` if the update changed the schema, then rebuild.
 
 </details>
 
@@ -382,7 +382,7 @@ Pull requests are welcome.
 1. Fork the repo and create a branch: `git checkout -b feature/my-change`.
 2. Read the [Technical Reference](#technical-reference) for the area you are changing.
 3. Run `npm run build` and `npm run lint`.
-4. For database changes, add a migration that is **safely re-runnable**, and keep it in sync with `supabase/schema.sql` or the plugin's `schema.sql`.
+4. For database changes, add them to `supabase/schema.sql` (core) or the plugin's `schema.sql`, and keep them **safely re-runnable**.
 5. Open a pull request describing what changed and why.
 
 Building a plugin? Start from `plugins/rwp-sample-plugin` and the [plugin API](#rwp-plugin-and-hook-api).
@@ -410,10 +410,9 @@ Detailed, per-feature documentation and the reasoning behind each design decisio
 
 ## Security, rate limiting, caching and the SEO routes
 
-Everything in this section is configured under **Settings → Security** and needs
-`supabase/migrations/20261010_security_engine.sql`. It is core, not a plugin: `server.mjs` applies
-it before any plugin is loaded, and `/sitemap.xml` and `/robots.txt` are served on a site with no
-plugins at all.
+Everything in this section is configured under **Settings → Security** and is created by
+`supabase/schema.sql`. It is core, not a plugin: `server.mjs` applies it before any plugin is
+loaded, and `/sitemap.xml` and `/robots.txt` are served on a site with no plugins at all.
 
 ### How the settings reach the server
 
@@ -648,21 +647,21 @@ ImageKit files are not deleted: its delete API needs the stored fileId and has n
 
 Take a backup from Settings → Backup first — it is the only thing that brings any of this back.
 
-### Updating an existing database for plugins
+### Adding the plugins table to an existing database
 
-If the site was installed before plugin support was added, run [`supabase/migrations/20260911_create_plugins.sql`](./supabase/migrations/20260911_create_plugins.sql) in the Supabase SQL Editor. The initial installer creates this table for new installations, but it cannot change an already-installed database unless the installation endpoint is run again.
+If the site was installed before plugin support was added, re-run [`supabase/schema.sql`](./supabase/schema.sql) in the Supabase SQL Editor: it creates the `plugins` table if it is missing and changes nothing else. The installer is the normal path for a new installation.
 
 ### Unified pages and posts
 
-Run [`supabase/migrations/20260911_create_pages_categories.sql`](./supabase/migrations/20260911_create_pages_categories.sql) for an existing installation. It creates `categories` and the unified `pages` table, then copies existing rows from `posts` into `pages` as blog posts. New installations create these tables from `supabase/schema.sql`.
+[`supabase/schema.sql`](./supabase/schema.sql) creates `categories` and the unified `pages` table. New installations get them at install time; re-running the file adds them to an older database. It does not copy a legacy `posts` table across by itself — bring those rows over by hand if you still have them.
 
 ### Roles, capabilities, and the media library
 
-Run [`supabase/migrations/20260912_profiles_capabilities_media.sql`](./supabase/migrations/20260912_profiles_capabilities_media.sql) for an existing installation. New installations get all of it from `supabase/schema.sql`.
+[`supabase/schema.sql`](./supabase/schema.sql) creates all of it. Re-running it adds whatever an older database is missing.
 
-This migration moves user roles out of `auth.users.raw_user_meta_data` and into a new `public.profiles` table. That change is a security fix, not a refactor: Supabase lets any signed-in user rewrite their own `user_metadata` with `supabase.auth.updateUser()`, so while roles lived there, any subscriber could promote themselves to administrator, and the row level security policies that read the same value believed them. Roles now live in `profiles`, a trigger rejects anyone changing their own role, and every table policy checks `public.user_has_cap()` instead of the JWT.
+The schema moves user roles out of `auth.users.raw_user_meta_data` and into a new `public.profiles` table. That change is a security fix, not a refactor: Supabase lets any signed-in user rewrite their own `user_metadata` with `supabase.auth.updateUser()`, so while roles lived there, any subscriber could promote themselves to administrator, and the row level security policies that read the same value believed them. Roles now live in `profiles`, a trigger rejects anyone changing their own role, and every table policy checks `public.user_has_cap()` instead of the JWT.
 
-The migration backfills existing users from their old metadata, so the administrator created at install time keeps that role. New sign-ups always start as `subscriber`.
+Running the schema creates a `profiles` row for every account that does not already have one, with the default role; roles from the old metadata are not read back, so assign them by hand under **Users**. New sign-ups always start as `subscriber`.
 
 Roles and their capabilities are defined in [`src/lib/roles.ts`](./src/lib/roles.ts) and mirrored into SQL by `public.user_has_cap()`. **If you change one, change the other** — the TypeScript map drives the admin UI, and the SQL function drives what the database actually permits. Capabilities added under Settings → Roles are data (two tables both sides read), not code, so they need no such change.
 
@@ -670,7 +669,7 @@ Administrators can view every user and change roles under the **Users** admin se
 
 ### Media
 
-The same migration adds the `public.media` table behind the **Media** admin section, which stores uploads to Cloudinary and ImageKit alongside plain external image URLs. Provider settings live under **Media → Upload settings**.
+The same schema adds the `public.media` table behind the **Media** admin section, which stores uploads to Cloudinary and ImageKit alongside plain external image URLs. Provider settings live under **Media → Upload settings**.
 
 Which credentials you need depends on the operation, because Cloudinary and ImageKit differ:
 
@@ -690,13 +689,13 @@ If the delete credentials are not configured, deleting still works but only remo
 
 The Cloudinary cloud name is read from the `cloudinary_cloud_name` option you already set in the admin, so only `CLOUDINARY_API_KEY` and `CLOUDINARY_API_SECRET` belong in the environment.
 
-Files uploaded before the `provider_file_id` column existed are still deletable: the public id is recovered from the delivery URL, and the 20260915 migration backfills the column for existing rows.
+Files uploaded before the `provider_file_id` column existed are still deletable: the public id is recovered from the delivery URL, and running the schema backfills the column for existing rows.
 
 To create a Cloudinary unsigned preset: **Settings → Upload → Upload presets → Add upload preset**, set Signing Mode to **Unsigned**, and copy the preset name into **Media → Upload settings** along with your cloud name.
 
 ### Page layout and SEO
 
-Run [`supabase/migrations/20260913_page_layout_seo.sql`](./supabase/migrations/20260913_page_layout_seo.sql) for an existing installation. It adds per-page layout controls (`layout`, `show_sidebar`) and Yoast-style SEO fields to `pages`. Safe to re-run.
+[`supabase/schema.sql`](./supabase/schema.sql) gives `pages` per-page layout controls (`layout`, `show_sidebar`) and Yoast-style SEO fields. Safe to re-run on an existing database.
 
 Each page can choose Boxed, Wide or Full width, with the sidebar on or off, from the editor's side panel. The SEO panel below the editor provides a search-result preview, SEO title and meta description with length limits, a focus keyword with a checklist, Open Graph and Twitter fields, canonical URL and a `noindex` toggle.
 
@@ -716,8 +715,6 @@ curl -s http://localhost:3000/your-slug | grep -i "og:title"
 **This works on `npm start` only.** On Vercel the static build is served straight from the CDN, so no injection happens; matching it would need a rewrite routing HTML requests through a serverless function.
 
 ### Accounts, login and registration
-
-Run [`supabase/migrations/20260914_auth_defaults.sql`](./supabase/migrations/20260914_auth_defaults.sql) for an existing installation.
 
 The site has public `/login` and `/register` pages with email and password, plus optional Google and Facebook buttons. `/admin` no longer carries its own sign-in form; visiting it while signed out redirects to `/login?redirect=/admin`. Which page those addresses show is chosen under Settings → Accounts (see [Account pages, redirects and capability grants](#account-pages-redirects-and-capability-grants)).
 
@@ -744,19 +741,17 @@ This is also the release where the shortcode API documented above started doing 
 
 #### Floating login
 
-**Settings → Floating Login** puts a button in a corner of every public page that opens a Log in / Register / Forgot password dialog, with a dark, light or glass theme and a live preview in the admin. Its six settings are `floating_login_*` rows in `options`; [`supabase/migrations/20261007_floating_login.sql`](./supabase/migrations/20261007_floating_login.sql) only seeds the defaults, which apply anyway when a row is missing.
+**Settings → Floating Login** puts a button in a corner of every public page that opens a Log in / Register / Forgot password dialog, with a dark, light or glass theme and a live preview in the admin. Its six settings are `floating_login_*` rows in `options`; [`supabase/schema.sql`](./supabase/schema.sql) only seeds the defaults, which apply anyway when a row is missing.
 
 It uses the same flows as the `/login` screen: the reset email links to `/lost-password`, and sign-up never sends a role, so new accounts get the default role. The Register tab also needs "Anyone can register" under Settings → Accounts. The button is hidden for signed-in visitors and on the account pages. **Redirect after login** takes `current` (reload the page the visitor is on), a site path or an https:// address. There is no nonce: Supabase sends the session as a header, not a cookie, so the cross-site request a WordPress nonce guards against cannot act as the visitor.
 
 ### Comments, profiles and widgets
 
-Run [`supabase/migrations/20260915_comments_profiles_widgets.sql`](./supabase/migrations/20260915_comments_profiles_widgets.sql) for an existing installation.
+[`supabase/schema.sql`](./supabase/schema.sql) creates the comments table, the `profiles` `bio`/`avatar` columns, the comment policies and the `comments.author_id` link to `profiles`.
 
-Then run [`supabase/migrations/20260916_comment_author_fk.sql`](./supabase/migrations/20260916_comment_author_fk.sql).
+**The comments table had to be repointed.** It referenced `posts(id)`, but all content has lived in the unified `pages` table since the 20260911 schema, so comments could not attach to anything the site actually renders. The schema adds `page_id`, `parent_id` and `author_id`.
 
-**The comments table had to be repointed.** It referenced `posts(id)`, but all content has lived in the unified `pages` table since the 20260911 migration, so comments could not attach to anything the site actually renders. The migration adds `page_id`, `parent_id` and `author_id`, carries existing rows across by matching slugs, and drops `post_id`.
-
-`comments.author_id` references `public.profiles(id)`, not `auth.users(id)`. That distinction matters: PostgREST can only embed a table it has a foreign key path to, so pointing at `auth.users` made every comment read fail while inserts kept working — a confusing split that the 20260916 migration corrects. `profiles.id` is itself a reference to `auth.users(id)`, so the two are equivalent in what they constrain.
+`comments.author_id` references `public.profiles(id)`, not `auth.users(id)`. That distinction matters: PostgREST can only embed a table it has a foreign key path to, so pointing at `auth.users` made every comment read fail while inserts kept working — a confusing split that the current schema corrects. `profiles.id` is itself a reference to `auth.users(id)`, so the two are equivalent in what they constrain.
 
 The author's display name is also stored on the comment row. `public.profiles` is readable by authenticated users only, since it holds email addresses, so without that copy every comment would show as "Someone" to signed-out readers.
 
@@ -772,10 +767,9 @@ A WooCommerce-style store, shipped as a bundled plugin in [`plugins/rwp-shop`](.
 
 **Setup**
 
-1. Run [`supabase/migrations/20260917_shop_plugin.sql`](./supabase/migrations/20260917_shop_plugin.sql) in the Supabase SQL Editor. Safe to re-run. New installations get it from `schema.sql`.
-2. Activate **RWP Shop** under **Plugins**. **Shop** then appears in the admin menu for Administrators and the new **Shop Manager** role.
-3. Under **Shop → Settings**: pick the currency, store address, payment methods, tax and shipping zones. Add products under **Shop → Products**. Dashboard → Overview lists whatever the shop still needs.
-4. For online payments and email, set the server environment variables listed in [`.env.example`](./.env.example) and restart: `SUPABASE_SECRET_KEY`, then any of `STRIPE_SECRET_KEY` (+ `STRIPE_WEBHOOK_SECRET`), `PAYPAL_CLIENT_ID`/`PAYPAL_CLIENT_SECRET`/`PAYPAL_MODE`, and `SMTP_*`. **Shop → Settings → Status** shows which are set.
+1. Activate **RWP Shop** under **Plugins**. It installs its own `plugins/rwp-shop/schema.sql` (its twenty `shop_*` tables) on activation, and **Shop** then appears in the admin menu for Administrators and the new **Shop Manager** role.
+2. Under **Shop → Settings**: pick the currency, store address, payment methods, tax and shipping zones. Add products under **Shop → Products**. Dashboard → Overview lists whatever the shop still needs.
+3. For online payments and email, set the server environment variables listed in [`.env.example`](./.env.example) and restart: `SUPABASE_SECRET_KEY`, then any of `STRIPE_SECRET_KEY` (+ `STRIPE_WEBHOOK_SECRET`), `PAYPAL_CLIENT_ID`/`PAYPAL_CLIENT_SECRET`/`PAYPAL_MODE`, and `SMTP_*`. **Shop → Settings → Status** shows which are set.
 
 Public pages: `/shop`, `/product-category/<slug>`, `/product-tag/<slug>`, `/product/<slug>`, `/cart`, `/checkout`, `/checkout/order-received/<id>`, `/checkout/order-pay/<id>`, `/my-account`. Shortcodes: `[rwp_products limit="4" category="slug" featured="1" on_sale="1" orderby="popularity"]`, `[rwp_add_to_cart id="<product id>"]`, `[rwp_cart_link]`, and the commerce tools below.
 
@@ -789,13 +783,13 @@ Features: simple, variable (attributes → variations), grouped and external pro
 
 **On Vercel** the shop works the same way: `api/plugins.ts` serves the plugin routes, and `vercel.json` now also routes unknown paths to `index.html`, so refreshing `/shop` or any other client route no longer 404s. Set the same environment variables in the Vercel project.
 
-The migration also fixes a sign-up bug in `handle_new_user`: when the `default_user_role` option had never been saved, `null not in (...)` evaluated to null rather than true, so the fallback to `subscriber` never ran and every sign-up failed.
+The schema also fixes a sign-up bug in `handle_new_user`: when the `default_user_role` option had never been saved, `null not in (...)` evaluated to null rather than true, so the fallback to `subscriber` never ran and every sign-up failed.
 
 To test Stripe without real money use a `sk_test_` key and card `4242 4242 4242 4242`; for PayPal leave `PAYPAL_MODE=sandbox` and use a sandbox buyer account.
 
 #### Q&A, Make an Offer, price alerts and Frequently Bought Together
 
-Run [`supabase/migrations/20261004_engagement.sql`](./supabase/migrations/20261004_engagement.sql) and then [`supabase/migrations/20261005_shop_engagement.sql`](./supabase/migrations/20261005_shop_engagement.sql) for a site where the shop is already active (activating the shop on `npm start` runs `plugins/rwp-shop/schema.sql`, which contains the second one). Both are safe to re-run. The tables are the shop's own (`shop_product_qa`, `shop_product_offers`, `shop_price_drop_alerts`, `shop_product_bundles`), declared in its manifest, so they are backed up and wiped with the shop.
+Core's engagement tables come from [`supabase/schema.sql`](./supabase/schema.sql); the shop's own (`shop_product_qa`, `shop_product_offers`, `shop_price_drop_alerts`, `shop_product_bundles`) come from `plugins/rwp-shop/schema.sql`, which activating the shop on `npm start` runs. Both are safe to re-run. The shop's tables are declared in its manifest, so they are backed up and wiped with the shop.
 
 The product page shows all four, plus Like, Save and the view count from core's engagement system. Each is also a shortcode — `[rwp_product_qa]`, `[rwp_make_offer]`, `[rwp_price_alert]`, `[rwp_frequently_bought]` (with `id="…"` or `slug="…"`, or none on a product page) — and a Page Builder widget in the Shop group (Product Q&A, Make an Offer, Price Drop Alert, Frequently Bought Together, Product Like & Save), so a Product template can place them. They are managed under **Shop → Offers, Questions, Price alerts and Bundles**, where each screen also has its on/off setting.
 
@@ -806,9 +800,9 @@ The product page shows all four, plus Like, Save and the view count from core's 
 
 ### Engagement: likes, saves, follows and views
 
-Run [`supabase/migrations/20261004_engagement.sql`](./supabase/migrations/20261004_engagement.sql) for an existing installation. Safe to re-run. New installations get it from `supabase/schema.sql`. Until it has run the buttons simply do not appear, and Dashboard → Overview lists the migration.
+`supabase/schema.sql` creates the engagement tables and functions (safe to re-run). Until they exist the buttons simply do not appear, and Dashboard → Overview says so.
 
-**What visitors get.** Posts show a Like button, a Save button, the view count and a Follow button for their author, under the content and (like and views) on post cards. Category archives have Follow; author archives have Follow for the author. Saving puts an item in "Saved Items", and the ▾ beside Save puts it in any collection the visitor names. The visitors' dashboard (`/dashboard`) gains **My saved collections** (filter, move, remove, rename or merge collections) and **Following**, the new posts — and, with the shop, products — from the authors and categories they follow, newest first. The feed refreshes itself through Supabase Realtime when a post is published (the migration adds `pages` to the `supabase_realtime` publication) and polls every minute as a fallback. Signed-out visitors who press Like, Save or Follow are sent to sign in and brought back.
+**What visitors get.** Posts show a Like button, a Save button, the view count and a Follow button for their author, under the content and (like and views) on post cards. Category archives have Follow; author archives have Follow for the author. Saving puts an item in "Saved Items", and the ▾ beside Save puts it in any collection the visitor names. The visitors' dashboard (`/dashboard`) gains **My saved collections** (filter, move, remove, rename or merge collections) and **Following**, the new posts — and, with the shop, products — from the authors and categories they follow, newest first. The feed refreshes itself through Supabase Realtime when a post is published (the schema adds `pages` to the `supabase_realtime` publication) and polls every minute as a fallback. Signed-out visitors who press Like, Save or Follow are sent to sign in and brought back.
 
 **Settings → Engagement** switches each feature off site-wide (`show_like_global`, `show_save_global`, `show_follow_global`, `show_views_global`) and chooses where buttons appear by themselves (`show_like_on_posts`, `show_like_on_products`, `show_follow_on_authors`, `show_views_on_single`, `show_views_on_archive`). They are keys of the `engagement` section of `rwp_app_settings`. Buttons placed by hand follow only the global switches. Pages, as opposed to posts, never get buttons automatically. "Count views" (`track_views`) is enforced in SQL: off means nothing is recorded.
 
@@ -831,10 +825,9 @@ An Elementor-style visual builder, shipped as a bundled plugin in [`plugins/rwp-
 
 **Setup**
 
-1. Run [`supabase/migrations/20260918_page_builder.sql`](./supabase/migrations/20260918_page_builder.sql), then [`supabase/migrations/20260923_builder_widgets.sql`](./supabase/migrations/20260923_builder_widgets.sql) (needed by the Template, Loop, Mega Menu, Off-Canvas and Author Box widgets), in the Supabase SQL Editor. Both are safe to re-run. New installations get them from `schema.sql`.
-2. Activate **RWP Page Builder** under **Plugins**.
-3. Open any page from **Page Builder**, or with **Edit with Builder** in Pages & Posts. The builder runs full screen at `/builder/<page id>`.
-4. For form notification emails, set `SMTP_*` and `SUPABASE_SECRET_KEY` on the server. **Page Builder → Status** shows which are set. Entries are stored either way.
+1. Activate **RWP Page Builder** under **Plugins** — it installs `plugins/rwp-page-builder/schema.sql`, which creates its layouts, templates, revisions, forms and widgets (Template, Loop, Mega Menu, Off-Canvas and Author Box).
+2. Open any page from **Page Builder**, or with **Edit with Builder** in Pages & Posts. The builder runs full screen at `/builder/<page id>`.
+3. For form notification emails, set `SMTP_*` and `SUPABASE_SECRET_KEY` on the server. **Page Builder → Status** shows which are set. Entries are stored either way.
 
 **What it does.** Sections → columns → widgets, dragged from the panel or the navigator, with inner sections one level deep. Every element has Content, Style and Advanced tabs; responsive values are set per device (desktop, tablet 768px, mobile 375px) and inherit from larger devices. Widgets, grouped as in the panel:
 
@@ -866,11 +859,11 @@ Three rules are enforced by the database, not the editor:
 
 ### Backup and restore
 
-Run [`supabase/migrations/20260919_backup_restore.sql`](./supabase/migrations/20260919_backup_restore.sql) for an existing installation. Safe to re-run.
+`supabase/schema.sql` creates the backup and restore functions (`rwp_backup_export`, `rwp_backup_import`). Safe to re-run.
 
 **Settings → Backup** has two buttons. **Export backup** downloads one `.zip` file; **Restore backup** puts its contents onto this site, or onto a fresh installation somewhere else. Administrators only (`manage_options`), enforced by the database functions, not the screen.
 
-**What's in the file.** `backup.json` holds every row of every table in `public` except `profiles`: pages, posts, menus, widgets and all other options, comments, the media library, plugin state, shop products, orders and coupons, builder layouts, revisions, templates and form entries. Tables added later by migrations or plugins are included automatically. It also lists each user's email, display name, bio, avatar and role. It never contains passwords, `auth.users`, or anything from `.env.local`. It does contain customer emails, addresses and form entries, so store it like a database dump.
+**What's in the file.** `backup.json` holds every row of every table in `public` except `profiles`: pages, posts, menus, widgets and all other options, comments, the media library, plugin state, shop products, orders and coupons, builder layouts, revisions, templates and form entries. Tables added later to the schema or by plugins are included automatically. It also lists each user's email, display name, bio, avatar and role. It never contains passwords, `auth.users`, or anything from `.env.local`. It does contain customer emails, addresses and form entries, so store it like a database dump.
 
 **Why the restore runs in SQL.** `rwp_backup_import()` truncates and refills every table inside one transaction, so a failure (a bad row, a timeout) leaves the site exactly as it was. The browser could not do that with one request per table. The function also turns off user triggers while it inserts, so restored rows keep their timestamps, and the stock guard, review bookkeeping and builder revision triggers don't run a second time. It restores ids as they were, then moves each identity sequence past the highest id.
 
@@ -887,7 +880,7 @@ Everything happens in the browser and in Supabase, so this also works on Vercel.
 
 ### Shop backup and import
 
-Run [`supabase/migrations/20261006_shop_backup.sql`](./supabase/migrations/20261006_shop_backup.sql) for a site where the shop is already active (activating the shop runs it as part of `plugins/rwp-shop/schema.sql`). Safe to re-run.
+The shop's backup functions live in `plugins/rwp-shop/schema.sql`, which activating the shop runs. Safe to re-run.
 
 **Shop → Backup** is for the shop alone, and for shop managers (`manage_shop`), not only administrators. Settings → Backup can only replace the whole site. This screen can move a catalogue to another store, merge two, or restore last week's orders without touching the rest.
 
@@ -910,7 +903,7 @@ Like the site restore, the import runs in one transaction with the shop's trigge
 
 ### App Settings
 
-Run [`supabase/migrations/20260920_app_settings.sql`](./supabase/migrations/20260920_app_settings.sql) for an existing installation. Safe to re-run. These settings are now under **Settings → General, Uploads, SEO and Languages** in the admin (administrators only); one Save button covers all of them. Roles moved to its own screen in 20261001 (see [Account pages, redirects and capability grants](#account-pages-redirects-and-capability-grants)).
+`supabase/schema.sql` creates the `rwp_app_settings` function and the quota overrides table. Safe to re-run. These settings are now under **Settings → General, Uploads, SEO and Languages** in the admin (administrators only); one Save button covers all of them. Roles moved to its own screen in 20261001 (see [Account pages, redirects and capability grants](#account-pages-redirects-and-capability-grants)).
 
 - **General** — show or hide titles on pages and posts and publish dates on posts (a hidden title stays in the page for screen readers); limit Authors, Contributors and Subscribers to media they uploaded; excerpt length in words or characters (moved here from Settings → Site); and the target of the `#profile_url#` menu placeholder.
 - **Uploads** — maximum file size, minimum and maximum image dimensions, a disk quota per role, and per-person overrides by email address.
@@ -933,7 +926,7 @@ Deliberately not included from the legacy theme: a switch for thumbnail generati
 
 ### Account pages, redirects and capability grants
 
-Run [`supabase/migrations/20261001_account_pages_capabilities.sql`](./supabase/migrations/20261001_account_pages_capabilities.sql) for an existing installation. Safe to re-run. New installations get it from `supabase/schema.sql`.
+`supabase/schema.sql` creates the capability tables and the default-content installer. Safe to re-run.
 
 **Default content no longer needs the Page Builder.** The first time an administrator opens the admin, core ([`src/lib/defaultContent.ts`](./src/lib/defaultContent.ts)) asks `rwp_install_default_content` for two groups, each installed once and recorded in the `rwp_default_content` option so deleted pages are not recreated:
 
@@ -948,13 +941,13 @@ With the Page Builder active, these pages are built from its **Account Form** wi
 
 **Settings → Accounts** also sets where signing in leads when the link did not ask for a page (default: the admin for roles that can use it, the user dashboard for everyone else), where signing out leads (default: stay on the page), and who sees the public admin toolbar (everyone signed in, only admin users, or nobody). `?redirect=` only accepts paths on this site, so it cannot be used as an open redirect.
 
-**Settings → Roles adds any capability to a role, or to one person.** The four fixed toggles that lived in `rwp_app_settings` are gone; the migration copies any that were on into `rwp_role_capabilities` and removes the old key. Grants for one person live in `rwp_user_capabilities`, readable only by that person and by `list_users`. `public.user_has_cap()` reads both tables, so a grant is enforced by every policy, and [`src/lib/capabilityGrants.ts`](./src/lib/capabilityGrants.ts) loads them before the first render so the admin matches. **Only an Administrator or Super Admin can write either table**, checked on `profiles.role` rather than a capability: otherwise granting `manage_options` to a role would let that role grant itself the rest. Changing roles and Reset Website check `profiles.role` too, so no grant reaches them. Granting `manage_options`, `activate_plugins`, `edit_users` or `promote_users` asks first, because they amount to running the site.
+**Settings → Roles adds any capability to a role, or to one person.** The four fixed toggles that lived in `rwp_app_settings` are gone; any that were on are copied into `rwp_role_capabilities` and the old key is removed. Grants for one person live in `rwp_user_capabilities`, readable only by that person and by `list_users`. `public.user_has_cap()` reads both tables, so a grant is enforced by every policy, and [`src/lib/capabilityGrants.ts`](./src/lib/capabilityGrants.ts) loads them before the first render so the admin matches. **Only an Administrator or Super Admin can write either table**, checked on `profiles.role` rather than a capability: otherwise granting `manage_options` to a role would let that role grant itself the rest. Changing roles and Reset Website check `profiles.role` too, so no grant reaches them. Granting `manage_options`, `activate_plugins`, `edit_users` or `promote_users` asks first, because they amount to running the site.
 
 **Pages & Posts has a Category column.** Choosing a category for a page turns it into a post in that category (the blog and archives only list posts), "Page" turns a post back, and the same choice is a bulk action for the selected rows. A filter above the table shows one category.
 
 ### Header zones, live search and per-page header/footer
 
-Run [`supabase/migrations/20261002_page_header_footer.sql`](./supabase/migrations/20261002_page_header_footer.sql) for an existing installation (only needed to hide a header or footer). Safe to re-run.
+The per-page `show_header` / `show_footer` switches come from [`supabase/schema.sql`](./supabase/schema.sql). Safe to re-run.
 
 - **Header and footer blocks go Left, Center or Right.** Choose the side under *Place on* in the Theme Editor's Block library before adding a block, or later under the block's *Side of the row*. Blocks on one side keep their canvas order; *Auto* stays next to the block before it. Right used to be `margin-left: auto`, so two right-aligned blocks split the free space and a search box could end up stuck by the logo.
 - **The header and its menus are always on top** of page content (z-index 9800), so dropdowns are never hidden behind a section, slider or card. Full-screen overlays (off-canvas, search overlay, lightbox) still cover it.
@@ -963,15 +956,15 @@ Run [`supabase/migrations/20261002_page_header_footer.sql`](./supabase/migration
 
 ### Dashboard, admin navigation, logo and profile details
 
-Run [`supabase/migrations/20260921_profile_details.sql`](./supabase/migrations/20260921_profile_details.sql) for an existing installation. Safe to re-run. Everything else in this section needs no migration.
+`supabase/schema.sql` creates `profile_details`. Safe to re-run. Everything else in this section needs nothing extra.
 
 **Admin navigation works like WordPress.** Each sidebar item opens its screen and shows its submenu underneath: Settings → Site, Accounts, General, Uploads, SEO, Roles, Backup (App Settings is merged into Settings); Pages & Posts → All content, Add post, Add page, Categories; Media → Library, Upload providers; Menus → Menus, Sidebar & Widgets; Shop → Orders, Products, Reports, Customers, Coupons, Reviews, Settings. The location is kept in the URL (`/admin?section=settings&tab=seo`), so reloads and bookmarks return to the same screen, and the old ids (`app-settings`, `categories`, `rwp-shop-products`) still resolve. Icons are emoji: text, so the sidebar loads no icon font or image. Plugins add a submenu with `submenu` on `admin.registerPage`; the page component receives `subsection` and `navigate`.
 
-**Dashboard → Overview** is the admin's landing screen. Its setup checklist lists what is still missing, each item marked Required, Recommended or Optional, expandable into numbered steps with a link to the screen (or external dashboard) that fixes it: site title and tagline, logo and icon, an upload provider, Cloudinary delete keys, the ImageKit private key, missing migrations, the menu, social sign-in configuration, pending comments, your profile, and, from plugins, the shop's store address, payment methods, Stripe/PayPal keys, `SUPABASE_SECRET_KEY` and SMTP. Items can be hidden (remembered per person in the browser) and shown again. The number of visible required and recommended items, plus available updates, shows as a badge on Dashboard in the sidebar. Server secrets are only ever reported as set or not set: `/api/media-config` and the plugins' status routes never return a value. Plugin widgets such as *Shop at a glance* moved here from Pages & Posts, next to an *At a glance* panel of counts. Plugins add checklist items with `admin.registerSetupCheck`.
+**Dashboard → Overview** is the admin's landing screen. Its setup checklist lists what is still missing, each item marked Required, Recommended or Optional, expandable into numbered steps with a link to the screen (or external dashboard) that fixes it: site title and tagline, logo and icon, an upload provider, Cloudinary delete keys, the ImageKit private key, missing database tables, the menu, social sign-in configuration, pending comments, your profile, and, from plugins, the shop's store address, payment methods, Stripe/PayPal keys, `SUPABASE_SECRET_KEY` and SMTP. Items can be hidden (remembered per person in the browser) and shown again. The number of visible required and recommended items, plus available updates, shows as a badge on Dashboard in the sidebar. Server secrets are only ever reported as set or not set: `/api/media-config` and the plugins' status routes never return a value. Plugin widgets such as *Shop at a glance* moved here from Pages & Posts, next to an *At a glance* panel of counts. Plugins add checklist items with `admin.registerSetupCheck`.
 
-**Dashboard → Updates** (administrators) compares the running version of the app (`package.json`) and each plugin (`manifest.json`) with a JSON feed, by default [`updates.json`](./updates.json) in this repository on GitHub. It can check by hand or automatically (every admin visit, daily, weekly or monthly); the result is stored in the `rwp_update_status` option so every administrator sees it, and the schedule in `rwp_update_settings`. There is no background process: a due check runs in the browser of the next administrator who opens the admin. Each update lists its notes and the migrations it needs. **Installing stays a step on the host** (`git pull` or a new ZIP, `npm install`, run the migrations, `npm start`), and the screen explains it: the site runs from a build, so the browser cannot replace the code, and a server that downloads and runs code from a URL would let whoever controls that URL run anything on your host. To publish a release, bump `version` in `package.json` or the plugin's `manifest.json` and in `updates.json`, and list any new migration.
+**Dashboard → Updates** (administrators) compares the running version of the app (`package.json`) and each plugin (`manifest.json`) with a JSON feed, by default [`updates.json`](./updates.json) in this repository on GitHub. It can check by hand or automatically (every admin visit, daily, weekly or monthly); the result is stored in the `rwp_update_status` option so every administrator sees it, and the schedule in `rwp_update_settings`. There is no background process: a due check runs in the browser of the next administrator who opens the admin. Each update lists its notes. **Installing stays a step on the host** (`git pull` or a new ZIP, `npm install`, re-run `supabase/schema.sql` if the schema changed, `npm start`), and the screen explains it: the site runs from a build, so the browser cannot replace the code, and a server that downloads and runs code from a URL would let whoever controls that URL run anything on your host. To publish a release, bump `version` in `package.json` or the plugin's `manifest.json` and in `updates.json`, and note any schema change.
 
-**Dashboard → Guide & shortcodes** is documentation for new users inside the admin: first steps, running migrations, every `.env.local` variable and where to get it, content, menus and placeholders, media providers, a role/capability table generated from `roles.ts`, the page builder's dynamic tags, shop setup, backups and updates, plugin development, and troubleshooting. Shortcodes are listed from the registry, so a plugin's shortcodes appear automatically with the `description`, `example` and `attributes` it registers. Shop → Products has a *Copy shortcode* action for `[rwp_add_to_cart]`.
+**Dashboard → Guide & shortcodes** is documentation for new users inside the admin: first steps, the database, every `.env.local` variable and where to get it, content, menus and placeholders, media providers, a role/capability table generated from `roles.ts`, the page builder's dynamic tags, shop setup, backups and updates, plugin development, and troubleshooting. Shortcodes are listed from the registry, so a plugin's shortcodes appear automatically with the `description`, `example` and `attributes` it registers. Shop → Products has a *Copy shortcode* action for `[rwp_add_to_cart]`.
 
 **Logo.** Settings → Site → Header logo sets a logo image, its height, and what the header shows: title and tagline, title only, logo only, logo and title, or logo, title and tagline. A logo-based choice with no logo falls back to the title. This also fixed the header, which always showed the text "Just another React-WP site" instead of the saved tagline. The admin sidebar uses the site icon (or logo) instead of the "R" mark.
 
@@ -981,7 +974,7 @@ Run [`supabase/migrations/20260921_profile_details.sql`](./supabase/migrations/2
 
 ### Appearance → Theme Editor
 
-Run [`supabase/migrations/20260922_theme_editor.sql`](./supabase/migrations/20260922_theme_editor.sql) for an existing installation. Safe to re-run. Until it has run, the site renders the default layout and the editor explains why it cannot save.
+`supabase/schema.sql` creates `theme_settings`. Safe to re-run. Until it exists, the site renders the default layout and the editor explains why it cannot save.
 
 **What it edits.** Six tabs: Header, Footer, Sidebar, Comments, Layout / Index, and Custom CSS & Code. Each of the first five has two modes:
 
@@ -1002,7 +995,7 @@ On `npm start`, `server/seo.mjs` writes Custom CSS (plus Comments CSS), the `<he
 
 ### Languages, text direction and hook slots
 
-Run [`supabase/migrations/20260929_i18n_hooks.sql`](./supabase/migrations/20260929_i18n_hooks.sql) to enable this fully. The language settings themselves work without it; the per-language Page Builder layouts do not.
+The `pages` columns this needs (`locale`, `translation_group_id`, `builder_data_i18n`) come from [`supabase/schema.sql`](./supabase/schema.sql). The language settings themselves work without them; the per-language Page Builder layouts do not.
 
 **Settings → Languages** chooses which languages the site offers, the default for visitors, a separate default for the admin dashboard, and whether the public language switcher is shown. They are four rows in the public `options` table (`default_site_language`, `default_admin_language`, `show_header_language_switcher`, `supported_languages`), not part of the `rwp_app_settings` document, because the public site has to read them before anything else loads.
 
@@ -1012,7 +1005,7 @@ Run [`supabase/migrations/20260929_i18n_hooks.sql`](./supabase/migrations/202609
 
 **Translating.** `t('header.login', 'Log in')` resolves against the active locale, then the site default, then English, then the fallback you passed, then the key itself. Core's strings are in [`src/lib/locales/`](./src/lib/locales); a plugin ships its own with `registerPluginTranslations('my-plugin', { fa: { 'my.key': '…' } })`, and a single string can be overridden through the `i18n_translate_key` filter without a dictionary at all.
 
-**Settings → Translations** (needs [`supabase/migrations/20261003_translations.sql`](./supabase/migrations/20261003_translations.sql)) lists every key core and the active plugins ship, one language at a time, and saves your own wording in `public.rwp_translations`, one row per key and language. Within each language a saved string beats the bundled one, so the lookup order becomes: saved in the active language, bundled in the active language, then the same two for the site default and for English, then the fallback. It is a data source for the same `t()`, not a second system, so everything already using `t()` (the public site, shortcodes, Page Builder widgets, plugins) picks it up, and `i18n_translate_key` still runs last. The strings for the active language, the site default and English are loaded before the first render, like the locale itself, and again on a language switch; a failed request falls back to the copy the browser saved last time. Category names and descriptions are keys too: `translateTerm('category', category)` looks up `category.<slug>.name` (the id when the slug is not ASCII) and falls back to the stored name.
+**Settings → Translations** (needs the `rwp_translations` table from [`supabase/schema.sql`](./supabase/schema.sql)) lists every key core and the active plugins ship, one language at a time, and saves your own wording in `public.rwp_translations`, one row per key and language. Within each language a saved string beats the bundled one, so the lookup order becomes: saved in the active language, bundled in the active language, then the same two for the site default and for English, then the fallback. It is a data source for the same `t()`, not a second system, so everything already using `t()` (the public site, shortcodes, Page Builder widgets, plugins) picks it up, and `i18n_translate_key` still runs last. The strings for the active language, the site default and English are loaded before the first render, like the locale itself, and again on a language switch; a failed request falls back to the copy the browser saved last time. Category names and descriptions are keys too: `translateTerm('category', category)` looks up `category.<slug>.name` (the id when the slug is not ASCII) and falls back to the stored name.
 
 - **Export / import.** JSON or CSV, for a translator: the export has the original text and the bundled default beside each value, and only the value column is read back. Import fills only keys without a translation unless you tick "replace", and never blanks one with an empty cell. A `{ "fa": { "header.login": "…" } }` file (the `registerPluginTranslations` shape, nested objects allowed) is accepted too. The CSV is written with a BOM so Excel opens Persian and Arabic correctly.
 - **Finding untranslated text.** Off by default. When on, browsers report keys they had to show in a fallback language through `rwp_report_missing_translations`, and they appear as rows with an empty value. Such rows are never applied, so turning this on changes nothing visitors see. The function is callable by `anon` on purpose — visitors are the ones who hit the gaps — and bounds itself: it checks the option itself, accepts only languages the site offers and well-formed keys, at most 50 per call, never updates a row, and stops at 2,000 untranslated rows.
@@ -1047,7 +1040,7 @@ A port of the WordPress plugin of the same name. Activating it installs [`plugin
 
 ### Code snippets and the AI developer assistant (the `rwp-code-snippets` plugin)
 
-Run [`supabase/migrations/20260930_code_snippets.sql`](./supabase/migrations/20260930_code_snippets.sql) first. **the Code Snippets screen** then adds CSS, JavaScript, HTML and React hooks to a running site without touching a file — what WordPress's Code Snippets plugin is for, and what the Theme Editor's code areas cannot do, because those are one shared blob per area rather than separate, switchable, searchable pieces.
+Activate the plugin first: it installs `plugins/rwp-code-snippets/schema.sql` (`public.code_snippets`). **the Code Snippets screen** then adds CSS, JavaScript, HTML and React hooks to a running site without touching a file — what WordPress's Code Snippets plugin is for, and what the Theme Editor's code areas cannot do, because those are one shared blob per area rather than separate, switchable, searchable pieces.
 
 **The four kinds.** A `css` snippet becomes a `<style>` in `<head>`. A `javascript` snippet becomes a `<script>` whose code runs inside its own IIFE with a `try`/`catch` around it, so two snippets can both declare `const items` and a thrown error names the snippet instead of a line number in a bundle. An `html` snippet is inserted as written — inline `<script>` in it is re-created so that it actually runs, because silently dropping it would look like the snippet had been ignored. A `hook` snippet is evaluated with `new Function` and receives the hook registry as `rwp`: `rwp.addAction`, `rwp.addFilter`, `rwp.addSlotContent`, `rwp.applyFilters`, `rwp.doAction` and `rwp.React` (there is no JSX in an evaluated snippet, so markup is `rwp.React.createElement`).
 
@@ -1100,12 +1093,10 @@ instead of breaking.
    [aistudio.google.com/apikey](https://aistudio.google.com/apikey)) if you want the AI assistant.
    Server-only — never `VITE_GEMINI_API_KEY`, which would be compiled into the public bundle.
 2. Activate **rwp-chat** under **Plugins**. It installs
-   [`plugins/rwp-chat/schema.sql`](./plugins/rwp-chat/schema.sql) on its own; the same text is
-   [`supabase/migrations/20261008_chat_system.sql`](./supabase/migrations/20261008_chat_system.sql)
-   for sites that prefer the SQL Editor.
-3. On a shop site, also run
-   [`supabase/migrations/20261009_shop_chat.sql`](./supabase/migrations/20261009_shop_chat.sql) (or
-   reinstall the shop's schema) to get the product card and order tracker.
+   [`plugins/rwp-chat/schema.sql`](./plugins/rwp-chat/schema.sql) on its own.
+3. On a shop site, reinstall the shop's schema
+   ([`plugins/rwp-shop/schema.sql`](./plugins/rwp-shop/schema.sql)) to get the product card and
+   order tracker.
 4. Configure the widget and, if wanted, a live-agent channel under **Chat → General & AI** /
    **Chat → Live agent** (see below). Nothing beyond step 1–2 is required — the chat works with the
    AI off and the channel left on the default "Internal".

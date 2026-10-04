@@ -95,7 +95,7 @@ export async function renderDocumentInjections(pathname, origin, config) {
   }
 }
 
-// null when the migration has not run or the request failed; the browser then injects nothing
+// null when the schema has not been applied or the request failed; the browser then injects nothing
 // itself either, because there is nothing saved to inject.
 const readTheme = async (baseUrl, key) => {
   try {

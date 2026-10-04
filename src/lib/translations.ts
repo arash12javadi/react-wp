@@ -16,7 +16,7 @@ import {
  * yet. They are never applied: discovering a key must not change what visitors see.
  */
 
-export const translationsMigration = 'supabase/migrations/20261003_translations.sql';
+export const translationsMigration = 'supabase/schema.sql';
 
 export interface TranslationRow {
   id: string;

@@ -54,7 +54,7 @@ async function adminNotices(): Promise<RwpSetupNotice[]> {
     notices.push({
       id: 'migration-20261010',
       level: 'recommended',
-      title: 'Run the security database migration',
+      title: 'Add the security database tables',
       description: 'Settings → Security saves nothing until it has run: the rate limits, anti-bot settings, page cache and robots.txt all fall back to their defaults, and the CAPTCHA secret has nowhere to be stored.',
       steps: [
         'Open Supabase → SQL Editor → New query.',
@@ -69,12 +69,12 @@ async function adminNotices(): Promise<RwpSetupNotice[]> {
     notices.push({
       id: 'migration-20261004',
       level: 'recommended',
-      title: 'Run the engagement database migration',
+      title: 'Add the engagement database tables',
       description: 'Like, Save and Follow buttons, view counts, saved collections, the Following feed and Dashboard → Analytics stay hidden until it has run.',
       steps: [
         'Open Supabase → SQL Editor → New query.',
         `Paste the whole of ${engagementMigration} and click Run. It is safe to run again.`,
-        'With the shop active, run supabase/migrations/20261005_shop_engagement.sql next (or re-activate the shop on npm start).',
+        'With the shop active, run plugins/rwp-shop/schema.sql next (or re-activate the shop on npm start).',
         'Reload this page.',
       ],
       action: { label: 'Open Supabase', href: 'https://supabase.com/dashboard/projects' },
@@ -85,7 +85,7 @@ async function adminNotices(): Promise<RwpSetupNotice[]> {
     notices.push({
       id: 'migration-20261003',
       level: currentI18nSettings().supported_languages.length > 1 ? 'required' : 'recommended',
-      title: 'Run the translations database migration',
+      title: 'Add the translations database table',
       description: 'Settings → Translations cannot save until it has run. The site keeps using the bundled strings meanwhile.',
       steps: [
         'Open Supabase → SQL Editor → New query.',
@@ -100,7 +100,7 @@ async function adminNotices(): Promise<RwpSetupNotice[]> {
     notices.push({
       id: 'migration-20261001',
       level: 'required',
-      title: 'Run the account pages and capabilities database migration',
+      title: 'Add the account pages and capabilities tables',
       description: 'Until it has run, Settings → Roles cannot add capabilities, and the default Log In, Register, Profile and Dashboard pages (and, on a new site, the Home page and Sample Post) are not created.',
       steps: [
         'Open Supabase → SQL Editor → New query.',
@@ -115,7 +115,7 @@ async function adminNotices(): Promise<RwpSetupNotice[]> {
     notices.push({
       id: 'migration-20260920',
       level: 'required',
-      title: 'Run the App Settings database migration',
+      title: 'Add the App Settings database tables',
       description: 'Upload limits and disk quotas under Settings are not enforced until it has run.',
       steps: [
         'Open Supabase → SQL Editor → New query.',
@@ -129,7 +129,7 @@ async function adminNotices(): Promise<RwpSetupNotice[]> {
     notices.push({
       id: 'migration-20260921',
       level: 'required',
-      title: 'Run the profile details database migration',
+      title: 'Add the profile details table',
       description: 'The optional "More about you" section of Profile cannot save until it has run.',
       steps: [
         'Open Supabase → SQL Editor → New query.',
@@ -144,7 +144,7 @@ async function adminNotices(): Promise<RwpSetupNotice[]> {
     notices.push({
       id: 'migration-20260922',
       level: 'required',
-      title: 'Run the Theme Editor database migration',
+      title: 'Add the Theme Editor table',
       description: 'Appearance → Theme Editor cannot save until it has run. The site keeps its default layout meanwhile.',
       steps: [
         'Open Supabase → SQL Editor → New query.',
@@ -161,7 +161,7 @@ async function adminNotices(): Promise<RwpSetupNotice[]> {
     notices.push({
       id: 'migration-20260929',
       level: 'required',
-      title: 'Run the multilingual database migration',
+      title: 'Add the multilingual page columns',
       description: 'The language switcher and translated text already work, but pages cannot hold a separate Page Builder layout per language until it has run, so every language shows the same layout.',
       steps: [
         'Open Supabase → SQL Editor → New query.',

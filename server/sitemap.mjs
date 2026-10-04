@@ -35,7 +35,7 @@ const get = async (config, path) => {
 
 /**
  * Published pages and posts. Tried with the full filter first; a site that has not run the site
- * templates migration has no is_site_template column and PostgREST rejects the whole query for it,
+ * templates schema has no is_site_template column and PostgREST rejects the whole query for it,
  * so the retry drops that one term rather than losing the sitemap entirely.
  */
 const fetchEntries = async (config) => {
