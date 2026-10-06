@@ -47,6 +47,18 @@ app.onError((error, c) => {
   return c.json({ success: false, ok: false, error: message, message }, 500);
 });
 
+/**
+ * The second half of that promise: a route that does not exist must not fall through to Hono's
+ * plain-text `404 Not Found` either, because the client parses every reply as JSON — and on Vercel
+ * an unrouted `/api/*` is how a rewrite that lost the path announces itself. Scoped to `/api/*`, so
+ * a missing asset still gets a conventional 404.
+ */
+app.notFound((c) => {
+  const { pathname } = new URL(c.req.url);
+  if (!pathname.startsWith('/api/')) return c.text('Not Found', 404);
+  return c.json({ success: false, ok: false, error: `No API endpoint at ${pathname}.` }, 404);
+});
+
 const str = (value: unknown): string | undefined => (typeof value === 'string' && value.trim() ? value.trim() : undefined);
 const num = (value: unknown): number | undefined => {
   if (typeof value === 'number') return value;

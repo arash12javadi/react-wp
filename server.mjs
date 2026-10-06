@@ -23,7 +23,7 @@ import {
 import {
   clearAssetCompressionCache, compressedAsset, compressForResponse, compressibleContentType, negotiateEncoding,
 } from './server/middleware/compression.mjs';
-import { resolveConnectionString, withClient } from './server/db.mjs';
+import { describeDbError, projectRefFromUrl, resolveConnectionString, withClient } from './server/db.mjs';
 
 const port = Number(process.env.PORT || 3000);
 const root = path.resolve('dist');
@@ -239,6 +239,114 @@ const serveFile = async (request, response, pathname, seoPath = pathname, url = 
     // request ends up hanging with nothing written to it and nothing in the log.
     if (error?.code === 'ENOENT') return false;
     throw error;
+  }
+};
+
+/**
+ * The Setup Wizard's Step 3 probe, in this classic server's own vocabulary.
+ *
+ * This server installs into PostgreSQL — a Supabase project, or any Postgres the wizard's connection
+ * string or its discrete host/port/database/user/password fields describe — so that is the only
+ * backend it can honestly test. MySQL, SQLite and LibSQL live in the universal server
+ * (`npm run start:hono`, Vercel, Cloudflare), so they get a pointer at it instead of a probe that
+ * could never succeed here and would hide the real reason.
+ *
+ * The whole probe is bounded, and every failure becomes a readable JSON message: this is the
+ * endpoint whose unhandled rejections used to surface as an opaque platform 500.
+ */
+const DB_PROBE_TIMEOUT_MS = 5000;
+
+/** Rejects with `message` unless `promise` settles inside the probe's budget. */
+const withinProbeBudget = (promise, message) => new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error(message)), DB_PROBE_TIMEOUT_MS);
+  promise.then(
+    (value) => { clearTimeout(timer); resolve(value); },
+    (error) => { clearTimeout(timer); reject(error); },
+  );
+});
+
+/** `select 1`'s stronger cousin: a real session, so the answer is the one `install()` will need. */
+const probePostgres = (connectionString) => withClient(connectionString, async (client) => {
+  const result = await client.query('select version() as version, current_database() as database');
+  const row = result?.rows?.[0];
+  if (!row) throw new Error('The database answered the probe without a result.');
+  return `Connected to ${row.database} on ${String(row.version).split(' ').slice(0, 2).join(' ')}.`;
+});
+
+/**
+ * Confirms a Supabase project answers for its own publishable key. Checked before the Postgres
+ * probe because a wrong key is the more common mistake, and the message should say which is wrong.
+ */
+const probeSupabaseKey = async (supabaseUrl, publishableKey) => {
+  const base = String(supabaseUrl).trim().replace(/\/+$/, '');
+  const response = await fetch(`${base}/auth/v1/settings`, {
+    headers: publishableKey ? { apikey: String(publishableKey).trim() } : {},
+    signal: AbortSignal.timeout(DB_PROBE_TIMEOUT_MS),
+  }).catch((error) => {
+    throw new Error(`The Supabase project could not be reached at ${base}: ${error instanceof Error ? error.message : String(error)}`);
+  });
+  if (!response.ok) {
+    throw new Error(`The Supabase project at ${base} answered ${response.status} for its auth settings, so the Project URL or the publishable key is wrong.`);
+  }
+};
+
+/** The wizard's credentials as one Postgres connection string, or `{ status, error }` if they cannot. */
+const wizardConnectionString = (body, config) => {
+  const supplied = [body.connectionString, body.databaseUrl].find((value) => typeof value === 'string' && value.trim());
+  if (supplied) return supplied.trim();
+  // The wizard's "fields" mode: no connection string, just the pieces.
+  if (typeof body.host === 'string' && body.host.trim() && typeof body.user === 'string' && body.user.trim()) {
+    const password = typeof body.password === 'string' ? body.password : '';
+    const port = String(body.port || '').trim() || '5432';
+    const database = String(body.database || '').trim() || 'postgres';
+    return `postgres://${encodeURIComponent(body.user.trim())}:${encodeURIComponent(password)}@${body.host.trim()}:${port}/${database}`;
+  }
+  const resolved = resolveConnectionString(
+    { ...body, projectRef: body.projectRef || projectRefFromUrl(body.supabaseUrl) },
+    config,
+  );
+  return resolved.ok ? resolved.url : { status: resolved.status || 400, error: resolved.error };
+};
+
+/** Answers `POST /api/install/test-db` and `POST /api/install/check` with `{ status, body }`. */
+const testDatabase = async (body) => {
+  const dbType = String(body.dbType || 'supabase').toLowerCase();
+  const failed = (message, status = 400) => ({ status, body: { success: false, ok: false, error: message, message } });
+  if (dbType !== 'supabase' && dbType !== 'postgres') {
+    return failed(`This server installs into PostgreSQL or Supabase, so it cannot test "${dbType}". Run the universal server for that backend (npm run start:hono), or deploy to Vercel or Cloudflare.`);
+  }
+  const connection = wizardConnectionString(body, await readConfig());
+  if (typeof connection !== 'string') return failed(connection.error, connection.status);
+  try {
+    if (dbType === 'supabase' && body.supabaseUrl) await probeSupabaseKey(body.supabaseUrl, body.supabasePublishableKey);
+    const message = await withinProbeBudget(
+      probePostgres(connection),
+      `The database did not respond within ${DB_PROBE_TIMEOUT_MS / 1000} seconds. Check that the host and port are reachable from this machine.`,
+    );
+    return { status: 200, body: { success: true, ok: true, message } };
+  } catch (error) {
+    // describeDbError strips the password out of driver messages, which quote the whole URL.
+    return failed(describeDbError(error, connection));
+  }
+};
+
+/** GET /api/health — probes the installed backend. Bounded, and always JSON. */
+const reportHealth = async () => {
+  const config = await readConfig();
+  const dbType = config?.dbType || 'supabase';
+  const resolved = resolveConnectionString({}, config);
+  if (!resolved.ok) {
+    return { status: 503, body: { success: false, ok: false, dbType, error: resolved.error, message: resolved.error } };
+  }
+  try {
+    const message = await withinProbeBudget(
+      probePostgres(resolved.url),
+      `The database did not respond within ${DB_PROBE_TIMEOUT_MS / 1000} seconds.`,
+    );
+    return { status: 200, body: { success: true, ok: true, dbType, message } };
+  } catch (error) {
+    const detail = describeDbError(error, resolved.url);
+    return { status: 503, body: { success: false, ok: false, dbType, error: detail, message: detail } };
   }
 };
 
@@ -526,6 +634,26 @@ const server = http.createServer(async (request, response) => {
       json(request, response, 200, describeDeleteSupport());
       return;
     }
+    // The Setup Wizard's own endpoints: Step 0's "is this site installed?" and Step 3's "Test
+    // Connection". The universal server answers these from its own handlers; this classic server
+    // speaks PostgreSQL and Supabase, which is exactly what the wizard's Supabase and
+    // self-hosted-Postgres paths need. Both answer JSON on every path, never the SPA fallback.
+    if (url.pathname === '/api/install/check' && request.method === 'GET') {
+      const config = await readConfig();
+      json(request, response, 200, { installed: config?.installed === true, dbType: config?.dbType || 'supabase' });
+      return;
+    }
+    if ((url.pathname === '/api/install/test-db' || url.pathname === '/api/install/check') && request.method === 'POST') {
+      // A body that is not JSON is the wizard's to fix, and it must not become an opaque 500 here.
+      const result = await testDatabase(await readBody(request).catch(() => ({})));
+      json(request, response, result.status, result.body);
+      return;
+    }
+    if (url.pathname === '/api/health' && request.method === 'GET') {
+      const result = await reportHealth();
+      json(request, response, result.status, result.body);
+      return;
+    }
     if (url.pathname === '/api/install-schema' && request.method === 'POST') {
       const body = await readBody(request);
       await install(body);
@@ -537,6 +665,13 @@ const server = http.createServer(async (request, response) => {
       configureSecuritySettings(await currentConfig());
       await refreshSecuritySettings();
       json(request, response, 200, { success: true });
+      return;
+    }
+    // Anything else under /api/ is a mistake, not a page. Without this the SPA fallback below
+    // answered `GET /api/health` with index.html and a 200, which is how a missing endpoint ends up
+    // looking like a working one.
+    if (url.pathname.startsWith('/api/')) {
+      json(request, response, 404, { error: `No API endpoint at ${url.pathname}.` });
       return;
     }
     const config = request.method === 'GET' ? await currentConfig() : null;
