@@ -25,6 +25,7 @@ import { hasCapability, roles, type Capability, type UserRole } from '../lib/rol
 import { createStorageAdapter } from '../lib/storage/index';
 import { dbTypeFrom, type RuntimeConfig } from '../lib/runtime';
 import { readConfigFile, writeConfigFile, getRuntimeConfig, reloadRuntimeConfig } from './config';
+import { pluginsRouter } from './routes/plugins';
 
 export const app = new Hono();
 
@@ -64,7 +65,9 @@ function bodyToConfig(body: Record<string, unknown>): RuntimeConfig {
 
 /** Builds the `.env` block for serverless/read-only hosts (Step 5 of the wizard). */
 function buildEnvString(config: RuntimeConfig): string {
-  const lines: string[] = [`VITE_DB_TYPE=${config.dbType}`];
+  const lines: string[] = [];
+  lines.push(`DB_TYPE=${config.dbType}`);
+  lines.push(`VITE_DB_TYPE=${config.dbType}`);
   if (config.databaseUrl) lines.push(`DATABASE_URL=${config.databaseUrl}`);
   if (config.supabaseUrl) {
     lines.push(`VITE_SUPABASE_URL=${config.supabaseUrl}`);
@@ -108,19 +111,20 @@ app.get('/api/health', async (c) => {
 });
 
 /**
- * GET /api/install/check — reports whether a site has been provisioned. Reads
- * `data/react-wp-config.json` straight from disk so it stays current even in the very same process
- * that just ran Step 5 (`POST /api/install-schema`), and so a plain browser visit cannot fall through
- * to the SPA fallback.
+ * GET /api/install/check — reports whether a site has been provisioned. Environment-aware: a
+ * serverless/edge run is "installed" when `DATABASE_URL` + `DB_TYPE` are present; a persistent host
+ * is "installed" when `data/react-wp-config.json` says so. Re-reads the file so it stays current even
+ * in the very same process that just ran Step 5 (`POST /api/install-schema`).
  */
 app.get('/api/install/check', async (c) => {
+  const config = await getRuntimeConfig();
   const fileConfig = await readConfigFile();
-  const installed = fileConfig !== null && fileConfig.installed !== false;
-  return c.json({ installed, dbType: fileConfig?.dbType ?? null });
+  const installed = config.installed === true || (fileConfig !== null && fileConfig.installed !== false);
+  return c.json({ installed, dbType: config.dbType ?? fileConfig?.dbType ?? null });
 });
 
-/** POST /api/install/check — Step 3 health check for the chosen provider credentials. */
-app.post('/api/install/check', async (c) => {
+/** Shared Step 3 health check: builds an adapter from the wizard's credentials and probes it. */
+const testDbHandler = async (c: Context) => {
   const body = await c.req.json().catch(() => ({}));
   const config = bodyToConfig(body);
   const db = await createServerDbAdapter(config);
@@ -132,14 +136,23 @@ app.post('/api/install/check', async (c) => {
   } finally {
     await db.close().catch(() => undefined);
   }
-});
+};
+
+/** POST /api/install/check — retained for backward compatibility with older bundles. */
+app.post('/api/install/check', testDbHandler);
+
+/** POST /api/install/test-db — Step 3 "Test Connection" button. */
+app.post('/api/install/test-db', testDbHandler);
 
 /** POST /api/install-schema — Step 5 schema migration + configuration provisioning. */
 app.post('/api/install-schema', async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const config = bodyToConfig(body);
-  const saveSettings = body.saveSettings === true;
+  const deployment = str(body.deployment) || (body.saveSettings === true ? 'node' : 'serverless');
+  const saveSettings = body.saveSettings === true || deployment === 'node';
   const siteTitle = str(body.siteTitle) || 'My React-WP Site';
+  const siteTagline = str(body.siteTagline) || '';
+  const adminUsername = str(body.adminUsername) || '';
   const adminEmail = str(body.adminEmail) || '';
   const adminPassword = str(body.adminPassword) || '';
 
@@ -162,8 +175,12 @@ app.post('/api/install-schema', async (c) => {
     await runCoreMigrations(db);
     const fullConfig: RuntimeConfig = { ...config, jwtSecret: config.jwtSecret || randomSecret(), installed: true };
     const auth = await createServerAuthAdapter(fullConfig, db);
-    await auth.signUp(adminEmail, adminPassword, 'administrator');
+    const signUp = await auth.signUp(adminEmail, adminPassword, 'administrator');
+    if (adminUsername && signUp.user?.id) {
+      await db.update('profiles', { where: { id: signUp.user.id } }, { display_name: adminUsername }).catch(() => undefined);
+    }
     await db.setOption('site_title', siteTitle);
+    await db.setOption('site_tagline', siteTagline);
     await db.setOption('admin_email', adminEmail);
     await db.setOption('installed', 'true');
     await db.close().catch(() => undefined);
@@ -335,6 +352,9 @@ app.delete('/api/media/:key', async (c) => {
     return c.json({ error: describeDbError(error) }, 500);
   }
 });
+
+// -- Plugin administration (in-memory ZIP upload → GitHub → Vercel) ------------
+app.route('/api/admin/plugins', pluginsRouter);
 
 // -- Universal data API -------------------------------------------------------
 //

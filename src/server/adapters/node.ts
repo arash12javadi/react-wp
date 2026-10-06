@@ -14,7 +14,7 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono, type Context } from 'hono';
 import { app } from '../index';
-import { getRuntimeConfig, publicConfig } from '../config';
+import { getRuntimeConfig, publicConfig, runStartupMigrations } from '../config';
 
 const port = Number(process.env.PORT || 3000);
 const indexHtmlPath = resolve(process.cwd(), 'dist/index.html');
@@ -58,6 +58,10 @@ full.use('*', serveStatic({ root: './dist' }));
 
 // 5. SPA fallback for client-side routes (/admin, /login, ...).
 full.get('*', renderIndex);
+
+// Migrate the core schema on startup whenever the site is already installed. Fire-and-forget: the
+// memoised promise runs once and a failure is logged rather than stopping the server.
+void runStartupMigrations();
 
 serve({ fetch: full.fetch, port }, (info) => {
   console.log(`React-WP (Hono) listening on http://localhost:${info.port}`);

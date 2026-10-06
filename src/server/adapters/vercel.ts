@@ -5,5 +5,9 @@
  */
 import { handle } from '@hono/node-server/vercel';
 import { app } from '../index';
+import { runStartupMigrations } from '../config';
+
+// Migrate on cold start (fire-and-forget). Memoised, idempotent and failure-safe.
+void runStartupMigrations();
 
 export default handle(app);

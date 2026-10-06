@@ -10,6 +10,19 @@ import type { RuntimeConfig } from '../../runtime';
 
 type MysqlRow = RowDataPacket;
 
+/** True for loopback hosts, which have no TLS endpoint and must not be forced onto SSL. */
+const isLocalHost = (host?: string): boolean => Boolean(host && /^(localhost|127\.0\.0\.1|\[?::1\]?)$/i.test(host));
+
+/** The hostname out of a `mysql://` URI, when one was supplied. */
+const hostOf = (url?: string): string | undefined => {
+  if (!url) return undefined;
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return undefined;
+  }
+};
+
 export class MysqlAdapter extends SqlAdapterBase {
   readonly type = 'mysql' as const;
   readonly dialect = mysqlDialect;
@@ -24,14 +37,24 @@ export class MysqlAdapter extends SqlAdapterBase {
   private async getPool(): Promise<Pool> {
     if (!this.pool) {
       const { createPool } = await import('mysql2/promise');
-      const base = this.config.databaseUrl
-        ? { uri: this.config.databaseUrl }
+      // SSL auto-handling: cloud/serverless MySQL (Railway, PlanetScale, Hostinger Remote MySQL)
+      // requires TLS; a loopback host does not. The `ssl` flag is attached here for discrete fields
+      // and appended to the URI for connection strings.
+      const host = this.config.dbHost || hostOf(this.config.databaseUrl) || 'localhost';
+      const ssl = isLocalHost(host) ? undefined : { rejectUnauthorized: false };
+      let uri = this.config.databaseUrl;
+      if (uri && ssl && !/[?&]ssl=/.test(uri)) {
+        uri += `${uri.includes('?') ? '&' : '?'}ssl=${encodeURIComponent(JSON.stringify(ssl))}`;
+      }
+      const base = uri
+        ? { uri }
         : {
             host: this.config.dbHost || 'localhost',
             port: this.config.dbPort ?? 3306,
             database: this.config.dbName,
             user: this.config.dbUser,
             password: this.config.dbPassword,
+            ssl,
           };
       this.pool = createPool({
         ...base,

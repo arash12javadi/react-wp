@@ -69,15 +69,55 @@ function mergeRuntimeConfig(base: RuntimeConfig, file: Partial<RuntimeConfig> | 
 let cachedRuntimeConfig: RuntimeConfig | null = null;
 
 /**
- * The server's resolved runtime config, cached in memory for the life of the process. On a persistent
- * Node host it folds in `data/react-wp-config.json` — the file the Setup Wizard writes in Step 5 — so
- * every API handler shares one config and the disk is not read again on each request.
+ * The server's resolved runtime config, cached in memory for the life of the process.
+ *
+ * Resolution order is deliberate and environment-aware:
+ *   1. `process.env.DATABASE_URL` + `process.env.DB_TYPE` win outright. A serverless/edge run is
+ *      read-only (`EROFS`), so it must never touch `data/react-wp-config.json` — the presence of the
+ *      env pair is itself the "installed" signal.
+ *   2. Otherwise `data/react-wp-config.json` is read (persistent Node hosts), and the file merges
+ *      over any env-derived values, with `installed` kept sticky.
+ *   3. If neither exists, the site is not installed.
  */
 export async function getRuntimeConfig(): Promise<RuntimeConfig> {
   if (!cachedRuntimeConfig) {
-    cachedRuntimeConfig = mergeRuntimeConfig(resolveServerConfig(), await readConfigFile());
+    const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+    if (env.DATABASE_URL && env.DB_TYPE) {
+      cachedRuntimeConfig = { ...runtimeConfigFromEnv(env), installed: true };
+    } else {
+      cachedRuntimeConfig = mergeRuntimeConfig(resolveServerConfig(), await readConfigFile());
+    }
   }
   return cachedRuntimeConfig;
+}
+
+let startupMigrationPromise: Promise<void> | null = null;
+
+/**
+ * Applies the idempotent core schema on startup whenever the site is installed. Supabase is skipped:
+ * it is provisioned through `supabase/schema.sql` (RLS + RPCs + triggers) by the Setup Wizard's direct
+ * database connection, not through the platform-agnostic subset.
+ *
+ * The promise is memoised so a cold start that serves several requests at once still migrates once,
+ * and a failure is logged rather than thrown — a temporarily unreachable database must not take the
+ * whole server down before any request is answered.
+ */
+export function runStartupMigrations(): Promise<void> {
+  if (startupMigrationPromise) return startupMigrationPromise;
+  startupMigrationPromise = (async () => {
+    const config = await getRuntimeConfig();
+    if (!config.installed || config.dbType === 'supabase') return;
+    const { createServerDbAdapter, runCoreMigrations } = await import('../lib/db/index');
+    const db = await createServerDbAdapter(config);
+    try {
+      await runCoreMigrations(db);
+    } finally {
+      await db.close().catch(() => undefined);
+    }
+  })().catch((error) => {
+    console.error('Startup schema migration failed:', error);
+  });
+  return startupMigrationPromise;
 }
 
 /**
