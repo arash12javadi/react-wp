@@ -6,7 +6,8 @@ A WordPress-style CMS: React 19 + Vite SPA, Supabase (Postgres + Auth) as the wh
 
 - `npm start` — build, then run `server.mjs` on :3000. This is how the site is actually hosted.
 - `npm run dev` — Vite on :5173, proxying `/api` to :3000 (run `npm start` first).
-- `npm run build` and `npm run lint` — the only automated checks. There is **no TypeScript compiler** configured (no `typescript` dep, no tsconfig); Vite strips types without checking them. ESLint only covers `.js/.jsx`, so `.ts/.tsx` files are not linted either.
+- `npm run build` — the SPA build, then `npm run build:api`, which bundles `src/server/**` into the git-ignored `src/server-dist/vercel.mjs` that `api/index.ts` imports. The Vercel function **must** be that bundle: Vercel transpiles each file under `api/` on its own and keeps relative specifiers extensionless, and these functions run under Node's native ESM resolver (`"type": "module"`), so importing `src/server/adapters/vercel.ts` — or anything a `.ts` file re-exports — fails with `FUNCTION_INVOCATION_FAILED` on every request.
+- `npm run lint` and `npm run typecheck` (`tsc --noEmit`). ESLint only covers `.js/.jsx`, so `.ts/.tsx` files are not linted.
 - `git` is not on the shell PATH. Use `C:\Users\arash\AppData\Local\GitHubDesktop\app-3.6.5\resources\app\git\cmd\git.exe`.
 
 ## Database schema

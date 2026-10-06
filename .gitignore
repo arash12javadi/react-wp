@@ -12,6 +12,9 @@ dist
 dist-ssr
 build
 
+# Bundled Vercel API function (npm run build:api; imported by api/index.ts)
+src/server-dist
+
 # Editor and System Files
 .DS_Store
 *.local

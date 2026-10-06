@@ -7,7 +7,8 @@
     "dev": "vite",
     "start": "npm run build && node server.mjs",
     "start:hono": "npm run build && tsx src/server/adapters/node.ts",
-    "build": "vite build",
+    "build": "vite build && npm run build:api",
+    "build:api": "vite build --config vite.api.config.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "preview": "vite preview"
