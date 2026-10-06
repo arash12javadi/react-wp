@@ -32,12 +32,14 @@ export class SupabaseAdapter implements DBAdapter {
 
   private readonly client: SupabaseClient;
   private readonly baseUrl: string;
+  private readonly timeoutMs: number;
 
   constructor(config: RuntimeConfig) {
     if (!config.supabaseUrl || !config.supabasePublishableKey) {
       throw new Error('Supabase is not configured: a project URL and publishable key are required.');
     }
     this.baseUrl = config.supabaseUrl.replace(/\/$/, '');
+    this.timeoutMs = config.connectionTimeoutMs ?? 10000;
     this.client = createClient(this.baseUrl, config.supabasePublishableKey, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
     });
@@ -177,10 +179,14 @@ export class SupabaseAdapter implements DBAdapter {
   }
 
   async healthCheck(): Promise<HealthResult> {
+    // Abort the probe after `timeoutMs` so a slow/unreachable project never holds the function open.
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), this.timeoutMs) : null;
     try {
       const key = (this.client as unknown as { supabaseKey: string }).supabaseKey;
       const response = await fetch(`${this.baseUrl}/auth/v1/settings`, {
         headers: { apikey: key, Authorization: `Bearer ${key}` },
+        signal: controller?.signal,
       });
       if (response.status === 401 || response.status === 403) {
         return { ok: false, message: 'Invalid Supabase project URL or publishable key.' };
@@ -190,7 +196,14 @@ export class SupabaseAdapter implements DBAdapter {
       }
       return { ok: true, message: 'Connected to Supabase.' };
     } catch (error) {
-      return { ok: false, message: describeDbError(error) };
+      return {
+        ok: false,
+        message: controller?.signal.aborted
+          ? `The Supabase project did not respond within ${Math.round(this.timeoutMs / 1000)} seconds.`
+          : describeDbError(error),
+      };
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 

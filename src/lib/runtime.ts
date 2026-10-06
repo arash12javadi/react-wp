@@ -48,6 +48,12 @@ export interface RuntimeConfig {
   dbName?: string;
   dbUser?: string;
   dbPassword?: string;
+  /**
+   * How long a driver may spend opening a connection before giving up, in milliseconds. Set by the
+   * Setup Wizard's "Test Connection" step so a serverless function (Vercel) can never hang on an
+   * unreachable host; each driver falls back to its own default when this is absent.
+   */
+  connectionTimeoutMs?: number;
 
   // SQLite / LibSQL
   sqliteFile?: string;

@@ -58,6 +58,8 @@ export class MysqlAdapter extends SqlAdapterBase {
           };
       this.pool = createPool({
         ...base,
+        // The Setup Wizard pins this to 5s so a Vercel function can never hang on an unreachable host.
+        connectTimeout: this.config.connectionTimeoutMs ?? 10000,
         multipleStatements: true,
         waitForConnections: true,
         connectionLimit: 10,

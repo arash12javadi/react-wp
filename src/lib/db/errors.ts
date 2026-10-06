@@ -36,21 +36,37 @@ export function isMissingRelation(error: unknown): boolean {
   return /schema cache|does not exist|PGRST205|42P01|42703|no such table|Unknown table|ER_NO_SUCH_TABLE|Could not find the/.test(message);
 }
 
-/** Strips a connection string / password out of a driver message before it reaches a log or browser. */
-export function scrubConnection(message: string, secret?: string): string {
+/**
+ * Removes a known secret (and any embedded connection string) from a message, without rewording it.
+ *
+ * This is the idempotent half of `scrubConnection`: a handler can call it on a message a driver has
+ * already scrubbed without stacking a second friendly prefix onto it.
+ */
+export function scrubSecrets(message: string, secret?: string): string {
   let result = message;
   if (secret && secret.length > 2) result = result.split(secret).join('<password>');
-  result = result
+  return result
     .replace(/postgres(?:ql)?:\/\/[^\s"'`]+/gi, '<connection string>')
     .replace(/mysql:\/\/[^\s"'`]+/gi, '<connection string>');
-  if (/password authentication failed/i.test(result)) {
+}
+
+/** Strips a connection string / password out of a driver message, then rewrites it in plain English. */
+export function scrubConnection(message: string, secret?: string): string {
+  const result = scrubSecrets(message, secret);
+  if (/password authentication failed|access denied for user|authentication failed/i.test(result)) {
     return 'The database rejected that password. Check the password belongs to this database user, not an account or API key.';
   }
   if (/ENOTFOUND|EAI_AGAIN/i.test(result)) {
     return `The database host could not be resolved: ${result}`;
   }
-  if (/ETIMEDOUT|ECONNREFUSED|ECONNRESET/i.test(result)) {
-    return `The database refused the connection: ${result}`;
+  if (/self[- ]signed certificate|certificate verify failed|unable to verify the first certificate/i.test(result)) {
+    return `The database presented a TLS certificate that could not be verified: ${result}`;
+  }
+  if (/SSL connection is required|required SSL|does not support SSL|ssl.*required|wrong version number|tlsv1_alert|sslv3_alert/i.test(result)) {
+    return `The database could not complete the SSL/TLS handshake: ${result}`;
+  }
+  if (/ETIMEDOUT|ECONNREFUSED|ECONNRESET|connection timeout|timeout expired/i.test(result)) {
+    return `The database refused or timed out on the connection: ${result}`;
   }
   return result;
 }

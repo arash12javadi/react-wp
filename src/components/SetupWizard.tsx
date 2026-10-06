@@ -248,9 +248,15 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(connectionBody()),
       });
-      const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; message?: string };
-      if (!response.ok || payload.ok !== true) {
-        throw new Error(payload.message || `Connection test failed (HTTP ${response.status}).`);
+      const payload = (await response.json().catch(() => ({}))) as {
+        success?: boolean;
+        ok?: boolean;
+        message?: string;
+        error?: string;
+      };
+      const succeeded = payload.success === true || payload.ok === true;
+      if (!response.ok || !succeeded) {
+        throw new Error(payload.error || payload.message || `Connection test failed (HTTP ${response.status}).`);
       }
       setHealth({ ok: true, message: payload.message || 'Connected.' });
     } catch (err) {

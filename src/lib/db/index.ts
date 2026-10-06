@@ -60,7 +60,7 @@ export function resetDbAdapter(): void {
 
 export type { DBAdapter } from './DBAdapter';
 export type { DbFilter, DbRow, DbValue, HealthResult } from './types';
-export { describeDbError, isMissingRelation, scrubConnection } from './errors';
+export { describeDbError, isMissingRelation, scrubConnection, scrubSecrets } from './errors';
 export { runCoreMigrations } from './migrations';
 export { schemaFor } from './migrations/schemas';
 

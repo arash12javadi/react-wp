@@ -15,6 +15,8 @@ import {
   createServerDbAdapter,
   describeDbError,
   runCoreMigrations,
+  scrubConnection,
+  scrubSecrets,
   type DBAdapter,
   type DbFilter,
   type DbRow,
@@ -54,6 +56,7 @@ function bodyToConfig(body: Record<string, unknown>): RuntimeConfig {
     dbName: str(body.database) || str(body.name) || str(body.dbName),
     dbUser: str(body.user) || str(body.dbUser),
     dbPassword: str(body.password) || str(body.dbPassword),
+    connectionTimeoutMs: num(body.connectionTimeoutMs) ?? num(body.timeoutMs),
     sqliteFile: str(body.sqliteFile),
     libsqlAuthToken: str(body.libsqlAuthToken),
     jwtSecret: str(body.jwtSecret),
@@ -123,18 +126,72 @@ app.get('/api/install/check', async (c) => {
   return c.json({ installed, dbType: config.dbType ?? fileConfig?.dbType ?? null });
 });
 
-/** Shared Step 3 health check: builds an adapter from the wizard's credentials and probes it. */
+/**
+ * The absolute ceiling for a Step 3 "Test Connection" probe, in milliseconds.
+ *
+ * A serverless function (Vercel) must answer well before its own execution limit, so the whole test
+ * — building the adapter, opening a connection and running `select 1` — is raced against this timer.
+ * On a persistent host it is just as correct: a wrong host or a firewall that silently drops packets
+ * should surface as a clear error, not an endless spinner.
+ */
+const DB_TEST_TIMEOUT_MS = 5000;
+
+/** A short bound on releasing the probe's connection, so a stuck pool cannot hold the response. */
+const DB_TEST_CLOSE_TIMEOUT_MS = 1000;
+
+/** Rejects with `message` unless `promise` settles within `ms` milliseconds. */
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+/**
+ * Shared Step 3 health check: builds an adapter from the wizard's credentials and probes it.
+ *
+ * Every failure mode — a malformed body, an unsupported backend, a missing Supabase project, a
+ * rejected password, an SSL handshake mismatch, an unreachable host, or a driver that simply never
+ * answers — is funnelled through one `try/catch` and answered with an HTTP 400 and a readable JSON
+ * `{ success: false, error }`. The endpoint therefore never raises an unhandled rejection, which is
+ * what made Vercel answer `HTTP 500` / `FUNCTION_INVOCATION_FAILED` for a cloud database it could
+ * not reach. `ok`/`message` are kept alongside the new fields for older Setup Wizard bundles.
+ */
 const testDbHandler = async (c: Context) => {
-  const body = await c.req.json().catch(() => ({}));
-  const config = bodyToConfig(body);
-  const db = await createServerDbAdapter(config);
+  let db: DBAdapter | null = null;
+  let password: string | undefined;
   try {
-    const health = await db.healthCheck();
-    return c.json({ ok: health.ok, message: health.message });
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    // Pin the connection timeout for every driver: `pg`'s pool, `mysql2`'s pool and the Supabase fetch.
+    const config = bodyToConfig({ ...body, connectionTimeoutMs: DB_TEST_TIMEOUT_MS });
+    password = config.dbPassword;
+    db = await createServerDbAdapter(config);
+    const health = await withTimeout(
+      db.healthCheck(),
+      DB_TEST_TIMEOUT_MS,
+      `The database did not respond within ${DB_TEST_TIMEOUT_MS / 1000} seconds. Check that the host and port are reachable from your deployment.`,
+    );
+    if (!health.ok) {
+      // `health.message` is already normalised by the driver, so only strip any leaked secret here.
+      const message = scrubSecrets(health.message, password);
+      return c.json({ success: false, ok: false, error: message, message }, 400);
+    }
+    return c.json({ success: true, ok: true, message: health.message });
   } catch (error) {
-    return c.json({ ok: false, message: describeDbError(error) });
+    const message = scrubConnection(describeDbError(error), password);
+    return c.json({ success: false, ok: false, error: message, message }, 400);
   } finally {
-    await db.close().catch(() => undefined);
+    // Bound the teardown as well: a pool that ignores its own timeout must not hold the response open.
+    if (db) await withTimeout(db.close(), DB_TEST_CLOSE_TIMEOUT_MS, 'close').catch(() => undefined);
   }
 };
 

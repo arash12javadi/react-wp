@@ -28,11 +28,13 @@ export class PostgresAdapter extends SqlAdapterBase {
   }
 
   private poolConfig(): Record<string, unknown> {
+    // The Setup Wizard pins this to 5s so a Vercel function can never hang on an unreachable host.
+    const connectionTimeoutMillis = this.config.connectionTimeoutMs ?? 15000;
     if (this.config.databaseUrl) {
       const ssl = /@(localhost|127\.0\.0\.1|\[::1\])/i.test(this.config.databaseUrl)
         ? undefined
         : { rejectUnauthorized: false };
-      return { connectionString: this.config.databaseUrl, ssl, connectionTimeoutMillis: 15000 };
+      return { connectionString: this.config.databaseUrl, ssl, connectionTimeoutMillis };
     }
     const host = this.config.dbHost || 'localhost';
     const ssl = isLocal(host) ? undefined : { rejectUnauthorized: false };
@@ -43,7 +45,7 @@ export class PostgresAdapter extends SqlAdapterBase {
       user: this.config.dbUser,
       password: this.config.dbPassword,
       ssl,
-      connectionTimeoutMillis: 15000,
+      connectionTimeoutMillis,
     };
   }
 
