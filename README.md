@@ -800,7 +800,7 @@ await supabase.auth.signUp({ email: 't@example.com', password: 'secret123', opti
 The toggles under Settings → Accounts only decide whether the buttons appear. Supabase performs the OAuth handshake, so each provider must also be set up there or the button returns an error:
 
 1. **Authentication → Providers** — enable Google or Facebook and paste in the client ID and secret from Google Cloud Console or Meta for Developers.
-2. **Authentication → URL Configuration** — add `http://localhost:3000/login` and your production equivalent to **Redirect URLs** (and `/lost-password`, for password reset emails). A missing entry here is the usual cause of a redirect mismatch on the first attempt.
+2. **Authentication → URL Configuration** — set **Site URL** to your live address (for example `https://your-site.vercel.app`) and add the addresses sign-in returns to under **Redirect URLs**: `http://localhost:3000/**` for development and `https://your-site/**` for production. Sign-up and password-reset emails carry a `redirect_to`, but Supabase only honours one that matches this list and otherwise falls back to the **Site URL** — so a missing entry, or a Site URL still left at `http://localhost:3000`, is the usual cause of a confirmation link that opens localhost even on a live site.
 
 #### The `[rwp_login]` shortcode
 
@@ -1006,7 +1006,7 @@ Deliberately not included from the legacy theme: a switch for thumbnail generati
 
 With the Page Builder active, these pages are built from its **Account Form** widget (Site category), whose screen, heading, texts, button, redirect and links are edited in the builder; pages that still hold only their default shortcode are converted the next time an administrator opens the admin, and pages you have edited are left alone. The forms are also shortcodes, so a classic page can put anything around them: `[rwp_login_form]`, `[rwp_register_form]`, `[rwp_lost_password_form]` (title, subtitle, button, redirect, links, social attributes), `[rwp_user_profile]` and `[rwp_user_dashboard]`. Plugins add dashboard cards with `addSlotContent('user_dashboard', …)` and `DashboardCard`, and offer addresses in the pickers with the `rwp_account_page_choices` filter.
 
-**Password reset now works end to end.** The email links to `/lost-password`, where the same form asks for the new password. Add `https://your-site/lost-password` to Supabase's Redirect URLs; without it Supabase sends people to the Site URL, and the app forwards them to `/lost-password` itself.
+**Password reset now works end to end.** The email links to `/lost-password`, where the same form asks for the new password. Add `https://your-site/**` to Supabase's **Redirect URLs** and set its **Site URL** to your live address (see [Social sign-in needs Supabase configuration](#social-sign-in-needs-supabase-configuration)); when the return address is not listed Supabase substitutes the Site URL instead, and the app forwards people from there to `/lost-password` itself.
 
 **Settings → Accounts** also sets where signing in leads when the link did not ask for a page (default: the admin for roles that can use it, the user dashboard for everyone else), where signing out leads (default: stay on the page), and who sees the public admin toolbar (everyone signed in, only admin users, or nobody). `?redirect=` only accepts paths on this site, so it cannot be used as an open redirect.
 

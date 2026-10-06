@@ -71,6 +71,17 @@ const MATRIX_CELL_LABEL: Record<MatrixCell, string> = {
 
 const SETUP_STORAGE_KEYS = ['supabase_url', 'supabase_key', 'rwp_installed', 'rwp_config', 'rwp_setup'];
 
+/**
+ * The address this wizard is being served from.
+ *
+ * Supabase only honours an `emailRedirectTo` that is listed under Authentication → URL
+ * Configuration → Redirect URLs; anything else is silently replaced with the project's Site URL
+ * (http://localhost:3000 by default). That is why a confirmation email links back to localhost on a
+ * live site but looks fine while developing: the Site URL matches during development. Step 3 prints
+ * this address so it can be pasted straight into that list before the admin account is created.
+ */
+const siteOrigin = (): string => (typeof window === 'undefined' ? '' : window.location.origin);
+
 function dbOptionState(deployment: Deployment, dbType: DbType): DbOptionState {
   if (deployment === 'node') return { disabled: false };
   if (dbType === 'sqlite') {
@@ -299,7 +310,9 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
       email: adminEmail.trim(),
       password: adminPassword,
       options: {
-        emailRedirectTo: `${window.location.origin}/admin`,
+        // /login, like every other account flow: it is the address the README tells people to allow-list,
+        // and after confirming the admin is signed in and sent on to /admin by afterLoginUrl.
+        emailRedirectTo: `${window.location.origin}/login`,
         data: { display_name: adminUsername.trim() || 'Administrator' },
       },
     });
@@ -567,6 +580,9 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
           {group('Publishable / Anon Key', <input type="password" autoComplete="current-password" value={supabaseKey} onChange={(e) => setSupabaseKey(e.target.value)} placeholder="sbp_... or eyJ..." />)}
           {group('Database Password', <input type="password" autoComplete="new-password" value={dbPassword} onChange={(e) => setDbPassword(e.target.value)} placeholder="From Supabase Settings → Database" />)}
           {group('Session Pooler Connection String (optional)', <input type="password" autoComplete="off" value={connectionString} onChange={(e) => setConnectionString(e.target.value)} placeholder="postgresql://...pooler.supabase.com:6543/postgres" />)}
+          <p className={styles.guideBox}>
+            Supabase → <strong>Authentication → URL Configuration</strong>: set <strong>Site URL</strong> to <code>{siteOrigin()}</code> and add <code>{siteOrigin()}/**</code> to <strong>Redirect URLs</strong> (plus <code>http://localhost:3000/**</code> while developing). Supabase replaces the return address the app sends with the Site URL whenever it is not listed, so confirmation and password-reset emails otherwise link to localhost even on a live site.
+          </p>
         </>
       );
     }
