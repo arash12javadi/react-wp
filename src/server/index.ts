@@ -351,9 +351,15 @@ async function supabaseSchemaSql(): Promise<string> {
 }
 
 /**
- * Supabase provisioning: runs `supabase/schema.sql` over a direct PostgreSQL connection and, when
- * `saveSettings`, seeds the site options and links the admin's `profiles` row (the admin account is
- * created client-side via Supabase Auth `signUp`, exactly as before).
+ * Supabase provisioning over a direct PostgreSQL connection.
+ *
+ * The canonical schema is applied on every path — `supabase/schema.sql` is documented as safe to
+ * re-run — so `options` and `profiles` exist before the steps below. The site options are then
+ * seeded and the administrator's `profiles` row is linked to the account Supabase Auth created
+ * client-side via `signUp` (see the Setup Wizard). That promotion can only happen here: the
+ * `handle_new_user` trigger refuses the administrator role on purpose. `saveSettings` decides only
+ * whether the answer is a written config file (persistent host) or the `.env` a read-only host
+ * pastes — never whether the admin is created.
  */
 async function installSupabase(
   c: Context,
@@ -372,14 +378,18 @@ async function installSupabase(
   const client = new Client({ connectionString, ssl: { rejectUnauthorized: false }, connectionTimeoutMillis: 15000 });
   try {
     await client.connect();
-    if (saveSettings) {
-      if (!adminEmail) throw new Error('Admin email is required.');
+    await client.query(await supabaseSchemaSql());
+
+    if (adminEmail) {
       await client.query(
         `insert into public.options (option_name, option_value)
          values ($1, $2), ($3, $4), ($5, $6)
          on conflict (option_name) do update set option_value = excluded.option_value`,
         ['site_title', siteTitle, 'admin_email', adminEmail, 'installed', 'true'],
       );
+      // The account itself is created client-side via Supabase Auth `signUp`; this promotes the
+      // matching profile to administrator. `display_name` comes from the sign-up metadata the wizard
+      // sends (the admin username from Step 4).
       await client.query(
         `insert into public.profiles (id, email, display_name, role)
          select id, email, coalesce(raw_user_meta_data ->> 'display_name', 'Administrator'), 'administrator'
@@ -387,10 +397,12 @@ async function installSupabase(
          on conflict (id) do update set role = 'administrator'`,
         [adminEmail],
       );
+    }
+
+    if (saveSettings) {
       return c.json({ success: true, mode: 'persistent', installed: true });
     }
 
-    await client.query(await supabaseSchemaSql());
     // A read-only host cannot keep a config file, so the environment the deployed app still needs is
     // the rest of the answer: this is the block Step 5 shows and asks to be pasted into the platform.
     // The connection just used is included, because without `DATABASE_URL` + `DB_TYPE` the deployment

@@ -280,11 +280,43 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
     adminPassword,
   });
 
+  /**
+   * Creates the first administrator in Supabase Auth from the browser.
+   *
+   * `auth.signUp` with the publishable key is the only way to create an account, and the server's
+   * direct connection can only promote the matching `public.profiles` row — `handle_new_user`
+   * refuses the administrator role on purpose. Without this call Step 5 provisions the schema but
+   * leaves the site with no administrator (the "admin is not created" bug on Vercel + Supabase).
+   *
+   * An account that already exists (a re-run of the wizard) is not an error: the installer
+   * re-promotes it. No session comes back when the project requires email confirmation, but the
+   * account still exists, so it is still promoted.
+   */
+  const createSupabaseAdmin = async (): Promise<void> => {
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabase = createClient(supabaseUrl.trim().replace(/\/$/, ''), supabaseKey.trim());
+    const { error } = await supabase.auth.signUp({
+      email: adminEmail.trim(),
+      password: adminPassword,
+      options: {
+        emailRedirectTo: `${window.location.origin}/admin`,
+        data: { display_name: adminUsername.trim() || 'Administrator' },
+      },
+    });
+    if (error && !/already\s*(registered|exists)|user_already_exists/i.test(error.message)) {
+      throw new Error(`Admin account creation failed: ${error.message}`);
+    }
+  };
+
   const runInstall = async (): Promise<void> => {
     setLoading(true);
     setError('');
     setEnvOutput('');
     try {
+      // Supabase Auth owns the account; the installer only promotes its profile, so the browser has
+      // to create it first (see `createSupabaseAdmin`). Every other backend signs the admin up
+      // server-side inside `/api/install-schema`.
+      if (dbType === 'supabase') await createSupabaseAdmin();
       const response = await fetch('/api/install-schema', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
