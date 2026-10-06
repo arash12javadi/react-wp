@@ -1,7 +1,14 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 
 /**
  * Builds the universal Hono API (`src/server/**` + `src/lib/**`) into one self-contained ES module.
+ *
+ * The Supabase schema is inlined too (`__RWP_SCHEMA_SQL__`): a serverless function has a read-only
+ * filesystem, so the install route reads the DDL from the bundle rather than from `supabase/schema.sql`
+ * on disk. Reading it at runtime is what answered the Setup Wizard with
+ * `Database setup failed: __dirname is not defined`.
  *
  * Why this exists instead of deploying the TypeScript entry directly: Vercel's Node builder
  * transpiles the API's TypeScript one file at a time and leaves every relative specifier exactly as
@@ -31,7 +38,23 @@ const isBareSpecifier = (id) =>
   !id.startsWith('\0') &&
   !/^[a-zA-Z]:[\\/]/.test(id)
 
+/**
+ * `supabase/schema.sql` as text, read once so no deployed function ever has to find it.
+ *
+ * Read from the project root (this config's own URL), not `process.cwd()`, so the build works the
+ * same however Vercel invokes it.
+ */
+const supabaseSchema = readFileSync(fileURLToPath(new URL('supabase/schema.sql', import.meta.url)), 'utf8')
+
 export default defineConfig({
+  /**
+   * The Setup Wizard's Step 5 DDL, inlined into the bundle (`__RWP_SCHEMA_SQL__` in
+   * `src/server/index.ts`). `supabase/schema.sql` stays the single source of truth — this only
+   * removes the runtime file read.
+   */
+  define: {
+    __RWP_SCHEMA_SQL__: JSON.stringify(supabaseSchema),
+  },
   // Pure module build: no index.html, no client-side transforms.
   appType: 'custom',
   publicDir: false,

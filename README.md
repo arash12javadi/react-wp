@@ -252,7 +252,7 @@ react-wp/
 | | **Self-hosted Node.js / VPS** | **Serverless (Vercel / Netlify)** |
 |---|---|---|
 | Process model | One persistent `server.mjs` | Static SPA plus functions |
-| Setup Wizard | ✅ Full | ✅ Via `api/install-schema.ts` |
+| Setup Wizard | ✅ Full | ✅ Via `POST /api/install-schema` (`src/server/index.ts`) |
 | Config storage | `data/react-wp-config.json` (persistent volume) | Environment variables |
 | Plugin install / uninstall SQL | ✅ | ⚠️ Not available (no direct DDL) |
 | Site reset, plugin folder delete | ✅ | ❌ |
@@ -376,9 +376,11 @@ npm run typecheck # tsc --noEmit
 
 1. Import the repository and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`.
 2. Redeploy. `vercel.json` routes `/api/plugins/*` to the plugin function, every other `/api/*` path to the universal Hono function (`api/index.ts`), and everything else to `index.html`.
-3. Run the installer from the browser, or paste `supabase/schema.sql` into the Supabase SQL Editor.
+3. Run the installer from the browser, or paste `supabase/schema.sql` into the Supabase SQL Editor. Step 5 runs the schema over a direct connection and then hands back the environment block to paste into the project; add it and redeploy so `/api/install/check` reports the site provisioned.
 
 `api/index.ts` imports `src/server-dist/vercel.mjs`, a single-file bundle of the whole Hono app that `npm run build:api` writes as the last step of `npm run build`. It has to be pre-bundled: Vercel transpiles each file under `api/` on its own and leaves relative specifiers extensionless, and these functions run under Node's native ESM resolver (`"type": "module"`), which refuses to resolve them — pointing the function at `src/server/adapters/vercel.ts` directly answers every `/api/*` request with `FUNCTION_INVOCATION_FAILED`.
+
+That bundle also carries `supabase/schema.sql` (inlined by `vite.api.config.mjs`), so the installer never reads the deployed filesystem — a function has no repository, and `__dirname` does not exist in an ES module. `api/install-schema.ts` is a second entry point onto the same bundle, so `/api/install-schema` has one implementation on every host.
 
 Remember the limits in [Deployment Options](#deployment-options).
 

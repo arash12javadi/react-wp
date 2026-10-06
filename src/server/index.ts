@@ -313,6 +313,44 @@ function randomSecret(): string {
 }
 
 /**
+ * The Supabase schema as text, inlined into the bundle by `vite.api.config.mjs`
+ * (`define: __RWP_SCHEMA_SQL__`). A serverless function's filesystem is read-only and does not
+ * contain the repository, so the DDL has to travel inside the function that runs it.
+ *
+ * `typeof` is load-bearing: on a builder that does not define it — `tsx`, a plain Node host — the
+ * identifier is never declared, and reading it directly would be the very `ReferenceError:
+ * __dirname is not defined` this replaced. `typeof` never dereferences an undeclared name.
+ */
+declare const __RWP_SCHEMA_SQL__: string | undefined;
+
+/**
+ * `supabase/schema.sql` for a fresh Supabase install.
+ *
+ * A bundled run carries it in the bundle. A persistent host (`npm run start:hono`, `tsx`) reads the
+ * file, resolved from this module's own URL: not `__dirname` (absent in ES modules) and not
+ * `process.cwd()` (not the project root inside a function, and not guaranteed anywhere). `src/server/`
+ * and the built `src/server-dist/` sit at the same depth, so one relative path suits either.
+ */
+async function supabaseSchemaSql(): Promise<string> {
+  if (typeof __RWP_SCHEMA_SQL__ === 'string') return __RWP_SCHEMA_SQL__;
+  const { readFile } = await import('node:fs/promises');
+  const { dirname, resolve } = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const candidates = [
+    resolve(dirname(fileURLToPath(import.meta.url)), '../../supabase/schema.sql'),
+    resolve(process.cwd(), 'supabase/schema.sql'),
+  ];
+  for (const candidate of candidates) {
+    try {
+      return await readFile(candidate, 'utf8');
+    } catch {
+      continue;
+    }
+  }
+  throw new Error('supabase/schema.sql could not be read. Run it in the Supabase SQL Editor instead.');
+}
+
+/**
  * Supabase provisioning: runs `supabase/schema.sql` over a direct PostgreSQL connection and, when
  * `saveSettings`, seeds the site options and links the admin's `profiles` row (the admin account is
  * created client-side via Supabase Auth `signUp`, exactly as before).
@@ -349,13 +387,19 @@ async function installSupabase(
          on conflict (id) do update set role = 'administrator'`,
         [adminEmail],
       );
-    } else {
-      const { readFile } = await import('node:fs/promises');
-      const { resolve } = await import('node:path');
-      const schema = await readFile(resolve(process.cwd(), 'supabase/schema.sql'), 'utf8');
-      await client.query(schema);
+      return c.json({ success: true, mode: 'persistent', installed: true });
     }
-    return c.json({ success: true });
+
+    await client.query(await supabaseSchemaSql());
+    // A read-only host cannot keep a config file, so the environment the deployed app still needs is
+    // the rest of the answer: this is the block Step 5 shows and asks to be pasted into the platform.
+    // The connection just used is included, because without `DATABASE_URL` + `DB_TYPE` the deployment
+    // cannot report itself provisioned and the wizard has nothing to verify against.
+    return c.json({
+      success: true,
+      mode: 'serverless',
+      env: buildEnvString({ ...config, databaseUrl: config.databaseUrl || connectionString, installed: true }),
+    });
   } catch (error) {
     return c.json({ error: describeDbError(error) }, 500);
   } finally {

@@ -1,5 +1,6 @@
--- Canonical React-WP schema. server.mjs and api/install-schema.ts both execute this file,
--- so it is the single source of truth for a fresh installation.
+-- Canonical React-WP schema. `server.mjs` reads this file and `POST /api/install-schema`
+-- (`src/server/index.ts`) executes it — the serverless bundle carries it inlined, so this file is the
+-- single source of truth for a fresh installation and nothing has to read it from disk at runtime.
 
 create extension if not exists pgcrypto;
 

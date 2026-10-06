@@ -1,9 +1,10 @@
 // Vercel serverless entry point for the universal Hono API.
 //
-// `vercel.json` rewrites unmatched `/api/*` requests here. The dedicated file-system functions
-// (`api/install-schema.ts`, `api/plugins.ts`, `api/media-delete.ts`, `api/imagekit-auth.ts`) still
-// take precedence, so this only catches the universal routes: `/api/install/*`, `/api/auth/*`,
-// `/api/db/query`, `/api/media/*` and `/api/admin/plugins/upload-zip`.
+// `vercel.json` rewrites unmatched `/api/*` requests here. The hand-written file-system functions
+// (`api/plugins.ts`, `api/media-delete.ts`, `api/imagekit-auth.ts`) still take precedence, and
+// `api/install-schema.ts` is a second entry point onto this same bundle, so the routes below are all
+// universal: `/api/install/*`, `/api/install-schema`, `/api/auth/*`, `/api/db/query`, `/api/media/*`
+// and `/api/admin/plugins/upload-zip`.
 //
 // Import the pre-bundled JavaScript, never `../src/server/adapters/vercel.ts` or anything another
 // `.ts` file re-exports: Vercel transpiles each API file on its own and keeps relative specifiers
