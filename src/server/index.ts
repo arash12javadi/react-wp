@@ -11,6 +11,7 @@
  * every deployment target can run.
  */
 import { Hono, type Context } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import {
   createServerDbAdapter,
   describeDbError,
@@ -30,6 +31,21 @@ import { readConfigFile, writeConfigFile, getRuntimeConfig, reloadRuntimeConfig 
 import { pluginsRouter } from './routes/plugins';
 
 export const app = new Hono();
+
+/**
+ * The last line of defence: no route may ever answer with an opaque body.
+ *
+ * Hono's default error response is the plain text `Internal Server Error`. A browser — and the Setup
+ * Wizard's `response.json()` — can only turn that into "Connection test failed (HTTP 500)"; on Vercel
+ * an uncaught rejection can even surface as `FUNCTION_INVOCATION_FAILED`. Answering with a structured
+ * JSON body (and preserving an `HTTPException`'s own status) guarantees the caller always sees a
+ * reason, whatever escaped the handler that produced it.
+ */
+app.onError((error, c) => {
+  if (error instanceof HTTPException) return error.getResponse();
+  const message = error instanceof Error && error.message ? error.message : describeDbError(error);
+  return c.json({ success: false, ok: false, error: message, message }, 500);
+});
 
 const str = (value: unknown): string | undefined => (typeof value === 'string' && value.trim() ? value.trim() : undefined);
 const num = (value: unknown): number | undefined => {
@@ -98,45 +114,18 @@ function buildEnvString(config: RuntimeConfig): string {
   return lines.join('\n');
 }
 
-/** GET /api/health — probes the configured backend. */
-app.get('/api/health', async (c) => {
-  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
-  const fileConfig = await readConfigFile();
-  const config = { ...bodyToConfig(env as Record<string, unknown>), ...(fileConfig ?? {}) };
-  try {
-    const db = await createServerDbAdapter(config);
-    const health = await db.healthCheck();
-    await db.close().catch(() => undefined);
-    return c.json({ ok: health.ok, dbType: config.dbType, message: health.message });
-  } catch (error) {
-    return c.json({ ok: false, dbType: config.dbType, message: describeDbError(error) }, 500);
-  }
-});
-
 /**
- * GET /api/install/check — reports whether a site has been provisioned. Environment-aware: a
- * serverless/edge run is "installed" when `DATABASE_URL` + `DB_TYPE` are present; a persistent host
- * is "installed" when `data/react-wp-config.json` says so. Re-reads the file so it stays current even
- * in the very same process that just ran Step 5 (`POST /api/install-schema`).
- */
-app.get('/api/install/check', async (c) => {
-  const config = await getRuntimeConfig();
-  const fileConfig = await readConfigFile();
-  const installed = config.installed === true || (fileConfig !== null && fileConfig.installed !== false);
-  return c.json({ installed, dbType: config.dbType ?? fileConfig?.dbType ?? null });
-});
-
-/**
- * The absolute ceiling for a Step 3 "Test Connection" probe, in milliseconds.
+ * The absolute ceiling for a database probe, in milliseconds.
  *
- * A serverless function (Vercel) must answer well before its own execution limit, so the whole test
+ * A serverless function (Vercel) must answer well before its own execution limit, so the whole probe
  * — building the adapter, opening a connection and running `select 1` — is raced against this timer.
  * On a persistent host it is just as correct: a wrong host or a firewall that silently drops packets
- * should surface as a clear error, not an endless spinner.
+ * should surface as a clear error, not an endless spinner (an endless request becomes an opaque
+ * platform 500 on Vercel).
  */
 const DB_TEST_TIMEOUT_MS = 5000;
 
-/** A short bound on releasing the probe's connection, so a stuck pool cannot hold the response. */
+/** A short bound on releasing a probe's connection, so a stuck pool cannot hold the response open. */
 const DB_TEST_CLOSE_TIMEOUT_MS = 1000;
 
 /** Rejects with `message` unless `promise` settles within `ms` milliseconds. */
@@ -155,6 +144,54 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
     );
   });
 }
+
+/**
+ * Releases a probe's connection without ever letting teardown escape.
+ *
+ * `close()` is wrapped in `Promise.resolve().then(...)` so a driver that throws synchronously (rather
+ * than returning a rejected promise) becomes a rejection that is swallowed here, and the whole release
+ * is bounded — a pool that ignores its own timeout can never hold the HTTP response open.
+ */
+async function closeAdapter(db: DBAdapter | null): Promise<void> {
+  if (!db) return;
+  await withTimeout(Promise.resolve().then(() => db.close()), DB_TEST_CLOSE_TIMEOUT_MS, 'close').catch(() => undefined);
+}
+
+/** GET /api/health — probes the configured backend. Bounded, and always JSON. */
+app.get('/api/health', async (c) => {
+  const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+  const fileConfig = await readConfigFile();
+  const config = { ...bodyToConfig(env as Record<string, unknown>), ...(fileConfig ?? {}) };
+  let db: DBAdapter | null = null;
+  try {
+    const opened = await createServerDbAdapter(config);
+    db = opened;
+    const health = await withTimeout(
+      opened.healthCheck(),
+      DB_TEST_TIMEOUT_MS,
+      `The database did not respond within ${DB_TEST_TIMEOUT_MS / 1000} seconds.`,
+    );
+    return c.json({ success: health.ok, ok: health.ok, dbType: config.dbType, message: health.message });
+  } catch (error) {
+    const message = scrubConnection(describeDbError(error), config.dbPassword);
+    return c.json({ success: false, ok: false, dbType: config.dbType, error: message, message }, 503);
+  } finally {
+    await closeAdapter(db);
+  }
+});
+
+/**
+ * GET /api/install/check — reports whether a site has been provisioned. Environment-aware: a
+ * serverless/edge run is "installed" when `DATABASE_URL` + `DB_TYPE` are present; a persistent host
+ * is "installed" when `data/react-wp-config.json` says so. Re-reads the file so it stays current even
+ * in the very same process that just ran Step 5 (`POST /api/install-schema`).
+ */
+app.get('/api/install/check', async (c) => {
+  const config = await getRuntimeConfig();
+  const fileConfig = await readConfigFile();
+  const installed = config.installed === true || (fileConfig !== null && fileConfig.installed !== false);
+  return c.json({ installed, dbType: config.dbType ?? fileConfig?.dbType ?? null });
+});
 
 /**
  * Shared Step 3 health check: builds an adapter from the wizard's credentials and probes it.
@@ -190,8 +227,9 @@ const testDbHandler = async (c: Context) => {
     const message = scrubConnection(describeDbError(error), password);
     return c.json({ success: false, ok: false, error: message, message }, 400);
   } finally {
-    // Bound the teardown as well: a pool that ignores its own timeout must not hold the response open.
-    if (db) await withTimeout(db.close(), DB_TEST_CLOSE_TIMEOUT_MS, 'close').catch(() => undefined);
+    // Bound the teardown too: a pool that ignores its own timeout must not hold the response open, and
+    // a driver whose `close()` throws must not turn a clean 400 into an opaque 500.
+    await closeAdapter(db);
   }
 };
 
@@ -566,13 +604,15 @@ app.post('/api/db/query', async (c) => {
   }
 
   const config = await getRuntimeConfig();
-  const db = await createServerDbAdapter(config);
+  let db: DBAdapter | null = null;
   try {
+    const opened = await createServerDbAdapter(config);
+    db = opened;
     const token = (c.req.header('Authorization') || '').replace(/^Bearer\s+/i, '');
     let user: AuthUser | null = null;
     if (token) {
       try {
-        const auth = await createServerAuthAdapter(config, db);
+        const auth = await createServerAuthAdapter(config, opened);
         user = await auth.authenticate(token);
       } catch {
         // A missing JWT secret or an unreadable user table simply means "not signed in".
@@ -585,12 +625,12 @@ app.post('/api/db/query', async (c) => {
     if (denial) return c.json({ error: { message: denial.message } }, denial.status);
 
     stripPrivilegedColumns(table ?? '', body, role);
-    const data = await executeDbAction(db, action, body);
+    const data = await executeDbAction(opened, action, body);
     return c.json({ data });
   } catch (error) {
     return c.json({ error: { message: describeDbError(error) } }, 500);
   } finally {
-    await db.close().catch(() => undefined);
+    await closeAdapter(db);
   }
 });
 
