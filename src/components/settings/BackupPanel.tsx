@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { describeDbError, client } from '../../lib/db';
 import {
   createBackup,
-  downloadBlob,
   formatBackupDate,
   mediaUploadReadiness,
   readBackupFile,
@@ -11,6 +10,7 @@ import {
   type LoadedBackup,
   type RestoreReport,
 } from '../../lib/backup';
+import { downloadBlob } from '../../lib/download';
 import { formatBytes } from '../../lib/uploads';
 import styles from '../SiteSettings.module.css';
 

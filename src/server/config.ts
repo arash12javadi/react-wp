@@ -82,13 +82,49 @@ let cachedRuntimeConfig: RuntimeConfig | null = null;
 export async function getRuntimeConfig(): Promise<RuntimeConfig> {
   if (!cachedRuntimeConfig) {
     const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+    let base: RuntimeConfig;
     if (env.DATABASE_URL && env.DB_TYPE) {
-      cachedRuntimeConfig = { ...runtimeConfigFromEnv(env), installed: true };
+      base = { ...runtimeConfigFromEnv(env), installed: true };
     } else {
-      cachedRuntimeConfig = mergeRuntimeConfig(resolveServerConfig(), await readConfigFile());
+      base = mergeRuntimeConfig(resolveServerConfig(), await readConfigFile());
     }
+    cachedRuntimeConfig = await applyStoredStorageSettings(base);
   }
   return cachedRuntimeConfig;
+}
+
+/**
+ * Fills `storage`/`s3` from the `system_settings` table when the environment/config file did not
+ * supply them. The Setup Wizard persists the storage driver (and its S3 credentials) here instead of
+ * emitting more boot-time env vars — this is what lets the same wizard output boot on any platform.
+ *
+ * Supabase is skipped deliberately: its `system_settings` rows are RLS-protected (they need
+ * `manage_options`), so the server's publishable-key client cannot read them — a Supabase deployment
+ * keeps storage configuration in the environment. Any failure is swallowed, because resolving the
+ * config must never throw before a request can be answered.
+ */
+async function applyStoredStorageSettings(config: RuntimeConfig): Promise<RuntimeConfig> {
+  if (!config.installed || config.dbType === 'supabase') return config;
+  const envHasS3 = config.s3 ? Object.values(config.s3).some(Boolean) : false;
+  // Nothing to fill: skip the database round-trip entirely. A `local` driver never needs S3, and an
+  // `s3` driver with credentials already supplied by the environment needs nothing either.
+  if (config.storage && (config.storage !== 's3' || envHasS3)) return config;
+  try {
+    const { createServerDbAdapter } = await import('../lib/db/index');
+    const db = await createServerDbAdapter(config);
+    try {
+      const storedStorage = config.storage ? undefined : await db.getSystemSetting<'local' | 's3'>('storage');
+      const storedS3 = envHasS3 ? undefined : await db.getSystemSetting<RuntimeConfig['s3']>('s3');
+      const merged: RuntimeConfig = { ...config };
+      if (storedStorage === 's3' || storedStorage === 'local') merged.storage = storedStorage;
+      if (storedS3 && typeof storedS3 === 'object') merged.s3 = { ...config.s3, ...storedS3 };
+      return merged;
+    } finally {
+      await db.close().catch(() => undefined);
+    }
+  } catch {
+    return config;
+  }
 }
 
 let startupMigrationPromise: Promise<void> | null = null;

@@ -100,6 +100,15 @@ export class HttpDBAdapter implements DBAdapter {
     return true;
   }
 
+  async getSystemSetting<T = unknown>(key: string, fallback?: T | null): Promise<T | null> {
+    return (await this.request({ action: 'getSystemSetting', key, fallback: fallback ?? null })) as T | null;
+  }
+
+  async setSystemSetting(key: string, value: unknown): Promise<boolean> {
+    await this.request({ action: 'setSystemSetting', key, value });
+    return true;
+  }
+
   async migrate(): Promise<void> {
     throw new Error(
       'Schema migrations run on the server during provisioning. Re-run the Setup Wizard (or the ' +

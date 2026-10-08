@@ -82,9 +82,10 @@ is fully unchanged (backward compatible); the new abstraction layers sit underne
 Everything is driven by `src/lib/runtime.ts`, which reads a server-injected object
 (`window.__REACT_WP_CONFIG__`) or environment variables — `VITE_DB_TYPE`, `DATABASE_URL`,
 `JWT_SECRET`, `S3_*`, … A persistent server also reads/writes `data/react-wp-config.json`.
-The 5-step Setup Wizard (`/setup`) provisions the database and either writes that file
-(persistent mode) or prints a ready-to-paste `.env` block (serverless/edge mode). See
-[`.env.example`](./.env.example) for every variable.
+The 5-step Setup Wizard (`/setup`) provisions the database, writes that file in persistent mode, and
+hands the same settings back as a ready-to-paste `.env` block — copyable in one click and
+downloadable as a file on every target, with the administrator's role reported as it was actually
+saved. See [`.env.example`](./.env.example) for every variable.
 
 ### Running on each target
 
@@ -102,8 +103,22 @@ VITE_DB_TYPE=postgres DATABASE_URL=postgres://… JWT_SECRET=… npm run start:h
 ```
 
 **Vercel / Netlify (serverless)** — deploy `src/server/adapters/vercel.ts` as the function; the
-Setup Wizard's serverless path prints the `.env` string (`VITE_DB_TYPE`, `DATABASE_URL`,
-`JWT_SECRET`, `RWP_STORAGE=s3`, `S3_*`) to paste into the platform.
+Setup Wizard's last step hands back a minimal `.env` block (only what the host needs to *boot*:
+`DB_TYPE`/`VITE_DB_TYPE`, `DATABASE_URL`, `JWT_SECRET`, plus `VITE_SUPABASE_*` for Supabase) to paste
+into the platform, with **Copy all** and **Download .env** beside it. Everything else the wizard
+collected — the storage driver above all — is written to the `system_settings` table and read back
+from the database, so no `RWP_STORAGE`/`S3_*` vars are required (you may still set them, e.g. `S3_*`
+credentials, to override what is stored).
+
+The last step is the same screen on every target, and it is the one place the installer admits what it
+did: it names the administrator it created **and the role that account's `profiles` row actually
+carries** (a promotion that matched no account is reported as a warning, instead of the site silently
+keeping the `subscriber` row `handle_new_user` gives every sign-up), lists each variable in the block
+with what it is for, and says where the file goes — `.env.local` in the project root for local work,
+the environment-variable screen on Vercel/Netlify, `env_file:` in `docker-compose.yml`, or
+`EnvironmentFile=` in a systemd unit. On a persistent host the block is extra rather than required:
+that server has already written `data/react-wp-config.json`, which is what tells it a site is
+installed.
 
 **Cloudflare Workers / Pages (edge)** — deploy `src/server/adapters/cloudflare.ts`; pair it with
 **Turso/LibSQL** (`VITE_DB_TYPE=libsql`, `DATABASE_URL=libsql://…`, `LIBSQL_AUTH_TOKEN`) and an
@@ -351,9 +366,23 @@ See [`.env.example`](./.env.example) for the annotated version.
 ### Development with hot reload
 
 ```bash
-npm start        # terminal 1: server on :3000
-npm run dev      # terminal 2: Vite on :5173, proxies /api to :3000
+npm run dev      # Vite on :5173, with the API server on :3000 started alongside it
 ```
+
+One terminal is enough. [`vite.devApi.mjs`](./vite.devApi.mjs) runs the same `server.mjs` that
+`npm start` runs — the code that ships, not a second implementation — and Vite proxies `/api` to it,
+so the Setup Wizard, sessions and media deletes behave on :5173 exactly as they do on :3000.
+
+If something is already listening on port 3000, that server is reused rather than a second one being
+started, so this still works:
+
+```bash
+npm start        # terminal 1: server on :3000
+npm run dev      # terminal 2: Vite on :5173, reusing that server
+```
+
+Set `RWP_DEV_API=off` to keep the API server entirely in your hands. Changes to `server.mjs` and
+`server/*.mjs` need a restart either way: only the browser bundle is hot-reloaded.
 
 Both ports share the same `data/react-wp-config.json`, so they use the same Supabase installation.
 
@@ -376,7 +405,7 @@ npm run typecheck # tsc --noEmit
 
 1. Import the repository and set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`.
 2. Redeploy. `vercel.json` routes `/api/plugins/*` to the plugin function, every other `/api/*` path to the universal Hono function (`api/index.ts`), and everything else to `index.html`.
-3. Run the installer from the browser, or paste `supabase/schema.sql` into the Supabase SQL Editor. Step 5 runs the schema over a direct connection and then hands back the environment block to paste into the project; add it and redeploy so `/api/install/check` reports the site provisioned.
+3. Run the installer from the browser, or paste `supabase/schema.sql` into the Supabase SQL Editor. Step 5 runs the schema over a direct connection, promotes the administrator and hands back the environment block — copyable or downloadable as `.env` — to paste into the project; add it and redeploy so `/api/install/check` reports the site provisioned.
 
 `api/index.ts` imports `src/server-dist/vercel.mjs`, a single-file bundle of the whole Hono app that `npm run build:api` writes as the last step of `npm run build`. It has to be pre-bundled: Vercel transpiles each file under `api/` on its own and leaves relative specifiers extensionless, and these functions run under Node's native ESM resolver (`"type": "module"`), which refuses to resolve them — pointing the function at `src/server/adapters/vercel.ts` directly answers every `/api/*` request with `FUNCTION_INVOCATION_FAILED`.
 

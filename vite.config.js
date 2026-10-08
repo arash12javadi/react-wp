@@ -1,6 +1,16 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import { publicConfig, readConfig } from './server/config.mjs'
+import { apiPort, devApiServer } from './vite.devApi.mjs'
+
+/**
+ * Where the dev server sends `/api`.
+ *
+ * Those routes are not the SPA's: the Setup Wizard's Step 3 probe, sessions, media deletes and DDL
+ * live on the Node server, which `devApiServer()` starts for `npm run dev`. Both read the same
+ * `PORT`, so moving the API server moves the proxy with it instead of leaving it aimed at :3000.
+ */
+const apiOrigin = `http://localhost:${apiPort()}`
 
 export default defineConfig({
   build: {
@@ -50,10 +60,33 @@ export default defineConfig({
         )
       },
     },
+    // The API server itself, so `npm run dev` is enough on its own.
+    devApiServer(),
   ],
   server: {
     proxy: {
-      '/api': 'http://localhost:3000',
+      '/api': {
+        target: apiOrigin,
+        /**
+         * Names the one failure the browser could not: an unreachable API server.
+         *
+         * Vite answers a proxy error with a bare `502` and an empty body, so a missing `server.mjs`
+         * reached the Setup Wizard as `Connection test failed (HTTP 502)` — for a Supabase project
+         * that was perfectly reachable, on a step whose every other error is specific. This hook is
+         * registered before Vite's own (which runs after `configure`), and Vite writes its plain 502
+         * only when nothing has been sent yet, so the JSON body below is the one that survives and
+         * every caller can print it verbatim.
+         */
+        configure(proxy) {
+          proxy.on('error', (error, _request, response) => {
+            if (typeof response?.writeHead !== 'function' || response.headersSent || response.writableEnded) return
+            const message = `The React-WP API server at ${apiOrigin} could not be reached (${error.code || error.message}). `
+              + 'Run "npm run dev", which starts it, or start it yourself with "npm start".'
+            response.writeHead(502, { 'Content-Type': 'application/json; charset=utf-8' })
+            response.end(JSON.stringify({ success: false, ok: false, error: message, message }))
+          })
+        },
+      },
     },
   },
 })

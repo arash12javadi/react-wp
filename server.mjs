@@ -6,6 +6,7 @@ import { access, readFile } from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import { publicConfig, readConfig, writeConfig } from './server/config.mjs';
+import { buildEnvString } from './server/installEnv.mjs';
 import { authorizeImageKitUpload, authorizeMediaDelete, deleteFromProvider, describeDeleteSupport } from './server/media.mjs';
 import { renderDocumentInjections, renderEditorInjections } from './server/seo.mjs';
 import { handlePluginRequest, resolveOrigin } from './server/plugins.mjs';
@@ -79,34 +80,116 @@ const readBody = async (request) => {
 // Installs the CORE schema only. Plugin tables are installed per plugin from the Plugins screen
 // (POST /api/admin/plugins/install-schema), so a site that never enables the shop never gets
 // twenty shop_* tables it will not use.
+/**
+ * Provisions the Supabase project this server installs into: the schema, the site options, the first
+ * administrator and — on a persistent host — the config file that says where the database is.
+ *
+ * `body.saveSettings` decides exactly one thing: whether `data/react-wp-config.json` is written. It
+ * comes from the wizard's deployment target (`node` can keep a file, `serverless`/`edge` cannot) and
+ * it used to gate the whole block, so a wizard run in serverless mode applied the schema and then
+ * skipped the options seed *and* the admin promotion. The new administrator kept the `subscriber`
+ * role `handle_new_user` gives every sign-up, and the answer was a bare `{ success: true }` with no
+ * `env`, so Step 5 had no credentials to show. The universal server (`src/server/index.ts`) has
+ * always separated the two; this is the same split, and the doc comment there says the same thing.
+ *
+ * The answer is the block Step 5 renders: the mode, the `.env` a read-only host needs, and the
+ * administrator's *actual* role afterwards — reported, never assumed, so a promotion that matched no
+ * account becomes a visible warning instead of a silent downgrade discovered in the database later.
+ */
 const install = async (body) => {
-  const resolved = resolveConnectionString(body, await readConfig());
+  // The project reference comes from the URL the wizard sent, exactly as `testDatabase` above does it.
+  // Without this the password path looked only at `data/react-wp-config.json`, which a fresh install
+  // does not have yet — so Step 3's "Test Connection" passed and Step 5 answered "A database password
+  // was sent, but this site's Supabase project reference could not be worked out from its URL".
+  const resolved = resolveConnectionString(
+    { ...body, projectRef: body.projectRef || projectRefFromUrl(body.supabaseUrl) },
+    await readConfig(),
+  );
   if (!resolved.ok) throw new Error(resolved.error);
-  await withClient(resolved.url, async (client) => {
+  const siteTitle = String(body.siteTitle || '').trim();
+  const adminEmail = String(body.adminEmail || '').trim();
+  const requestedAdminId = String(body.adminUserId || '').trim();
+  const adminUserId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestedAdminId)
+    ? requestedAdminId
+    : null;
+  if (!adminEmail) throw new Error('The administrator email address is required.');
+  if (body.saveSettings && !siteTitle) throw new Error('The site title is required.');
+
+  return withClient(resolved.url, async (client) => {
     await client.query(schema);
+    await client.query(
+      `insert into public.options (option_name, option_value)
+       values ($1, $2), ($3, $4), ($5, $6)
+       on conflict (option_name) do update set option_value = excluded.option_value`,
+      ['site_title', siteTitle || 'My React-WP Site', 'admin_email', adminEmail, 'installed', 'true'],
+    );
+    const admin = await promoteAdmin(client, { adminUserId, adminEmail });
     if (body.saveSettings) {
-      if (!body.siteTitle || !body.adminEmail) throw new Error('Site title and admin email are required.');
-      await client.query(
-        `insert into public.options (option_name, option_value)
-         values ($1, $2), ($3, $4), ($5, $6)
-         on conflict (option_name) do update set option_value = excluded.option_value`,
-        ['site_title', body.siteTitle, 'admin_email', body.adminEmail, 'installed', 'true'],
-      );
-      await client.query(
-        `insert into public.profiles (id, email, display_name, role)
-         select id, email, coalesce(raw_user_meta_data ->> 'display_name', 'Administrator'), 'administrator'
-         from auth.users where lower(email) = lower($1)
-         on conflict (id) do update set role = 'administrator'`,
-        [body.adminEmail],
-      );
       await writeConfig({
         installed: true,
         supabaseUrl: body.supabaseUrl,
         supabasePublishableKey: body.supabasePublishableKey,
       });
     }
+    return {
+      success: true,
+      mode: body.saveSettings ? 'persistent' : 'serverless',
+      installed: true,
+      // This server installs the Supabase schema and nothing else (`auth.users`, RLS, PostgREST are
+      // what the browser it serves reads through), so the block says Supabase whichever label the
+      // wizard used for the connection: "Supabase" and "self-hosted Postgres" reach the same project.
+      env: buildEnvString({
+        dbType: 'supabase',
+        supabaseUrl: body.supabaseUrl,
+        supabasePublishableKey: body.supabasePublishableKey,
+      }),
+      admin,
+    };
+  }).catch((error) => {
+    // Driver errors quote the connection string, password included, and Step 5 shows this text as it
+    // is. `describeDbError` is the one place that strips it (server/db.mjs) and turns the common ones
+    // — a rejected password above all — into the sentence that says which password it means.
+    throw new Error(describeDbError(error, resolved.url));
   });
 };
+
+/**
+ * Promotes the wizard's account to administrator and reports what the row actually says afterwards.
+ *
+ * The account itself is created in Supabase Auth by the browser (`supabase.auth.signUp`), because
+ * `handle_new_user` refuses the administrator role on purpose — accepting one from a sign-up payload
+ * would restore the escalation path `public.profiles` exists to close — so this direct connection is
+ * the only thing that can promote it. The INSERT covers a project whose trigger did not exist yet
+ * when the account was made, the UPDATE covers the `subscriber` row the trigger does create, and
+ * `returning` means "no rows" can no longer be mistaken for success: Step 5 warns about the account
+ * it could not find instead of the subscriber role being discovered in the database later.
+ *
+ * Matching is by email first, because that is what identifies an administrator, with the id the
+ * browser got back from `signUp` as a second way in for a stored address that differs in case.
+ */
+const promoteAdmin = async (client, { adminUserId, adminEmail }) => {
+  const hasAuthUsers = await client.query(`select to_regclass('auth.users') is not null as present`);
+  if (hasAuthUsers.rows?.[0]?.present !== true) {
+    return { email: adminEmail, role: null, warning: 'This database has no Supabase auth schema, so there is no account to promote.' };
+  }
+  const result = await client.query(
+    `insert into public.profiles (id, email, display_name, role)
+     select u.id, u.email, coalesce(u.raw_user_meta_data ->> 'display_name', 'Administrator'), 'administrator'
+     from auth.users u
+     where lower(u.email) = lower($2) or ($1::uuid is not null and u.id = $1::uuid)
+     on conflict (id) do update set role = 'administrator'
+     returning id, email, role`,
+    [adminUserId, adminEmail],
+  );
+  const row = result.rows?.[0];
+  if (row) return { id: row.id, email: row.email, role: row.role };
+  return {
+    email: adminEmail,
+    role: null,
+    warning: `Supabase Auth has no account for ${adminEmail}, so nothing was promoted. Create that account (or sign up with it), then run this step again.`,
+  };
+};
+
 
 /**
  * Renders index.html for a path: the SEO block, the Theme Editor's CSS and code, the tracking
@@ -656,7 +739,7 @@ const server = http.createServer(async (request, response) => {
     }
     if (url.pathname === '/api/install-schema' && request.method === 'POST') {
       const body = await readBody(request);
-      await install(body);
+      const result = await install(body);
       // The site the engine was told about no longer exists, and neither does anything rendered
       // from it. Re-point it and start again from the new project's settings.
       pageCachePurge();
@@ -664,7 +747,7 @@ const server = http.createServer(async (request, response) => {
       purgeSitemap();
       configureSecuritySettings(await currentConfig());
       await refreshSecuritySettings();
-      json(request, response, 200, { success: true });
+      json(request, response, 200, result);
       return;
     }
     // Anything else under /api/ is a mistake, not a page. Without this the SPA fallback below

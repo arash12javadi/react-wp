@@ -144,17 +144,6 @@ export async function createBackup(includeMedia: boolean, onProgress: Progress) 
   };
 }
 
-export const downloadBlob = (blob: Blob, fileName: string) => {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
-};
-
 export async function readBackupFile(file: File): Promise<LoadedBackup> {
   const bytes = new Uint8Array(await file.arrayBuffer());
   let files: Record<string, Uint8Array> = {};

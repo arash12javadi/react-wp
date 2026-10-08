@@ -42,6 +42,13 @@ export interface DBAdapter {
   /** Writes (upserts) an option. Resolves `false` only when the write was blocked or failed. */
   setOption(name: string, value: unknown): Promise<boolean>;
 
+  // -- System settings (admin-only key-value store) -----------------------------
+
+  /** Reads a JSON-encoded system setting. Returns `fallback` when absent or unparseable as JSON. */
+  getSystemSetting<T = unknown>(key: string, fallback?: T | null): Promise<T | null>;
+  /** Writes (upserts) a system setting. Resolves `false` only when the write was blocked or failed. */
+  setSystemSetting(key: string, value: unknown): Promise<boolean>;
+
   // -- Migrations / provisioning -----------------------------------------------
 
   /** Runs a schema script (DDL). Throws on failure. */

@@ -1,6 +1,13 @@
-import { client, updateOption } from './db';
+import { client, updateOption, getSystemSetting, setSystemSetting } from './db';
 import { purgePageCacheQuietly } from './security';
 import { defaultExcerptLength, type ExcerptUnit } from './excerpt';
+
+/**
+ * The system-settings store is re-exported here so callers that already import from `./settings`
+ * can reach it too. It is the database-backed home for configuration the Setup Wizard used to emit
+ * as `RWP_STORAGE`/`S3_*` env vars; see `getSystemSetting`/`setSystemSetting` in `./db`.
+ */
+export { getSystemSetting, setSystemSetting };
 
 /** What the public header shows in its brand area (Settings → Site). */
 export type HeaderDisplay = 'text' | 'title' | 'logo' | 'logo_title' | 'logo_text';

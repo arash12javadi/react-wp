@@ -127,6 +127,24 @@ export abstract class SqlAdapterBase implements DBAdapter {
     return true;
   }
 
+  async getSystemSetting<T = unknown>(key: string, fallback?: T | null): Promise<T | null> {
+    const rows = await this.select('system_settings', { where: { setting_key: key }, limit: 1 });
+    const row = rows[0];
+    if (!row || row.setting_value === null || row.setting_value === undefined) return fallback ?? null;
+    const raw = String(row.setting_value);
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      return raw as unknown as T;
+    }
+  }
+
+  async setSystemSetting(key: string, value: unknown): Promise<boolean> {
+    const valueString = typeof value === 'object' ? JSON.stringify(value) : String(value);
+    await this.upsert('system_settings', [{ setting_key: key, setting_value: valueString }], ['setting_key']);
+    return true;
+  }
+
   async hasTable(table: string): Promise<boolean> {
     try {
       await this.run(`select 1 from ${this.dialect.quote(table)} limit 1`);

@@ -65,6 +65,20 @@ export const updateOption = async (optionName: string, optionValue: unknown): Pr
   getDbAdapter().setOption(optionName, optionValue);
 
 /**
+ * The system-settings API: an administrator-only key-value store (`system_settings`) for
+ * configuration that must not live in boot-time environment variables — the storage driver, S3
+ * credentials and integration keys. It is what keeps `react-wp` platform-agnostic: the Setup Wizard
+ * writes these once, and every deployment reads them back from the active database instead of from
+ * `.env`. Reads and writes route through the selected adapter, which enforces the same
+ * `manage_options` rule the Supabase RLS policies apply.
+ */
+export const getSystemSetting = async <T = unknown>(key: string, fallback: T | null = null): Promise<T | null> =>
+  getDbAdapter().getSystemSetting<T>(key, fallback);
+
+export const setSystemSetting = async (key: string, value: unknown): Promise<boolean> =>
+  getDbAdapter().setSystemSetting(key, value);
+
+/**
  * The universal data interface. `from(table)` returns the dialect-independent query builder
  * (`.select().eq().order().single()…`, `.insert/update/upsert/delete`); the `select/insert/update/
  * delete` methods below are the plugin `$wpdb`-style helpers kept for backward compatibility.

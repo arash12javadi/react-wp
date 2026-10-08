@@ -82,6 +82,11 @@ create table if not exists options (
   option_value text not null
 );
 
+create table if not exists system_settings (
+  setting_key varchar(191) primary key,
+  setting_value text not null
+);
+
 create table if not exists menus (
   id bigint not null auto_increment primary key,
   name varchar(255) not null,

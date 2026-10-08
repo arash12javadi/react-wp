@@ -79,6 +79,11 @@ create table if not exists options (
   option_value text not null
 );
 
+create table if not exists system_settings (
+  setting_key text primary key,
+  setting_value text not null
+);
+
 create table if not exists menus (
   id integer primary key autoincrement,
   name text not null,

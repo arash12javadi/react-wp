@@ -114,15 +114,9 @@ function buildEnvString(config: RuntimeConfig): string {
   if (config.sqliteFile) lines.push(`SQLITE_FILE=${config.sqliteFile}`);
   if (config.libsqlAuthToken) lines.push(`LIBSQL_AUTH_TOKEN=${config.libsqlAuthToken}`);
   lines.push(`JWT_SECRET=${config.jwtSecret || ''}`);
-  lines.push(`RWP_STORAGE=${config.storage === 's3' ? 's3' : 'local'}`);
-  if (config.storage === 's3') {
-    lines.push(`S3_BUCKET=${config.s3?.bucket || ''}`);
-    lines.push(`S3_REGION=${config.s3?.region || ''}`);
-    lines.push(`S3_ENDPOINT=${config.s3?.endpoint || ''}`);
-    lines.push(`S3_ACCESS_KEY_ID=${config.s3?.accessKeyId || ''}`);
-    lines.push(`S3_SECRET_ACCESS_KEY=${config.s3?.secretAccessKey || ''}`);
-    lines.push(`S3_PUBLIC_BASE_URL=${config.s3?.publicBaseUrl || ''}`);
-  }
+  // Only what a host needs to *boot* is emitted here. Everything else the wizard collected — the
+  // storage driver and its S3 credentials above all — is persisted to the `system_settings` table by
+  // the install handler and read back from the database, so the platform stays agnostic.
   return lines.join('\n');
 }
 
@@ -282,14 +276,34 @@ app.post('/api/install-schema', async (c) => {
     await runCoreMigrations(db);
     const fullConfig: RuntimeConfig = { ...config, jwtSecret: config.jwtSecret || randomSecret(), installed: true };
     const auth = await createServerAuthAdapter(fullConfig, db);
-    const signUp = await auth.signUp(adminEmail, adminPassword, 'administrator');
-    if (adminUsername && signUp.user?.id) {
-      await db.update('profiles', { where: { id: signUp.user.id } }, { display_name: adminUsername }).catch(() => undefined);
+    const signUp = await auth.signUp(adminEmail, adminPassword, 'administrator').catch(async (error: unknown) => {
+      // Re-running the wizard is normal — it is how a site whose administrator ended up with the
+      // wrong role is put right — and Supabase's own adapter tolerates an account that already
+      // exists. The universal engine refuses it, so the account that is already there is looked up
+      // and treated as the answer: everything below cares about its profile row, not about which run
+      // created it. The stored password is left alone; a genuinely forgotten one is the Sign in
+      // screen's job, not the installer's.
+      if (!/already exists/i.test(String((error as Error)?.message))) throw error;
+      const existing = await db.select('rwp_users', { where: { email: adminEmail.toLowerCase() }, limit: 1 }).catch(() => []);
+      const id = existing[0]?.id;
+      if (!id) throw error;
+      return { session: null, user: { id: String(id), email: adminEmail, role: 'administrator' } };
+    });
+    const adminUserId = signUp.user?.id || str(body.adminUserId) || '';
+    if (adminUsername && adminUserId) {
+      await db.update('profiles', { where: { id: adminUserId } }, { display_name: adminUsername }).catch(() => undefined);
     }
+    const admin = await confirmAdministrator(db, adminUserId, adminEmail);
     await db.setOption('site_title', siteTitle);
     await db.setOption('site_tagline', siteTagline);
     await db.setOption('admin_email', adminEmail);
     await db.setOption('installed', 'true');
+    // Non-boot configuration lives in the database, not the `.env`: persist the storage driver (and
+    // its S3 credentials, when chosen) so any deployment reads it back from `system_settings`.
+    await db.setSystemSetting('storage', config.storage === 's3' ? 's3' : 'local');
+    // Only persist S3 credentials when a usable set was actually provided; an empty object would
+    // otherwise clobber a bucket saved by an earlier run.
+    if (config.s3 && Object.values(config.s3).some(Boolean)) await db.setSystemSetting('s3', config.s3);
     await db.close().catch(() => undefined);
 
     if (saveSettings) {
@@ -297,13 +311,65 @@ app.post('/api/install-schema', async (c) => {
       // Refresh the running process's in-memory config so /api/install/check and every API handler
       // see the new backend immediately — no restart required.
       await reloadRuntimeConfig();
-      return c.json({ success: true, mode: 'persistent', installed: true });
+      // The `.env` comes back here too. On this host the config file is what is read, but the same
+      // block is what a Docker/Vercel copy of the site needs, and Step 5 offers it in both modes
+      // rather than making anyone copy the values out of `data/react-wp-config.json` by hand.
+      return c.json({ success: true, mode: 'persistent', installed: true, env: buildEnvString(fullConfig), admin });
     }
-    return c.json({ success: true, mode: 'serverless', env: buildEnvString(fullConfig) });
+    return c.json({ success: true, mode: 'serverless', env: buildEnvString(fullConfig), admin });
   } catch (error) {
     return c.json({ error: describeDbError(error) }, 500);
   }
 });
+
+/**
+ * Confirms that the account the installer just created really is an administrator, and reports the
+ * role the row ends up with.
+ *
+ * The universal sign-up (`UniversalAuthAdapter.signUp`) writes both `rwp_users` and `profiles`, but
+ * only the second write is best-effort — it is allowed to fail on a site whose core schema predates
+ * that table — and a profile row that exists with the schema default is a subscriber. An
+ * installation that quietly produces a subscriber where an administrator was asked for is the bug
+ * this reports; the repair is one update, and the wizard shows the warning when even that fails
+ * instead of leaving someone to find out in the database.
+ */
+async function confirmAdministrator(
+  db: DBAdapter,
+  userId: string,
+  email: string,
+): Promise<{ id?: string; email: string; role: string | null; warning?: string }> {
+  const rows = userId ? await db.select('profiles', { where: { id: userId }, limit: 1 }).catch(() => []) : [];
+  const row = rows[0];
+  if (!row) {
+    return {
+      id: userId || undefined,
+      email,
+      role: null,
+      warning: `No profile row was found for ${email}, so the administrator role could not be confirmed. Sign in and promote the account under Users.`,
+    };
+  }
+  if (row.role === 'administrator') return { id: String(row.id), email, role: 'administrator' };
+  // `columns` is what makes the adapter hand the written rows back. Without it the SQL drivers answer
+  // an UPDATE with an empty array, so a repair that worked and one a policy refused would look
+  // identical — the "a blocked write reports success" trap, in the other direction.
+  const repaired = await db
+    .update('profiles', { where: { id: userId }, columns: 'id,role' }, { role: 'administrator' })
+    .then((updated) => updated.find((row) => String(row.role) === 'administrator'))
+    .catch(() => undefined);
+  if (repaired) return { id: String(row.id), email, role: 'administrator' };
+  // Report what the row says *now*, not what it said before the attempt.
+  const afterRepair = await db
+    .select('profiles', { where: { id: userId }, limit: 1 })
+    .then((rows) => rows[0]?.role)
+    .catch(() => row.role);
+  const current = typeof afterRepair === 'string' ? afterRepair : '';
+  return {
+    id: String(row.id),
+    email,
+    role: current || null,
+    warning: `The profile row for ${email} still reads "${current || 'no role'}", so this site has no administrator. Promote the account under Users.`,
+  };
+}
 
 /** A cryptographically random JWT secret for a fresh universal install. */
 function randomSecret(): string {
@@ -359,7 +425,8 @@ async function supabaseSchemaSql(): Promise<string> {
  * client-side via `signUp` (see the Setup Wizard). That promotion can only happen here: the
  * `handle_new_user` trigger refuses the administrator role on purpose. `saveSettings` decides only
  * whether the answer is a written config file (persistent host) or the `.env` a read-only host
- * pastes — never whether the admin is created.
+ * pastes — never whether the admin is created — and the promotion's result is read back and returned
+ * so Step 5 can confirm the role rather than assume it (see `promoteSupabaseAdmin`).
  */
 async function installSupabase(
   c: Context,
@@ -380,6 +447,28 @@ async function installSupabase(
     await client.connect();
     await client.query(await supabaseSchemaSql());
 
+    // Persist the non-boot configuration to `system_settings` (this direct connection bypasses RLS),
+    // so the wizard no longer has to emit RWP_STORAGE/S3_* environment variables.
+    await client.query(
+      `insert into public.system_settings (setting_key, setting_value)
+       values ('storage', $1)
+       on conflict (setting_key) do update set setting_value = excluded.setting_value`,
+      [JSON.stringify(config.storage === 's3' ? 's3' : 'local')],
+    );
+    // Only persist S3 credentials when a usable set was actually provided; an empty object would
+    // otherwise clobber a bucket saved by an earlier run.
+    if (config.s3 && Object.values(config.s3).some(Boolean)) {
+      await client.query(
+        `insert into public.system_settings (setting_key, setting_value)
+         values ('s3', $1)
+         on conflict (setting_key) do update set setting_value = excluded.setting_value`,
+        [JSON.stringify(config.s3)],
+      );
+    }
+
+    // Reported back to Step 5 so the wizard can confirm the role instead of assuming it: see
+    // `promoteSupabaseAdmin`.
+    let admin: { id?: string; email: string; role: string | null; warning?: string } | null = null;
     if (adminEmail) {
       await client.query(
         `insert into public.options (option_name, option_value)
@@ -387,36 +476,74 @@ async function installSupabase(
          on conflict (option_name) do update set option_value = excluded.option_value`,
         ['site_title', siteTitle, 'admin_email', adminEmail, 'installed', 'true'],
       );
-      // The account itself is created client-side via Supabase Auth `signUp`; this promotes the
-      // matching profile to administrator. `display_name` comes from the sign-up metadata the wizard
-      // sends (the admin username from Step 4).
-      await client.query(
-        `insert into public.profiles (id, email, display_name, role)
-         select id, email, coalesce(raw_user_meta_data ->> 'display_name', 'Administrator'), 'administrator'
-         from auth.users where lower(email) = lower($1)
-         on conflict (id) do update set role = 'administrator'`,
-        [adminEmail],
-      );
+      admin = await promoteSupabaseAdmin(client, str(body.adminUserId) || '', adminEmail);
     }
 
+    // The connection just used travels in the block in both modes: without `DATABASE_URL` + `DB_TYPE`
+    // a deployment cannot report itself provisioned, and `SUPABASE_DB_URL`-style access is what lets
+    // plugin SQL and the site reset run there without asking for the password again.
+    const env = buildEnvString({ ...config, databaseUrl: config.databaseUrl || connectionString, installed: true });
+
     if (saveSettings) {
-      return c.json({ success: true, mode: 'persistent', installed: true });
+      // This host keeps `data/react-wp-config.json`; the block is returned anyway, because the same
+      // site deployed to Docker or Vercel needs it and Step 5 offers it in both modes rather than
+      // making anyone copy the values out of the config file by hand.
+      return c.json({ success: true, mode: 'persistent', installed: true, env, admin });
     }
 
     // A read-only host cannot keep a config file, so the environment the deployed app still needs is
     // the rest of the answer: this is the block Step 5 shows and asks to be pasted into the platform.
-    // The connection just used is included, because without `DATABASE_URL` + `DB_TYPE` the deployment
-    // cannot report itself provisioned and the wizard has nothing to verify against.
-    return c.json({
-      success: true,
-      mode: 'serverless',
-      env: buildEnvString({ ...config, databaseUrl: config.databaseUrl || connectionString, installed: true }),
-    });
+    return c.json({ success: true, mode: 'serverless', env, admin });
   } catch (error) {
     return c.json({ error: describeDbError(error) }, 500);
   } finally {
     await client.end().catch(() => undefined);
   }
+}
+
+/**
+ * Promotes the Setup Wizard's account over the direct connection and reports the role the profile
+ * row actually carries afterwards.
+ *
+ * The account is created client-side (`supabase.auth.signUp`) because `handle_new_user` refuses the
+ * administrator role on purpose — a role taken from a sign-up payload is the escalation path
+ * `public.profiles` exists to close — so this is the only thing that can promote it. The INSERT
+ * covers a project whose trigger did not exist yet when the account was made, the UPDATE covers the
+ * `subscriber` row the trigger does create, and `returning` means "no rows" is reported as a warning
+ * rather than mistaken for success: the silent version of that is how an installation ends up with
+ * an administrator who is a subscriber.
+ *
+ * Matching is by email first, because that is what identifies an administrator, with the id the
+ * browser got back from `signUp` as a second way in.
+ */
+async function promoteSupabaseAdmin(
+  client: { query: (text: string, values?: unknown[]) => Promise<{ rows: Array<Record<string, unknown>> }> },
+  adminUserId: string,
+  adminEmail: string,
+): Promise<{ id?: string; email: string; role: string | null; warning?: string }> {
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(adminUserId) ? adminUserId : null;
+  const result = await client.query(
+    `insert into public.profiles (id, email, display_name, role)
+     select u.id, u.email, coalesce(u.raw_user_meta_data ->> 'display_name', 'Administrator'), 'administrator'
+     from auth.users u
+     where lower(u.email) = lower($2) or ($1::uuid is not null and u.id = $1::uuid)
+     on conflict (id) do update set role = 'administrator'
+     returning id, email, role`,
+    [uuid, adminEmail],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    return {
+      email: adminEmail,
+      role: null,
+      warning: `Supabase Auth has no account for ${adminEmail}, so nothing was promoted. Create that account (or sign up with it), then run this step again.`,
+    };
+  }
+  return {
+    id: String(row.id),
+    email: String(row.email ?? adminEmail),
+    role: row.role === null || row.role === undefined ? null : String(row.role),
+  };
 }
 
 /** Builds a Supabase direct-connection string from the request, mirroring server/db.mjs. */
@@ -532,6 +659,8 @@ const PUBLIC_READ_ACTIONS = new Set(['select', 'selectOne', 'getOption', 'hasTab
 const ADMIN_ACTIONS = new Set(['query', 'migrate']);
 /** Tables whose rows must never be readable by an anonymous caller (they hold password hashes). */
 const SENSITIVE_READ_TABLES = new Set(['rwp_users']);
+/** Tables only a settings manager may read: they can hold secrets, so they are never public. */
+const PRIVILEGED_READ_TABLES = new Set(['system_settings']);
 /** Tables an unauthenticated visitor may write to (WordPress-style anonymous comments). */
 const PUBLIC_WRITE_TABLES = new Set(['comments']);
 /**
@@ -540,6 +669,7 @@ const PUBLIC_WRITE_TABLES = new Set(['comments']);
  */
 const WRITE_CAPABILITIES: Record<string, Capability> = {
   options: 'manage_options',
+  system_settings: 'manage_options',
   theme_settings: 'manage_options',
   menus: 'manage_options',
   rwp_translations: 'manage_options',
@@ -575,7 +705,22 @@ function authorizeRequest(action: string, table: string | undefined, role: UserR
     if ((action === 'select' || action === 'selectOne') && table && SENSITIVE_READ_TABLES.has(table) && !roleHas(role, 'list_users')) {
       return { status: 403, message: `Reading "${table}" requires the list_users capability.` };
     }
+    if ((action === 'select' || action === 'selectOne') && table && PRIVILEGED_READ_TABLES.has(table) && !roleHas(role, 'manage_options')) {
+      return { status: 403, message: `Reading "${table}" requires the manage_options capability.` };
+    }
     return null;
+  }
+
+  // System settings can hold secrets, so even reading one needs manage_options.
+  if (action === 'getSystemSetting') {
+    if (roleHas(role, 'manage_options')) return null;
+    return { status: role ? 403 : 401, message: 'Reading system settings requires the manage_options capability.' };
+  }
+
+  // Writing one is a settings-manager action too.
+  if (action === 'setSystemSetting') {
+    if (roleHas(role, 'manage_options')) return null;
+    return { status: role ? 403 : 401, message: 'Changing system settings requires the manage_options capability.' };
   }
 
   if (ADMIN_ACTIONS.has(action)) {
@@ -642,6 +787,11 @@ async function executeDbAction(db: DBAdapter, action: string, body: Record<strin
     case 'setOption':
       await db.setOption(str(body.name) ?? '', body.value);
       return true;
+    case 'getSystemSetting':
+      return db.getSystemSetting(str(body.key) ?? '', body.fallback);
+    case 'setSystemSetting':
+      await db.setSystemSetting(str(body.key) ?? '', body.value);
+      return true;
     case 'hasTable':
       return db.hasTable(table);
     case 'healthCheck':
@@ -667,7 +817,7 @@ app.post('/api/db/query', async (c) => {
   const action = str(body.action);
   const table = str(body.table);
   if (!action) return c.json({ error: { message: 'A database action is required.' } }, 400);
-  if (!table && !['getOption', 'setOption', 'healthCheck', 'query', 'migrate'].includes(action)) {
+  if (!table && !['getOption', 'setOption', 'getSystemSetting', 'setSystemSetting', 'healthCheck', 'query', 'migrate'].includes(action)) {
     return c.json({ error: { message: 'A table is required for this action.' } }, 400);
   }
 

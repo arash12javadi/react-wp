@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { resetClient } from '../lib/db';
+import { downloadBlob } from '../lib/download';
 import styles from './SetupWizard.module.css';
 
 type Deployment = 'node' | 'serverless' | 'edge';
@@ -71,6 +72,64 @@ const MATRIX_CELL_LABEL: Record<MatrixCell, string> = {
 
 const SETUP_STORAGE_KEYS = ['supabase_url', 'supabase_key', 'rwp_installed', 'rwp_config', 'rwp_setup'];
 
+/** What the installer reports about the administrator's `profiles` row, verified after promoting it. */
+interface AdminReport {
+  id?: string;
+  email?: string;
+  role?: string | null;
+  /** Set when the row is missing or could not be promoted — shown, never swallowed. */
+  warning?: string;
+}
+
+/**
+ * What each variable in the generated `.env` is for.
+ *
+ * Keyed by name so the guide is built from the block the server actually returned: a variable that
+ * is not in the file gets no row, and one somebody adds later shows up with a generic description
+ * instead of silently going unmentioned. The wizard's copy used to be the whole story, which is how
+ * `VITE_DB_TYPE` and `DB_TYPE` being different names for the same value surprised people.
+ */
+const VARIABLE_GUIDE: Record<string, string> = {
+  DB_TYPE: 'Which backend the server talks to: supabase, postgres, mysql, sqlite or libsql.',
+  VITE_DB_TYPE: 'The same value for the browser bundle. Vite only exposes VITE_* prefixed variables to the client, so the pair is deliberate.',
+  DATABASE_URL: 'The connection string the server opens. It is also the credential that lets a host run schema SQL, and it is what tells a read-only host that the site is installed.',
+  VITE_SUPABASE_URL: 'Your Supabase project URL, from Project Settings → Data API. The browser uses it for sign-in and data.',
+  VITE_SUPABASE_PUBLISHABLE_KEY: 'The publishable (anon) key. It is meant to be public — row level security is what protects the data.',
+  DB_HOST: 'PostgreSQL or MySQL host, used when you enter discrete fields instead of one connection string.',
+  DB_PORT: 'The port those fields connect to: 5432 for PostgreSQL, 3306 for MySQL.',
+  DB_NAME: 'The database name, e.g. react_wp.',
+  DB_USER: 'The database user the server connects as.',
+  DB_PASSWORD: 'That user’s password. Never give any of these a VITE_ prefix — that would publish them in the JavaScript every visitor downloads.',
+  SQLITE_FILE: 'Path to the local SQLite file. Only a host with a persistent disk can keep one.',
+  LIBSQL_AUTH_TOKEN: 'Turso/LibSQL auth token, for a hosted SQLite database.',
+  JWT_SECRET: 'Signs the session tokens of every non-Supabase backend. Treat it as a password; changing it signs everyone out.',
+};
+
+/** The places this block gets pasted into, shortest path first. */
+const ENV_USES: Array<{ title: string; body: string }> = [
+  {
+    title: 'Local development',
+    body: 'Save it as `.env.local` in the project root, next to `package.json`, then run `npm run dev` or `npm start`. Both Vite and `server.mjs` read `.env.local` and `.env`.',
+  },
+  {
+    title: 'Vercel',
+    body: 'Project → Settings → Environment Variables, one row per line (or `vercel env add`). Tick Production and Preview, then redeploy — the block is read at boot, not at build.',
+  },
+  {
+    title: 'Netlify',
+    body: 'Site configuration → Environment variables. Same rules: add them for the deploy context you use, then trigger a new deploy.',
+  },
+  {
+    title: 'Docker / Compose',
+    body: 'Keep the file next to `docker-compose.yml` and reference it with `env_file: - .env`, or pass `docker run --env-file .env` — no rebuild needed to change it.',
+  },
+  {
+    title: 'VPS with systemd',
+    body: 'Write it to `/etc/react-wp.env`, `chmod 600` it, and add `EnvironmentFile=/etc/react-wp.env` to the unit. Restart the service to apply.',
+  },
+];
+
+
 /**
  * The address this wizard is being served from.
  *
@@ -129,8 +188,15 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
   const [error, setError] = useState('');
   const [health, setHealth] = useState<{ ok: boolean; message: string } | null>(null);
   const [envOutput, setEnvOutput] = useState('');
+  /** True once Step 5 has an answer to show: the credentials panel replaces the summary. */
+  const [installDone, setInstallDone] = useState(false);
+  /** Which host the answer was for: a persistent one keeps its own config file, a read-only one does not. */
+  const [installMode, setInstallMode] = useState<'persistent' | 'serverless'>('serverless');
+  const [adminReport, setAdminReport] = useState<AdminReport | null>(null);
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'manual'>('idle');
   const [showMatrix, setShowMatrix] = useState(false);
   const [verifyStatus, setVerifyStatus] = useState('');
+  const envRef = useRef<HTMLTextAreaElement | null>(null);
 
   const isReadOnly = deployment !== 'node';
   const defaultPort = dbType === 'mysql' ? '3306' : '5432';
@@ -233,6 +299,8 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
     setHealth(null);
     setError('');
     setEnvOutput('');
+    setInstallDone(false);
+    setAdminReport(null);
     if (nextDb === 'postgres' || nextDb === 'mysql') setConnectionMode('url');
   };
 
@@ -240,6 +308,8 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
     setDeployment(nextDep);
     setError('');
     setEnvOutput('');
+    setInstallDone(false);
+    setAdminReport(null);
     if (dbOptionState(nextDep, dbType).disabled) {
       setDbType(nextDep === 'edge' ? 'libsql' : 'postgres');
       setHealth(null);
@@ -267,7 +337,15 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
       };
       const succeeded = payload.success === true || payload.ok === true;
       if (!response.ok || !succeeded) {
-        throw new Error(payload.error || payload.message || `Connection test failed (HTTP ${response.status}).`);
+        // An error the API server wrote itself always says more than a status code. The fallback is
+        // for a reply that carried no body at all — a gateway, or the Vite dev proxy with nothing
+        // listening on the API port. That is the "Connection test failed (HTTP 502)" that sent people
+        // to check their Supabase password for a server that was simply not running.
+        throw new Error(
+          payload.error
+          || payload.message
+          || `Connection test failed (HTTP ${response.status}): the API server did not answer with JSON, so the request never reached it. Check that it is running.`,
+        );
       }
       setHealth({ ok: true, message: payload.message || 'Connected.' });
     } catch (err) {
@@ -279,7 +357,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
     }
   };
 
-  const installBody = (): Record<string, unknown> => ({
+  const installBody = (adminUserId: string): Record<string, unknown> => ({
     ...connectionBody(),
     deployment,
     saveSettings: deployment === 'node',
@@ -289,10 +367,14 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
     adminUsername: adminUsername.trim(),
     adminEmail: adminEmail.trim(),
     adminPassword,
+    // The id Supabase Auth just handed back for the account this wizard created. The installer
+    // promotes by email anyway; this is a second way in for an address whose stored spelling differs,
+    // and it is what lets the promotion report the row it actually landed on.
+    adminUserId,
   });
 
   /**
-   * Creates the first administrator in Supabase Auth from the browser.
+   * Creates the first administrator in Supabase Auth from the browser, and returns its id.
    *
    * `auth.signUp` with the publishable key is the only way to create an account, and the server's
    * direct connection can only promote the matching `public.profiles` row — `handle_new_user`
@@ -302,11 +384,16 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
    * An account that already exists (a re-run of the wizard) is not an error: the installer
    * re-promotes it. No session comes back when the project requires email confirmation, but the
    * account still exists, so it is still promoted.
+   *
+   * The id it returns travels to the installer with the rest of the request: it promotes by email
+   * first, and the id is the second way in for an address whose stored spelling differs. Supabase
+   * answers an existing address with an obfuscated account and no id, which is exactly why the
+   * promotion cannot depend on it.
    */
-  const createSupabaseAdmin = async (): Promise<void> => {
+  const createSupabaseAdmin = async (): Promise<string> => {
     const { createClient } = await import('@supabase/supabase-js');
     const supabase = createClient(supabaseUrl.trim().replace(/\/$/, ''), supabaseKey.trim());
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email: adminEmail.trim(),
       password: adminPassword,
       options: {
@@ -319,36 +406,45 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
     if (error && !/already\s*(registered|exists)|user_already_exists/i.test(error.message)) {
       throw new Error(`Admin account creation failed: ${error.message}`);
     }
+    return data?.user?.id ?? '';
   };
 
   const runInstall = async (): Promise<void> => {
     setLoading(true);
     setError('');
     setEnvOutput('');
+    setVerifyStatus('');
+    setInstallDone(false);
+    setAdminReport(null);
     try {
       // Supabase Auth owns the account; the installer only promotes its profile, so the browser has
       // to create it first (see `createSupabaseAdmin`). Every other backend signs the admin up
       // server-side inside `/api/install-schema`.
-      if (dbType === 'supabase') await createSupabaseAdmin();
+      const adminUserId = dbType === 'supabase' ? await createSupabaseAdmin() : '';
       const response = await fetch('/api/install-schema', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(installBody()),
+        body: JSON.stringify(installBody(adminUserId)),
       });
       const payload = (await response.json().catch(() => ({}))) as {
         success?: boolean;
         mode?: 'persistent' | 'serverless';
+        installed?: boolean;
         env?: string;
+        admin?: AdminReport | null;
         error?: string;
       };
       if (!response.ok || payload.success !== true) {
         throw new Error(payload.error || `Provisioning failed (HTTP ${response.status}).`);
       }
-      if (payload.mode === 'persistent' || deployment === 'node') {
-        finishSetup();
-        return;
-      }
+      // Every mode lands on the credentials panel now. A persistent host writes
+      // `data/react-wp-config.json` and reads that, but the same `.env` is what a Docker or Vercel
+      // copy of the site needs, and a read-only host has nothing else, so the block is shown and
+      // offered as a file either way instead of Step 5 ending with nothing to copy.
+      setInstallMode(payload.mode === 'persistent' || deployment === 'node' ? 'persistent' : 'serverless');
       setEnvOutput(payload.env || '');
+      setAdminReport(payload.admin ?? null);
+      setInstallDone(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Provisioning failed.');
     } finally {
@@ -366,12 +462,78 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
         finishSetup();
         return;
       }
-      setVerifyStatus('Not ready yet: paste the environment variables into your platform and redeploy, then try again.');
+      setVerifyStatus('Not ready yet: add these variables to your platform and redeploy, then try again. Testing on this machine? Save them as .env.local and restart the dev server — a read-only target keeps nothing on disk, so it cannot confirm the install until it has them.');
     } catch {
       setVerifyStatus('Could not reach the verification endpoint. Redeploy with the environment variables, then try again.');
     } finally {
       setLoading(false);
     }
+  };
+
+  /** Copies the whole block, or selects it so Ctrl+C works when the clipboard is unavailable. */
+  const copyEnv = (): void => {
+    void (async () => {
+      try {
+        await navigator.clipboard.writeText(envOutput);
+        setCopyStatus('copied');
+      } catch {
+        // Clipboard access needs a secure context and can be refused outright (permissions, an
+        // embedded browser). Selecting the text at least keeps the button from doing nothing.
+        envRef.current?.focus();
+        envRef.current?.select();
+        setCopyStatus('manual');
+      }
+      window.setTimeout(() => setCopyStatus('idle'), 3000);
+    })();
+  };
+
+  const downloadEnvFile = (): void => {
+    // `.env.local`, not `.env`: both Vite and `server.mjs` read it (see `server/env.mjs`), and a name
+    // that is nothing but a leading dot has no base name for the browser to keep — Chrome rebuilt
+    // `.env` from the Blob's MIME type and handed back `env.css`. `env.local` is a real base name, so
+    // the file lands with the name written here.
+    downloadBlob(new Blob([envOutput], { type: 'text/plain;charset=utf-8' }), '.env.local');
+  };
+
+  /**
+   * The generated block, one row per line, paired with what that variable is for.
+   *
+   * Derived from the text the server returned rather than written out beside it, so the guide can
+   * never describe a variable the file does not contain — the failure mode of a hand-kept list, and
+   * why `DB_TYPE` and `VITE_DB_TYPE` being the same value used to go unexplained.
+   */
+  const envRows = envOutput
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.includes('=') && !line.startsWith('#'))
+    .map((line) => {
+      const separator = line.indexOf('=');
+      const key = line.slice(0, separator).trim();
+      return {
+        key,
+        value: line.slice(separator + 1).trim(),
+        note: VARIABLE_GUIDE[key] || 'Written by this installation; keep it as generated unless the site is being pointed at a different backend.',
+      };
+    });
+
+  /** The administrator line under the heading: a confirmed role, or why it could not be confirmed. */
+  const adminNotice = (): ReactNode => {
+    if (!adminReport) return null;
+    const email = adminReport.email || adminEmail.trim();
+    if (adminReport.role === 'administrator') {
+      return (
+        <div className={styles.successBox}>
+          <strong>Administrator confirmed:</strong> <code>{email}</code> is in the <code>profiles</code> table with the <code>administrator</code> role.
+        </div>
+      );
+    }
+    return (
+      <div className={styles.errorBox}>
+        <strong>No administrator was created.</strong>{' '}
+        {adminReport.warning || `The profile row for ${email} reports "${adminReport.role || 'no role'}".`}{' '}
+        Register the account on <code>/register</code>, then run this step again, or promote it by hand under <strong>Users</strong> in the dashboard.
+      </div>
+    );
   };
 
   const group = (label: string, control: ReactNode): ReactNode => (
@@ -488,24 +650,88 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
 
             {step === 5 && (
               <div>
-                {envOutput ? (
+                {installDone ? (
                   <>
-                    <div className={styles.successBox}>Schema provisioned. Paste this into your deployment platform's environment variables (Vercel Project Settings → Environment Variables):</div>
-                    <textarea className={styles.envOutput} readOnly value={envOutput} onFocus={(e) => e.currentTarget.select()} />
+                    <div className={styles.successBox}>
+                      {installMode === 'persistent'
+                        ? 'Installed. This host keeps its own data/react-wp-config.json and reads that; the block below is the same site written as environment variables, for a Docker image, a Vercel deploy or a second server.'
+                        : 'Schema provisioned and the administrator created. Add this block to your deployment platform (Vercel: Project Settings → Environment Variables), then redeploy.'}
+                    </div>
+                    {adminNotice()}
+                    {envOutput ? (
+                      <>
+                        <div className={styles.envToolbar}>
+                          <span className={styles.envToolbarTitle}>.env</span>
+                          <div className={styles.envActions}>
+                            <button type="button" className={styles.buttonSecondary} onClick={copyEnv}>
+                              {copyStatus === 'copied' ? 'Copied' : copyStatus === 'manual' ? 'Selected — press Ctrl+C' : 'Copy all'}
+                            </button>
+                            <button type="button" className={styles.buttonSecondary} onClick={downloadEnvFile}>Download .env</button>
+                          </div>
+                        </div>
+                        <textarea
+                          ref={envRef}
+                          className={styles.envOutput}
+                          readOnly
+                          spellCheck={false}
+                          value={envOutput}
+                          onFocus={(e) => e.currentTarget.select()}
+                        />
+                        <p className={styles.envNote}>
+                          Every line above is a credential for this site, so keep the file out of version control (`.env*` is already git-ignored). It downloads as <code>.env.local</code>: put it in the project root, next to <code>package.json</code>, for local work — or paste these lines into your host.
+                        </p>
+                        <section className={styles.envGuide}>
+                          <h3>What each variable is</h3>
+                          <div className={styles.envTable}>
+                            {envRows.map((row) => (
+                              <div key={row.key} className={styles.envRow}>
+                                <div className={styles.envRowHead}>
+                                  <code className={styles.envKey}>{row.key}</code>
+                                  <code className={styles.envValue}>{row.value || 'empty'}</code>
+                                </div>
+                                <p className={styles.envRowNote}>
+                                  {row.note}
+                                  {row.value ? '' : ' Nothing is set here, because this backend does not use it.'}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </section>
+                        <section className={styles.envGuide}>
+                          <h3>Ways to use this block</h3>
+                          <ul className={styles.envUses}>
+                            {ENV_USES.map((use) => (
+                              <li key={use.title}>
+                                <strong>{use.title}</strong>
+                                <span>{use.body}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </section>
+                      </>
+                    ) : (
+                      <div className={styles.guideBox}>
+                        The installer answered without an environment block, so there is nothing to copy here. The site itself is provisioned — the settings it needs are in <code>data/react-wp-config.json</code> on this host (or in the environment you set yourself), and the dashboard works from here.
+                      </div>
+                    )}
                     <div className={styles.buttonRow}>
-                      <button type="button" className={styles.buttonPrimary} onClick={() => void verifyAndLaunch()} disabled={loading}>
-                        {loading ? 'Verifying…' : 'Verify & Launch Application'}
-                      </button>
+                      {installMode === 'persistent' ? (
+                        <button type="button" className={styles.buttonPrimary} onClick={finishSetup}>Launch Dashboard →</button>
+                      ) : (
+                        <button type="button" className={styles.buttonPrimary} onClick={() => void verifyAndLaunch()} disabled={loading}>
+                          {loading ? 'Verifying…' : 'Verify & Launch Application'}
+                        </button>
+                      )}
                     </div>
                     {verifyStatus && <p className={styles.guideBox}>{verifyStatus}</p>}
-                    <button type="button" className={styles.buttonSecondary} onClick={back}>← Back</button>
+                    <button type="button" className={styles.buttonSecondary} onClick={back}>← Back to options</button>
                   </>
                 ) : (
                   <>
                     <p className={styles.guideBox}>
                       {deployment === 'node'
-                        ? 'Test the database, write data/react-wp-config.json, run migrations, seed the admin account, then redirect to the dashboard.'
-                        : 'Run migrations and seed the admin account remotely, then copy the generated environment variables into your platform.'}
+                        ? 'Test the database, write data/react-wp-config.json, run the migrations, seed the admin account, then show you this site as environment variables.'
+                        : 'Run the migrations and seed the admin account remotely, then hand back the environment variables to paste into your platform.'}
                     </p>
                     <div className={styles.summaryList}>
                       <div><span>Target</span><strong>{DEPLOYMENTS.find((d) => d.id === deployment)?.label}</strong></div>

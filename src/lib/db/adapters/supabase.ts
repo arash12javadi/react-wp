@@ -165,6 +165,33 @@ export class SupabaseAdapter implements DBAdapter {
     return !error;
   }
 
+  /**
+   * Reads an admin-only system setting. The `system_settings` table is protected by RLS, so this
+   * resolves `fallback` rather than throwing when the current session lacks `manage_options`.
+   */
+  async getSystemSetting<T = unknown>(key: string, fallback?: T | null): Promise<T | null> {
+    const { data, error } = await this.client
+      .from('system_settings')
+      .select('setting_value')
+      .eq('setting_key', key)
+      .maybeSingle();
+    if (error || !data) return fallback ?? null;
+    try {
+      return JSON.parse(data.setting_value as string) as T;
+    } catch {
+      return data.setting_value as unknown as T;
+    }
+  }
+
+  /** Writes an admin-only system setting. RLS silently refuses (→ `false`) without `manage_options`. */
+  async setSystemSetting(key: string, value: unknown): Promise<boolean> {
+    const valueString = typeof value === 'object' ? JSON.stringify(value) : String(value);
+    const { error } = await this.client
+      .from('system_settings')
+      .upsert({ setting_key: key, setting_value: valueString });
+    return !error;
+  }
+
   async migrate(): Promise<void> {
     throw new Error(
       'The Supabase publishable key cannot run schema migrations. Provision with the Setup Wizard ' +
