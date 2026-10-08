@@ -1,6 +1,11 @@
 import type { MediaItem, MediaProvider } from './types';
 import type { SiteSettings } from './settings';
-import { client } from './db';
+import { client, getSystemSetting } from './db';
+import {
+  mediaStorageConfigFrom,
+  mediaStorageConfigKey,
+  type MediaStorageConfig,
+} from './integrations';
 
 export interface UploadResult {
   url: string;
@@ -12,6 +17,42 @@ export interface UploadResult {
   mime_type: string | null;
   provider: MediaProvider;
 }
+
+/**
+ * What an upload needs, merged from the two places a site may have configured it.
+ *
+ * The Integrations hub (Settings → Integrations → Media & storage) is the home for these values now,
+ * and its row wins. The older per-option fields under Media → Upload settings are still read, so a
+ * site that configured Cloudinary or ImageKit before the hub existed keeps uploading without anyone
+ * re-entering anything.
+ */
+export interface UploadCredentials {
+  cloudinary: { cloudName: string; uploadPreset: string };
+  imagekit: { publicKey: string };
+}
+
+export const uploadCredentialsFrom = (
+  settings: SiteSettings,
+  media?: MediaStorageConfig | null,
+): UploadCredentials => ({
+  cloudinary: {
+    cloudName: media?.cloudinary.cloud_name || settings.cloudinary_cloud_name,
+    uploadPreset: media?.cloudinary.upload_preset || settings.cloudinary_upload_preset,
+  },
+  imagekit: { publicKey: media?.imagekit.public_key || settings.imagekit_public_key },
+});
+
+/**
+ * The media card's credential row, as the browser can see it. `manage_options` is what RLS asks for,
+ * so an editor sees `null` and the per-option fallback above covers them.
+ */
+export const fetchMediaStorageConfig = async (): Promise<MediaStorageConfig | null> => {
+  try {
+    return mediaStorageConfigFrom(await getSystemSetting<unknown>(mediaStorageConfigKey));
+  } catch {
+    return null;
+  }
+};
 
 // fetch() exposes no upload progress, so uploads go through XMLHttpRequest.
 const postForm = (url: string, form: FormData, onProgress: (percent: number) => void): Promise<any> =>
@@ -43,16 +84,17 @@ const postForm = (url: string, form: FormData, onProgress: (percent: number) => 
 
 export const uploadToCloudinary = async (
   file: File,
-  settings: SiteSettings,
+  credentials: UploadCredentials,
   onProgress: (percent: number) => void,
   folder?: string,
 ): Promise<UploadResult> => {
-  if (!settings.cloudinary_cloud_name || !settings.cloudinary_upload_preset) {
-    throw new Error('Set the Cloudinary cloud name and unsigned upload preset under Media → Upload settings first.');
+  const { cloudName, uploadPreset } = credentials.cloudinary;
+  if (!cloudName || !uploadPreset) {
+    throw new Error('Cloudinary is not set up yet. Save the cloud name and an unsigned upload preset under Settings → Integrations → Media & storage.');
   }
   const form = new FormData();
   form.append('file', file);
-  form.append('upload_preset', settings.cloudinary_upload_preset);
+  form.append('upload_preset', uploadPreset);
   // "folder" works in both Cloudinary folder modes: fixed mode prefixes the public id, dynamic
   // mode sets the asset folder. A folder set on the upload preset itself takes precedence.
   //
@@ -63,7 +105,7 @@ export const uploadToCloudinary = async (
   if (folder) form.append('folder', folder);
 
   const result = await postForm(
-    `https://api.cloudinary.com/v1_1/${settings.cloudinary_cloud_name}/auto/upload`,
+    `https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`,
     form,
     onProgress,
   );
@@ -82,12 +124,13 @@ export const uploadToCloudinary = async (
 
 export const uploadToImageKit = async (
   file: File,
-  settings: SiteSettings,
+  credentials: UploadCredentials,
   onProgress: (percent: number) => void,
   folder?: string,
 ): Promise<UploadResult> => {
-  if (!settings.imagekit_public_key) {
-    throw new Error('Set the ImageKit public key under Media → Upload settings first.');
+  const { publicKey } = credentials.imagekit;
+  if (!publicKey) {
+    throw new Error('ImageKit is not set up yet. Save the URL endpoint, public key and private key under Settings → Integrations → Media & storage.');
   }
   // The signature needs the private key, so it has to come from the server, which also checks
   // the caller may upload and has room in their disk quota for this file.
@@ -104,7 +147,7 @@ export const uploadToImageKit = async (
   const form = new FormData();
   form.append('file', file);
   form.append('fileName', file.name);
-  form.append('publicKey', settings.imagekit_public_key);
+  form.append('publicKey', publicKey);
   form.append('token', token);
   form.append('expire', String(expire));
   form.append('signature', signature);

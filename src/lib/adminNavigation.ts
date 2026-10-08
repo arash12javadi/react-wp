@@ -68,6 +68,8 @@ const coreNavigation: AdminNavItem[] = [
       { id: 'general', label: 'General', icon: '🎛️' },
       { id: 'uploads', label: 'Uploads', icon: '📤' },
       { id: 'seo', label: 'SEO', icon: '🔍' },
+      // Services this site talks to — GitHub today, the rest describing themselves until they are wired up.
+      { id: 'integrations', label: 'Integrations', icon: '📡' },
       // The security engine, in the four parts an administrator actually thinks in.
       { id: 'security', label: 'Session & Security', icon: '🛟' },
       { id: 'anti-bot', label: 'Anti-bot & Verification', icon: '🤖' },

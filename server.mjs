@@ -7,13 +7,16 @@ import http from 'node:http';
 import path from 'node:path';
 import { publicConfig, readConfig, writeConfig } from './server/config.mjs';
 import { buildEnvString } from './server/installEnv.mjs';
-import { authorizeImageKitUpload, authorizeMediaDelete, deleteFromProvider, describeDeleteSupport } from './server/media.mjs';
+import { authorizeImageKitUpload, authorizeMediaDelete, deleteFromProvider } from './server/media.mjs';
+import { describeDeleteSupport } from './server/integrationConfig.mjs';
+import { authorizeSettingsManager, readMediaStorageSettings } from './server/integrationSettings.mjs';
 import { renderDocumentInjections, renderEditorInjections } from './server/seo.mjs';
 import { handlePluginRequest, resolveOrigin } from './server/plugins.mjs';
 import { authorizePluginManager, deletePluginFolder, listPluginFolders } from './server/pluginFiles.mjs';
 import { InstallError, installPlugin, MAX_ZIP_BYTES } from './server/pluginInstaller.mjs';
 import { handleAdminRequest } from './server/adminRoutes.mjs';
 import { handleSecurityRequest } from './server/securityRoutes.mjs';
+import { handleIntegrationsRequest, ownsIntegrationPath } from './server/integrationsRoutes.mjs';
 import { buildRobots, buildSitemap, purgeSitemap } from './server/sitemap.mjs';
 import { configureSecuritySettings, refreshSecuritySettings, securitySettings } from './server/middleware/securitySettings.mjs';
 import { consumeRateLimit, rateLimitHeaders, rateLimitMessage, rateLimitTier } from './server/middleware/rateLimiter.mjs';
@@ -62,6 +65,28 @@ const json = (request, response, status, value, headers = {}) => {
 };
 
 /**
+ * Writes an HTML response, with the same encoding handling as json(). Only the pages this server
+ * renders itself use it — GitHub's OAuth callback, which lands in a popup and must answer like a page,
+ * not like an API.
+ *
+ * Cache-Control is not negotiable here: a callback page carries a one-time result, so no copy of it may
+ * be kept.
+ */
+const html = (request, response, status, markup, headers = {}) => {
+  const encoding = negotiateEncoding(request.headers['accept-encoding'], securitySettings());
+  const { body, contentEncoding } = compressForResponse(markup, encoding);
+  response.writeHead(status, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store',
+    Vary: 'Accept-Encoding',
+    'Content-Length': String(Buffer.byteLength(body)),
+    ...(contentEncoding ? { 'Content-Encoding': contentEncoding } : {}),
+    ...headers,
+  });
+  response.end(body);
+};
+
+/**
  * The config, read once per request and handed to the security engine. readConfig() is a file read,
  * so this also stops the four or five separate readConfig() calls a single request used to make.
  */
@@ -75,6 +100,24 @@ const readBody = async (request) => {
   let body = '';
   for await (const chunk of request) body += chunk;
   return body ? JSON.parse(body) : {};
+};
+
+/**
+ * The saved media configuration, and the credentials built from it, for the routes that issue upload
+ * credentials and delete files.
+ *
+ * Read per request rather than cached: an administrator who saves a new provider expects the next
+ * upload to use it, and this is three routes on an admin screen, not the hot path.
+ */
+const currentMedia = async () => {
+  const file = await readConfig();
+  return readMediaStorageSettings({
+    databaseUrl: file?.databaseUrl,
+    dbType: file?.dbType,
+    supabaseUrl: file?.supabaseUrl,
+    supabaseKey: file?.supabasePublishableKey,
+    env: process.env,
+  });
 };
 
 // Installs the CORE schema only. Plugin tables are installed per plugin from the Plugins screen
@@ -469,6 +512,50 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    // Settings → Integrations. Three routes, one flow: the status the screen asks for on mount, the
+    // signed popup URL it opens on click, and GitHub's callback — which is addressed by GitHub rather
+    // than by the admin router, so it is matched by exact path instead of by prefix. The callback
+    // answers a page, the other two answer JSON, so the module returns whichever it produced.
+    if (ownsIntegrationPath(url.pathname)) {
+      // Every credential these routes use is in `system_settings`, so the runtime config (for the
+      // connection the reader needs) and the environment (for that connection's optional overrides) go
+      // with the request. `authorize` is what the two POSTs check the caller with.
+      const siteConfig = await currentConfig();
+      const file = await readConfig();
+      const result = await handleIntegrationsRequest({
+        method: request.method,
+        pathname: url.pathname,
+        query: url.searchParams,
+        headers: request.headers,
+        body: request.method === 'POST' ? await readBody(request).catch(() => ({})) : {},
+        storage: siteConfig?.storage,
+        config: {
+          ...siteConfig,
+          dbType: file?.dbType || siteConfig?.dbType,
+          databaseUrl: file?.databaseUrl,
+        },
+        env: process.env,
+        authorize: (token) => authorizeSettingsManager(
+          siteConfig?.supabaseUrl,
+          siteConfig?.supabasePublishableKey,
+          token,
+        ),
+      });
+      if (!result) {
+        // ownsIntegrationPath() already said this exact path is ours, so a null here means the method
+        // is wrong, not that the route is missing — 405 with Allow beats a 404 that hides the mistake.
+        const allowed = request.method === 'POST' ? 'GET' : 'POST';
+        json(request, response, 405, { success: false, ok: false, error: `Only ${allowed} is supported at ${url.pathname}.` }, { Allow: allowed });
+        return;
+      }
+      if (result.html !== undefined) {
+        html(request, response, result.status, result.html);
+        return;
+      }
+      json(request, response, result.status, result.body);
+      return;
+    }
+
     // The native SEO routes. Both are public and both are generated, so they sit in front of the
     // SPA fallback — otherwise /sitemap.xml would serve index.html and a crawler would parse the
     // app shell as a sitemap.
@@ -514,11 +601,18 @@ const server = http.createServer(async (request, response) => {
       return;
     }
     if (url.pathname === '/api/imagekit-auth' && request.method === 'GET') {
-      const privateKey = process.env.IMAGEKIT_PRIVATE_KEY;
-      if (!privateKey) {
-        json(request, response, 501, { error: 'IMAGEKIT_PRIVATE_KEY is not configured on this server.' });
+      // The private key is stored under Settings → Integrations, and read here from the database: the
+      // server no longer needs it in its environment, so rotating it does not mean a restart.
+      const media = await currentMedia();
+      if (!media.credentials.imagekit.privateKey) {
+        json(request, response, 501, {
+          error: media.readable
+            ? 'ImageKit is not configured: save the URL endpoint, public key and private key under Settings → Integrations, on the Media & storage card.'
+            : `ImageKit cannot be used on this server: ${media.error}`,
+        });
         return;
       }
+      const privateKey = media.credentials.imagekit.privateKey;
       const config = publicConfig(await readConfig());
       if (!config?.supabaseUrl || !config?.supabasePublishableKey) {
         json(request, response, 501, { error: 'This site is not installed, so uploads cannot be authorised.' });
@@ -559,8 +653,7 @@ const server = http.createServer(async (request, response) => {
         auth.item.provider,
         auth.item.provider_file_id,
         auth.item.url,
-        config.supabaseUrl,
-        config.supabasePublishableKey,
+        (await currentMedia()).credentials,
       );
       if (!result.ok) {
         json(request, response, result.status, { error: result.error });
@@ -713,8 +806,16 @@ const server = http.createServer(async (request, response) => {
       return;
     }
     if (url.pathname === '/api/media-config' && request.method === 'GET') {
-      // Reports only whether deletion is possible; never echoes a secret.
-      json(request, response, 200, describeDeleteSupport());
+      // Reports only whether deletion is possible; never echoes a secret. The answer comes from the
+      // provider credentials saved under Settings → Integrations, which is also what a delete uses, so
+      // the Media screen cannot be told deletion works while it would silently leave the file behind.
+      const media = await currentMedia();
+      json(request, response, 200, {
+        ...describeDeleteSupport(media.configuration),
+        provider: media.configuration.provider,
+        readable: media.readable,
+        reason: media.readable ? '' : media.error,
+      });
       return;
     }
     // The Setup Wizard's own endpoints: Step 0's "is this site installed?" and Step 3's "Test

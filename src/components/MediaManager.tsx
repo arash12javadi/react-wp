@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react';
 import { describeDbError, client } from '../lib/db';
 import { loadSettings, type SiteSettings, defaultSettings } from '../lib/settings';
-import { describeDimensions, formatBytes, uploadToCloudinary, uploadToImageKit } from '../lib/uploads';
+import { describeDimensions, fetchMediaStorageConfig, formatBytes, uploadCredentialsFrom, uploadToCloudinary, uploadToImageKit } from '../lib/uploads';
 import { siteMediaFolder } from '../lib/mediaScope';
 import { checkUploadRules, describeAllowance, fetchUploadAllowance, useAppSettings, type UploadAllowance } from '../lib/appSettings';
 import { fetchProfile } from '../lib/profiles';
 import { hasCapability } from '../lib/roles';
 import type { MediaItem, MediaProvider } from '../lib/types';
+import type { MediaStorageConfig } from '../lib/integrations';
 import {
   DEFAULT_MEDIA_FOLDER, createMediaFolder, deleteMediaFolder, folderLineage, isInFolder, isQuietMediaFolder,
   listMediaFolders, mediaFoldersMigration, normalizeMediaFolder, renameMediaFolder,
@@ -93,6 +94,12 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
   const [feedback, setFeedback] = useState('');
 
   const [uploadProvider, setUploadProvider] = useState<MediaProvider>('cloudinary');
+  /**
+   * The credential row saved under Settings → Integrations → Media & storage, read on mount and merged
+   * with the older per-option upload settings at upload time. Null while unknown: the upload then uses
+   * those options alone, which is what a site configured before the hub existed has.
+   */
+  const [uploadMediaConfig, setUploadMediaConfig] = useState<MediaStorageConfig | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -124,6 +131,16 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
       .then((response) => (response.ok ? response.json() : null))
       .then(setDeleteSupport)
       .catch(() => setDeleteSupport(null));
+    // The provider credentials now live under Settings → Integrations; this screen reads them so an
+    // upload uses exactly what that card saved, and follows the card's own choice of provider.
+    void fetchMediaStorageConfig()
+      .then((stored) => {
+        setUploadMediaConfig(stored);
+        if (stored?.provider === 'cloudinary' || stored?.provider === 'imagekit') {
+          setUploadProvider(stored.provider);
+        }
+      })
+      .catch(() => setUploadMediaConfig(null));
   }, []);
 
   const load = useCallback(async () => {
@@ -336,8 +353,8 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
         if (list.length > 1) setUploadStep(`File ${index + 1} of ${list.length}: ${file.name}`);
         setProgress(0);
         const upload = uploadProvider === 'imagekit'
-          ? await uploadToImageKit(file, settings, setProgress, providerFolder)
-          : await uploadToCloudinary(file, settings, setProgress, providerFolder);
+          ? await uploadToImageKit(file, uploadCredentialsFrom(settings, uploadMediaConfig), setProgress, providerFolder)
+          : await uploadToCloudinary(file, uploadCredentialsFrom(settings, uploadMediaConfig), setProgress, providerFolder);
         const item = await insertRecord({
           ...(folder ? { folder } : {}),
           url: upload.url,
@@ -967,8 +984,8 @@ export default function MediaManager({ onSelect, onSelectMany, onClose, heading 
           {allowance && <p className={styles.muted} role="status">{describeAllowance(allowance)}</p>}
           <p className={styles.muted}>
             {uploadProvider === 'cloudinary'
-              ? 'Cloudinary uses the unsigned upload preset configured under Upload settings. No API secret is needed to upload.'
-              : 'ImageKit uploads are signed by the server, which needs IMAGEKIT_PRIVATE_KEY set.'}
+              ? 'Cloudinary uploads with an unsigned preset, so no API secret is needed here. The cloud name and preset are saved under Settings → Integrations → Media & storage.'
+              : 'ImageKit signs every upload on the server with the private key saved under Settings → Integrations → Media & storage.'}
           </p>
         </div>
       )}

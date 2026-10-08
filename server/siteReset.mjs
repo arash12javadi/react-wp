@@ -104,7 +104,9 @@ export async function authorizeSiteReset(config, accessToken, password) {
  */
 export async function wipeSiteMedia(connectionString, config) {
   const summary = { attempted: true, deleted: 0, notFound: 0, recorded: 0, warnings: [] };
-  const cloud = await cloudinaryConfig(config?.supabaseUrl, config?.supabasePublishableKey);
+  // The reset already holds a working database connection, so the Cloudinary keys are read through it —
+  // that is the one reader that works on every deployment, including Supabase.
+  const cloud = await cloudinaryConfig({ ...config, databaseUrl: connectionString, dbType: 'postgres' });
   if (!cloud.ok) {
     summary.attempted = false;
     summary.warnings.push(cloud.reason);

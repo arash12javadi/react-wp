@@ -135,24 +135,22 @@ export function parseCloudinaryUrl(url) {
   }
 }
 
-/** ImageKit URLs do not encode the fileId, so this only works for stored ids. */
-export function describeDeleteSupport() {
-  return {
-    cloudinary: Boolean(process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET),
-    imagekit: Boolean(process.env.IMAGEKIT_PRIVATE_KEY),
-  };
-}
-
-/** Cloudinary's destroy API and ImageKit's delete API are both signed-only, so neither
- *  can be called from the browser. */
-export async function deleteFromProvider(provider, fileId, url, supabaseUrl, supabaseKey) {
+/**
+ * Cloudinary's destroy API and ImageKit's delete API are both signed-only, so neither can be called
+ * from the browser.
+ *
+ * `credentials` is `mediaCredentialsFrom(…media_storage_config…)` from `server/integrationConfig.mjs`:
+ * the keys come from Settings → Integrations, which is why nothing here reads the environment any
+ * more. The one exception is the Cloudinary cloud name, which falls back to the older
+ * `cloudinary_cloud_name` option so a site that configured it under Media keeps deleting files.
+ */
+export async function deleteFromProvider(provider, fileId, url, credentials = {}, legacy = {}) {
   if (provider === 'external') return { ok: true, skipped: true };
 
   if (provider === 'cloudinary') {
-    const apiKey = process.env.CLOUDINARY_API_KEY;
-    const apiSecret = process.env.CLOUDINARY_API_SECRET;
+    const { apiKey, apiSecret } = credentials.cloudinary || {};
     if (!apiKey || !apiSecret) {
-      return { ok: false, status: 501, error: 'CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET must be set in the server environment (.env.local) to delete Cloudinary files.' };
+      return { ok: false, status: 501, error: 'Cloudinary has no API key and secret saved, so this file can only be removed from this site\'s library. Add them under Settings → Integrations, on the Media & storage card.' };
     }
 
     const fromUrl = url ? parseCloudinaryUrl(url) : null;
@@ -163,10 +161,12 @@ export async function deleteFromProvider(provider, fileId, url, supabaseUrl, sup
     }
 
     const cloudName = fromUrl?.cloudName
-      || process.env.CLOUDINARY_CLOUD_NAME
-      || await readOption(supabaseUrl, supabaseKey, 'cloudinary_cloud_name');
+      || credentials.cloudinary?.cloudName
+      || (legacy.supabaseUrl
+        ? await readOption(legacy.supabaseUrl, legacy.supabaseKey, 'cloudinary_cloud_name')
+        : '');
     if (!cloudName) {
-      return { ok: false, status: 501, error: 'No Cloudinary cloud name is configured under Media → Upload settings.' };
+      return { ok: false, status: 501, error: 'No Cloudinary cloud name is saved under Settings → Integrations, on the Media & storage card, so this file cannot be deleted there.' };
     }
 
     // invalidate=true also purges the CDN copy; without it the old URL keeps serving the file
@@ -196,9 +196,9 @@ export async function deleteFromProvider(provider, fileId, url, supabaseUrl, sup
   }
 
   if (provider === 'imagekit') {
-    const privateKey = process.env.IMAGEKIT_PRIVATE_KEY;
+    const privateKey = credentials.imagekit?.privateKey;
     if (!privateKey) {
-      return { ok: false, status: 501, error: 'IMAGEKIT_PRIVATE_KEY must be set in the server environment (.env.local) to delete ImageKit files.' };
+      return { ok: false, status: 501, error: 'ImageKit has no private key saved, so this file can only be removed from this site\'s library. Add it under Settings → Integrations, on the Media & storage card.' };
     }
     if (!fileId) {
       return { ok: false, status: 400, error: 'This item has no ImageKit file id, so only the library record can be removed. ImageKit ids cannot be recovered from the URL.' };

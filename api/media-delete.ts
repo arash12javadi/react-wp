@@ -1,6 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-// @ts-expect-error -- shared .mjs helper, also used by server.mjs
+// @ts-expect-error -- shared .mjs helpers, also used by server.mjs and the Hono app
 import { authorizeMediaDelete, deleteFromProvider } from '../server/media.mjs';
+// @ts-expect-error -- shared .mjs helper
+import { readMediaStorageSettings } from '../server/integrationSettings.mjs';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
@@ -20,8 +22,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(auth.status).json({ error: auth.error });
   }
 
+  // The provider's keys live in `system_settings.media_storage_config` — the row Settings → Integrations
+  // writes — so they are read through whichever connection this deployment has (on Vercel,
+  // `DATABASE_URL` or a service key).
+  const media = await readMediaStorageSettings({
+    databaseUrl: process.env.DATABASE_URL || process.env.SUPABASE_DB_URL,
+    dbType: process.env.DB_TYPE || process.env.VITE_DB_TYPE,
+    supabaseUrl,
+    supabaseKey,
+    env: process.env,
+  });
+
   const { provider, provider_file_id: providerFileId, url } = auth.item;
-  const result = await deleteFromProvider(provider, providerFileId, url, supabaseUrl, supabaseKey);
+  const result = await deleteFromProvider(provider, providerFileId, url, media.credentials, { supabaseUrl, supabaseKey });
   if (!result.ok) {
     return res.status(result.status).json({ error: result.error });
   }

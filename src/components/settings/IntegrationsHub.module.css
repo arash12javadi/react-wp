@@ -1,0 +1,454 @@
+/* Settings → Integrations. One card per service: the connected ones carry a form, the rest state what
+   this server already does and which environment variable holds the setting. Logical properties, so
+   dir="rtl" mirrors without a second stylesheet. */
+
+.loading {
+  padding: 20px;
+  color: #64748b;
+}
+
+.panel {
+  display: grid;
+  gap: 16px;
+  max-width: 760px;
+}
+
+.intro h2,
+.heading {
+  margin: 0 0 6px;
+  color: #0f172a;
+  font-size: 1.15rem;
+}
+
+.lede {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.88rem;
+  line-height: 1.6;
+}
+
+.error,
+.notice {
+  margin: 0;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
+.error {
+  border-color: #fecaca;
+  color: #b91c1c;
+  background: #fef2f2;
+}
+
+.notice {
+  border-color: #bbf7d0;
+  color: #15803d;
+  background: #f0fdf4;
+}
+
+.card {
+  display: grid;
+  gap: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 16px 18px;
+  background: #fff;
+}
+
+.cardHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cardTitle {
+  margin: 0 0 4px;
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.cardMeta {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.pillOn,
+.pillOff,
+.pillQuiet {
+  flex: none;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pillOn {
+  border-color: #bbf7d0;
+  color: #15803d;
+  background: #f0fdf4;
+}
+
+.pillOff {
+  border-color: #fde68a;
+  color: #b45309;
+  background: #fffbeb;
+}
+
+.pillQuiet {
+  color: #64748b;
+  background: #f8fafc;
+}
+
+.setup {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 14px 16px;
+  background: #f8fafc;
+}
+
+.setupLead {
+  margin: 0;
+  color: #334155;
+  font-size: 0.86rem;
+  line-height: 1.6;
+}
+
+.checks {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.checks li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 6px 10px;
+  background: #fff;
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.checks li[data-ok='true'] {
+  border-color: #bbf7d0;
+}
+
+.checks li[data-ok='true'] span {
+  color: #15803d;
+  font-weight: 700;
+}
+
+.checks li code {
+  color: #0f172a;
+  font-size: 0.8rem;
+}
+
+.setupStep,
+.setupNote {
+  margin: 0;
+  color: #475569;
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.setupNote {
+  color: #64748b;
+}
+
+.command {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid #dbe1ea;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #fff;
+}
+
+.command code {
+  overflow-wrap: anywhere;
+  color: #0f172a;
+  font-size: 0.78rem;
+}
+
+.copy {
+  flex: none;
+  border: 1px solid #dbe1ea;
+  border-radius: 6px;
+  padding: 5px 12px;
+  color: #334155;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.copy:hover {
+  border-color: #4f46e5;
+  color: #4f46e5;
+}
+
+.account {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: #f8fafc;
+}
+
+.avatar {
+  flex: none;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.accountText {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.accountName {
+  margin: 0;
+  color: #0f172a;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.accountMeta {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.accountMeta a {
+  color: #4f46e5;
+  font-weight: 600;
+}
+
+.scopes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 0;
+}
+
+.scopes code {
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: #475569;
+  background: #fff;
+  font-size: 0.72rem;
+}
+
+.target {
+  display: grid;
+  gap: 10px;
+  border-block-start: 1px solid #e2e8f0;
+  padding-block-start: 14px;
+}
+
+.targetTitle {
+  margin: 0;
+  color: #334155;
+  font-size: 0.9rem;
+}
+
+.targetNote {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.targetNote code {
+  color: #0f172a;
+}
+
+.fields {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+}
+
+.field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.field span {
+  color: #475569;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.field input,
+.field select {
+  border: 1px solid #dbe1ea;
+  border-radius: 6px;
+  padding: 9px 10px;
+  color: #0f172a;
+  background: #fff;
+  font: inherit;
+  font-size: 0.84rem;
+}
+
+.field input:disabled,
+.field select:disabled {
+  color: #94a3b8;
+  background: #f8fafc;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  border-block-start: 1px solid #e2e8f0;
+  padding-block-start: 14px;
+}
+
+.target .actions {
+  border: 0;
+  padding-block-start: 0;
+}
+
+.primary,
+.secondary,
+.danger {
+  border-radius: 6px;
+  padding: 10px 16px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.primary {
+  border: 1px solid #4f46e5;
+  color: #fff;
+  background: #4f46e5;
+}
+
+.primary:hover:not(:disabled) {
+  background: #4338ca;
+}
+
+.secondary {
+  border: 1px solid #dbe1ea;
+  color: #334155;
+  background: #fff;
+}
+
+.secondary:hover:not(:disabled) {
+  background: #f8fafc;
+}
+
+.danger {
+  border: 1px solid #b91c1c;
+  color: #fff;
+  background: #b91c1c;
+}
+
+.danger:hover:not(:disabled) {
+  background: #991b1b;
+}
+
+.primary:disabled,
+.secondary:disabled,
+.danger:disabled {
+  border-color: #e2e8f0;
+  color: #94a3b8;
+  background: #f1f5f9;
+  cursor: default;
+}
+
+.hint {
+  color: #94a3b8;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+/* A field that spans the whole row of a two-column `.fields` grid, and a checkbox row inside one. */
+.wide {
+  grid-column: 1 / -1;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #475569;
+  font-size: 0.82rem;
+}
+
+.checkbox input {
+  inline-size: 16px;
+  block-size: 16px;
+}
+
+/* The small print under a field: where to find the value, or what it is for. */
+.fieldHelp {
+  color: #94a3b8;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.fieldHelp code {
+  color: #475569;
+}
+
+/* The banner shown when the server cannot read what the cards wrote. */
+.warning {
+  margin: 0;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: #92400e;
+  background: #fffbeb;
+  font-size: 0.84rem;
+  line-height: 1.6;
+}
+
+.warning code {
+  color: #92400e;
+}
+
+.confirmNote {
+  margin: 0;
+  color: #b45309;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cardHead {
+    flex-direction: column;
+  }
+}
+

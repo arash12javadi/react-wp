@@ -216,10 +216,10 @@ async function adminNotices(): Promise<RwpSetupNotice[]> {
       steps: [
         'Cloudinary (free tier, no server secret needed to upload): sign up, copy the Cloud name from the dashboard.',
         'In Cloudinary → Settings → Upload → Upload presets → Add upload preset, set Signing Mode to Unsigned and save.',
-        'Open Media → Upload providers, enter the cloud name and preset name, and save.',
-        'Or ImageKit: enter the public key and URL endpoint there, and put IMAGEKIT_PRIVATE_KEY in .env.local.',
+        'Open Settings → Integrations → Media & storage, choose Cloudinary, and fill in the cloud name, the unsigned preset, and the API key and secret that let this site delete files again.',
+        'Or choose ImageKit there instead: its URL endpoint, public key and private key all belong on the same card.',
       ],
-      action: { label: 'Open Media → Upload providers', section: 'media', subsection: 'upload-settings' },
+      action: { label: 'Open Settings → Integrations', section: 'settings', subsection: 'integrations' },
     });
   }
   if (cloudinary && mediaConfig && !mediaConfig.cloudinary) {
@@ -230,23 +230,24 @@ async function adminNotices(): Promise<RwpSetupNotice[]> {
       description: 'Deleting media now removes only the library entry; the file stays in your Cloudinary account and uses its storage.',
       steps: [
         'In Cloudinary → Settings → API Keys, copy the API key and API secret.',
-        'Add CLOUDINARY_API_KEY=… and CLOUDINARY_API_SECRET=… to .env.local (never to an admin screen: those settings are public).',
-        'Restart the server with npm start.',
+        'Open Settings → Integrations → Media & storage, choose Cloudinary, and paste the cloud name, upload preset, API key and API secret.',
+        'Press Save storage credentials. Nothing needs restarting.',
       ],
-      action: { label: 'Open Cloudinary API keys', href: 'https://console.cloudinary.com/settings/api-keys' },
+      action: { label: 'Open Settings → Integrations', section: 'settings', subsection: 'integrations' },
     });
   }
   if (imagekit && mediaConfig && !mediaConfig.imagekit) {
     notices.push({
       id: 'imagekit-private-key',
       level: 'required',
-      title: 'ImageKit is set up but IMAGEKIT_PRIVATE_KEY is missing',
+      title: 'ImageKit needs its private key',
       description: 'ImageKit signs every upload and delete on the server, so ImageKit uploads fail without it.',
       steps: [
         'In ImageKit → Developer options, copy the private key.',
-        'Add IMAGEKIT_PRIVATE_KEY=… to .env.local and restart the server with npm start.',
+        'Open Settings → Integrations → Media & storage, choose ImageKit, and paste the URL endpoint, public key and private key.',
+        'Press Save storage credentials, then upload a file to check it.',
       ],
-      action: { label: 'Open ImageKit developer options', href: 'https://imagekit.io/dashboard/developer/api-keys' },
+      action: { label: 'Open Settings → Integrations', section: 'settings', subsection: 'integrations' },
     });
   }
   if ((cloudinary || imagekit) && !mediaConfig) {

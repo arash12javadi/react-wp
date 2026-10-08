@@ -29,6 +29,7 @@ import { createStorageAdapter } from '../lib/storage/index';
 import { dbTypeFrom, type RuntimeConfig } from '../lib/runtime';
 import { readConfigFile, writeConfigFile, getRuntimeConfig, reloadRuntimeConfig } from './config';
 import { pluginsRouter } from './routes/plugins';
+import { registerIntegrationRoutes } from './integrations';
 
 export const app = new Hono();
 
@@ -645,6 +646,11 @@ app.delete('/api/media/:key', async (c) => {
 
 // -- Plugin administration (in-memory ZIP upload → GitHub → Vercel) ------------
 app.route('/api/admin/plugins', pluginsRouter);
+
+// -- Settings → Integrations ---------------------------------------------------
+// The status read, the signed popup URL and GitHub's OAuth callback. Registered as full paths because
+// the callback is addressed by GitHub (`/api/auth/github/callback`) rather than by our own menu.
+registerIntegrationRoutes(app);
 
 // -- Universal data API -------------------------------------------------------
 //

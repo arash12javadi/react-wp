@@ -12,6 +12,7 @@ import {
   readPluginMedia, readSchemaState, SchemaError,
 } from './pluginSchema.mjs';
 import { cloudinaryConfig, deleteCloudinaryFolder, deleteCloudinaryMediaByIds, mergeResults } from './cloudinary.mjs';
+import { readMediaStorageSettings } from './integrationSettings.mjs';
 import { authorizePluginManager, deletePluginFolder } from './pluginFiles.mjs';
 import { authorizeSiteReset, markUninstalled, ResetError, resetSite, wipeSiteMedia } from './siteReset.mjs';
 
@@ -42,6 +43,21 @@ const requireConnection = (body, config) => {
 };
 
 /**
+ * Whether Cloudinary could delete files right now: presence only, never a value. The keys are read from
+ * the row the Integrations hub writes, so the uninstall dialog and the delete itself always agree.
+ */
+const cloudinaryConfigured = async (config) => {
+  const media = await readMediaStorageSettings({
+    databaseUrl: config?.databaseUrl,
+    dbType: config?.dbType,
+    supabaseUrl: config?.supabaseUrl,
+    supabaseKey: config?.supabasePublishableKey,
+    env: process.env,
+  });
+  return Boolean(media.credentials.cloudinary.apiKey && media.credentials.cloudinary.apiSecret);
+};
+
+/**
  * GET /api/admin/plugins/schema-status?id=<plugin>
  * What the Plugins screen needs to decide whether to offer Install schema, and what the uninstall
  * dialog needs to tell the truth about how much data is at stake.
@@ -58,8 +74,9 @@ async function schemaStatus(config, headers, id) {
     retains: database?.retains || [],
     mediaPrefixes,
     // So the dialog can say "files will be deleted" rather than promising something the server
-    // has no credentials to do.
-    cloudinaryConfigured: Boolean(process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET),
+    // has no credentials to do. The keys live in `system_settings`, written from Settings →
+    // Integrations, so this reads the same row the delete itself will.
+    cloudinaryConfigured: await cloudinaryConfigured(config),
     storedCredentials: hasStoredCredentials(),
   };
   if (!database?.tables.length) return { status: 200, body: { ...base, checked: false } };
@@ -105,7 +122,9 @@ async function installSchema(config, headers, body) {
  */
 async function wipePluginMedia(connectionString, config, prefixes) {
   const summary = { attempted: true, deleted: 0, notFound: 0, rowsRemoved: 0, prefixes, warnings: [] };
-  const cloud = await cloudinaryConfig(config?.supabaseUrl, config?.supabasePublishableKey);
+  // The uninstall already holds a working database connection, so the Cloudinary keys are read through
+  // it — that is the one reader that works on every deployment, including Supabase.
+  const cloud = await cloudinaryConfig({ ...config, databaseUrl: connectionString, dbType: 'postgres' });
   if (!cloud.ok) {
     summary.attempted = false;
     summary.warnings.push(cloud.reason);

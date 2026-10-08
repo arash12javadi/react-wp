@@ -258,6 +258,7 @@ export default function GuidePanel({ navigate }: { navigate: Navigate }) {
         <ul>
           <li><code>admin.registerPage({'{ id, label, icon, capability, submenu, component }'})</code>: an admin screen. The component receives <code>subsection</code> and <code>navigate</code>.</li>
           <li><code>admin.registerDashboardWidget</code> and <code>admin.registerSetupCheck</code>: a Dashboard panel, and items for the setup checklist.</li>
+          <li><code>integrations.registerCard({'{ id, title, icon, description, order, describe, renderComponent }'})</code>: a card on Settings → Integrations, next to GitHub, AI, Media &amp; storage and Email. <code>order</code> places it among them and <code>describe()</code> supplies the "Configured" pill. <code>useIntegrationsRegistry()</code> is the same registry from inside a component.</li>
           <li><code>shortcodes.register({'{ name, render, description, example, attributes }'})</code>: documented here automatically.</li>
           <li><code>routes.register</code>, <code>header.register</code>, <code>content.registerRenderer</code>, <code>content.registerAction</code>, plus <code>actions</code> and <code>filters</code> hooks such as <code>rwp_site_title</code>.</li>
         </ul>

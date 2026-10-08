@@ -1,5 +1,10 @@
 import type { ComponentType, ReactNode } from 'react';
 import { addAction, addFilter, applyFilters, doAction, DEFAULT_PRIORITY } from '../core/hooks';
+import {
+  getIntegrationCards,
+  registerIntegrationCard,
+  type RwpIntegrationCard,
+} from '../core/integrations';
 import type { Page } from './types';
 
 export type RwpActionName =
@@ -93,6 +98,12 @@ export interface RwpSetupCheck {
   /** Returns the notices that still apply. Resolve to [] when everything is set up. */
   run: () => Promise<RwpSetupNotice[]>;
 }
+
+/**
+ * One card on Settings → Integrations. Re-exported from `./core/integrations` so a plugin file that
+ * imports its types from here never reaches into core directly.
+ */
+export type { IntegrationCardProps, RwpIntegrationCard } from '../core/integrations';
 
 export interface RwpShortcode {
   name: string;
@@ -193,6 +204,13 @@ export interface RwpPluginContext {
     /** Adds items to the setup checklist on Dashboard → Overview. */
     registerSetupCheck: (check: RwpSetupCheck) => () => void;
   };
+  integrations: {
+    /**
+     * Adds a card to Settings → Integrations, the one screen for third-party services. `order` places
+     * it among the built-in cards (10 GitHub, 20 AI, 30 Media & storage, 40 Email).
+     */
+    registerCard: (card: RwpIntegrationCard) => () => void;
+  };
   shortcodes: {
     register: (shortcode: RwpShortcode) => () => void;
   };
@@ -288,6 +306,7 @@ export const rwp: RwpPluginContext & {
   getAdminPages: () => RwpAdminPage[];
   getDashboardWidgets: () => RwpDashboardWidget[];
   getSetupChecks: () => RwpSetupCheck[];
+  getIntegrationCards: () => RwpIntegrationCard[];
   getShortcodes: () => RwpShortcode[];
   getRoutes: () => RwpRoute[];
   matchRoute: (pathname: string) => { route: RwpRoute; params: Record<string, string> } | null;
@@ -333,6 +352,11 @@ export const rwp: RwpPluginContext & {
         notifySubscribers();
       };
     },
+  },
+  integrations: {
+    // One registry, in src/core/integrations.ts: the hub reads it through useIntegrationsRegistry(),
+    // and a plugin registers through either this or the hook without the two splitting.
+    registerCard: (card) => registerIntegrationCard(card),
   },
   shortcodes: {
     register: (shortcode) => {
@@ -422,6 +446,7 @@ export const rwp: RwpPluginContext & {
   getAdminPages: () => [...adminPages.values()],
   getDashboardWidgets: () => [...dashboardWidgets.values()],
   getSetupChecks: () => [...setupChecks.values()],
+  getIntegrationCards: () => getIntegrationCards(),
   getShortcodes: () => [...shortcodes.values()],
   getRoutes: () => [...routes.values()],
   matchRoute: (pathname) => {

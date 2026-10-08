@@ -5,6 +5,7 @@ import RolesPanel from './settings/RolesPanel';
 import TranslationsPanel from './settings/TranslationsPanel';
 import BackupPanel from './settings/BackupPanel';
 import ResetSitePanel from './settings/ResetSitePanel';
+import IntegrationsHub from './settings/IntegrationsHub';
 import SecurityPanel, { isSecurityTab } from './settings/SecurityPanel';
 import AppSettings, { isAppSettingsTab } from './AppSettings';
 import type { SiteBranding } from '../lib/settings';
@@ -17,6 +18,7 @@ const descriptions: Record<string, [string, string]> = {
   general: ['General', 'What the public site shows, whose media each role sees, excerpts, and menu profile links.'],
   uploads: ['Uploads', 'File size and image dimension rules, and how much storage each role or person may use.'],
   seo: ['SEO', 'Meta keywords in the page editor, and tracking scripts such as Google Tag Manager.'],
+  integrations: ['Integrations', 'Connections between this site and the services it works with. GitHub is connected here; the other cards say where their settings live today.'],
   security: ['Session & Security', 'How long people stay signed in, the session cookie policy, and signing an account out of every device.'],
   'anti-bot': ['Anti-bot & Verification', 'The honeypot, Cloudflare Turnstile or Google reCAPTCHA v3, and which public forms have to pass a check.'],
   performance: ['Rate limiting & Speed', 'How many requests each address and account may make, the server-side page cache, and the browser caching headers.'],
@@ -45,6 +47,7 @@ export default function SiteSettings({ tab, onBrandingChange }: { tab: string; o
         : tab === 'roles' ? <RolesPanel />
         : tab === 'translations' ? <TranslationsPanel />
         : tab === 'backup' ? <BackupPanel />
+          : tab === 'integrations' ? <IntegrationsHub />
           : tab === 'advanced' ? <ResetSitePanel />
             : isSecurityTab(tab) ? <SecurityPanel tab={tab} />
             // One AppSettings instance for its sections, so unsaved changes survive switching between them.

@@ -22,7 +22,18 @@ export {
   type RwpArchive,
   type RwpTemplateProvider,
   type RwpTemplateRenderProps,
+  type RwpIntegrationCard,
+  type IntegrationCardProps,
 } from './rwp';
+
+// The Integrations hub registry, for plugins that add a card to Settings → Integrations.
+export {
+  registerIntegrationCard,
+  getIntegrationCards,
+  subscribeIntegrationCards,
+  getIntegrationCardsVersion,
+  useIntegrationsRegistry,
+} from '../core/integrations';
 
 // The hook registry, for plugins that want priorities or hook names core does not declare.
 export {

@@ -18,6 +18,7 @@
  * reports the warnings.
  */
 import { readOption } from './media.mjs';
+import { readMediaStorageSettings } from './integrationSettings.mjs';
 
 /** Cloudinary rejects more than 100 public ids in one delete_resources call. */
 const ID_BATCH = 100;
@@ -26,20 +27,31 @@ const MAX_PREFIX_PASSES = 50;
 const RESOURCE_TYPES = ['image', 'video', 'raw'];
 
 /**
- * Credentials plus the cloud name, or null with a reason. The cloud name is read the same way
- * server/media.mjs reads it, so a site that configured Cloudinary in the admin rather than in
- * the environment still works.
+ * Credentials plus the cloud name, or null with a reason.
+ *
+ * `config` is the site's public runtime config, because the credentials themselves are read from
+ * `system_settings.media_storage_config` — the row the Integrations hub writes. The cloud name keeps
+ * its older `cloudinary_cloud_name` fallback (an option set under Media → Upload settings), so a site
+ * that configured Cloudinary before this screen existed can still delete its files.
  */
-export async function cloudinaryConfig(supabaseUrl, supabaseKey) {
-  const apiKey = process.env.CLOUDINARY_API_KEY;
-  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+export async function cloudinaryConfig(config = {}) {
+  const media = await readMediaStorageSettings({
+    databaseUrl: config.databaseUrl,
+    dbType: config.dbType,
+    supabaseUrl: config.supabaseUrl,
+    supabaseKey: config.supabasePublishableKey,
+    env: process.env,
+  });
+  const { apiKey, apiSecret } = media.credentials.cloudinary;
   if (!apiKey || !apiSecret) {
-    return { ok: false, reason: 'CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET are not set in the server environment (.env.local), so no files can be deleted from Cloudinary.' };
+    return { ok: false, reason: media.readable
+      ? 'Cloudinary has no API key and secret saved, so no files can be deleted from Cloudinary. Add them under Settings → Integrations, on the Media & storage card.'
+      : `Cloudinary credentials cannot be read on this server: ${media.error}` };
   }
-  const cloudName = process.env.CLOUDINARY_CLOUD_NAME
-    || (supabaseUrl ? await readOption(supabaseUrl, supabaseKey, 'cloudinary_cloud_name') : '');
+  const cloudName = media.credentials.cloudinary.cloudName
+    || (config.supabaseUrl ? await readOption(config.supabaseUrl, config.supabasePublishableKey, 'cloudinary_cloud_name') : '');
   if (!cloudName) {
-    return { ok: false, reason: 'No Cloudinary cloud name is configured (CLOUDINARY_CLOUD_NAME, or Media → Upload settings), so no files can be deleted from Cloudinary.' };
+    return { ok: false, reason: 'No Cloudinary cloud name is saved (Settings → Integrations, or the cloud name under Media → Upload settings), so no files can be deleted from Cloudinary.' };
   }
   return {
     ok: true,

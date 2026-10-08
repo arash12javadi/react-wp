@@ -1,7 +1,7 @@
 import { strFromU8, strToU8, unzipSync, zipSync, type Zippable } from 'fflate';
 import { describeDbError, client } from './db';
 import { loadSettings } from './settings';
-import { uploadToCloudinary, uploadToImageKit } from './uploads';
+import { fetchMediaStorageConfig, uploadCredentialsFrom, uploadToCloudinary, uploadToImageKit } from './uploads';
 import { siteMediaFolder } from './mediaScope';
 import type { MediaItem } from './types';
 
@@ -205,6 +205,9 @@ export async function restoreBackup(loaded: LoadedBackup, reuploadMedia: boolean
 
   if (reuploadMedia && data.media_files?.length) {
     const settings = await loadSettings();
+    // The provider credentials are saved under Settings → Integrations now; the per-option upload
+    // settings are still merged in so a backup taken from an older site restores without edits.
+    const credentials = uploadCredentialsFrom(settings, await fetchMediaStorageConfig());
     const rows = new Map((data.tables.media || []).map((row) => [String(row.id), row]));
     const replacements: Array<[string, string]> = [];
 
@@ -222,8 +225,8 @@ export async function restoreBackup(loaded: LoadedBackup, reuploadMedia: boolean
         // upload uses, so a later site reset or plugin uninstall can still account for them.
         const providerFolder = siteMediaFolder(row.folder);
         result = row.provider === 'imagekit'
-          ? await uploadToImageKit(file, settings, () => {}, providerFolder)
-          : await uploadToCloudinary(file, settings, () => {}, providerFolder);
+          ? await uploadToImageKit(file, credentials, () => {}, providerFolder)
+          : await uploadToCloudinary(file, credentials, () => {}, providerFolder);
       } catch (uploadError) {
         const leftover = uploaded ? ` The ${uploaded} file(s) uploaded before it stay in your media account, unused.` : '';
         throw new Error(`Uploading "${name}" to ${provider} failed, so nothing was restored: ${errorText(uploadError)}.${leftover}`);

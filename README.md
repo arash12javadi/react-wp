@@ -336,27 +336,15 @@ PAYPAL_CLIENT_ID=...
 PAYPAL_CLIENT_SECRET=...
 PAYPAL_MODE=sandbox
 
-# Email (shop orders, builder forms)
-SMTP_HOST=smtp.example.com
-SMTP_PORT=587
-SMTP_USER=...
-SMTP_PASS=...
-SMTP_FROM=shop@example.com
-
-# AI features (Section Refine, Code Snippets assistant, Chat assistant)
-GEMINI_API_KEY=...
-GEMINI_MODEL=
+# Everything else the site integrates with — GitHub, AI (Gemini/OpenAI), media storage
+# (Cloudinary/ImageKit/S3) and email (Resend/SendGrid/SMTP) — is configured in the admin under
+# Settings → Integrations, and stored in `system_settings`. There are no SMTP_*, GEMINI_*,
+# CLOUDINARY_*, IMAGEKIT_* or GITHUB_CLIENT_* variables any more.
 
 # Security engine (all optional)
 ANTI_BOT_SECRET_KEY=
 TRUST_PROXY=false          # true ONLY behind a proxy that sets X-Forwarded-For
 SESSION_COOKIE_SECRET=
-
-# Media
-CLOUDINARY_CLOUD_NAME=...
-CLOUDINARY_API_KEY=...     # deletes only; uploads are unsigned
-CLOUDINARY_API_SECRET=...
-IMAGEKIT_PRIVATE_KEY=...
 ```
 
 See [`.env.example`](./.env.example) for the annotated version.
@@ -765,6 +753,35 @@ Roles and their capabilities are defined in [`src/lib/roles.ts`](./src/lib/roles
 
 Administrators can view every user and change roles under the **Users** admin section. Creating and deleting accounts is not exposed in the admin UI, because the Supabase admin API requires a secret key that must never reach the browser; use the Supabase dashboard for that.
 
+### Settings → Integrations
+
+**Every credential this site owns lives here, not in an environment variable.** The screen is one card per service, each saving to its own `system_settings` row through the signed-in administrator's own session — which is the only client Supabase RLS lets near that table:
+
+| Card | Row | What it holds | Test button |
+| --- | --- | --- | --- |
+| GitHub | `github_config` | OAuth app client id + secret, the connected account and token, the repository and branch to publish to | — (Connect GitHub opens the real consent screen) |
+| AI | `ai_config` | Provider (Google Gemini / OpenAI), API key, model | **Test connection** — one authenticated call with the values on screen, reported in the provider's own words |
+| Media & storage | `media_storage_config` | Active provider, and Cloudinary / ImageKit / S3 credentials | — (the Media screen's own upload and delete are the test) |
+| Email | `email_config` | Provider (Resend / SendGrid / Custom SMTP), key, From address and name | **Send test email** — one short message through the *saved* configuration |
+
+Anything with a key is stored, never echoed: `GET /api/integrations/status` answers with presence only (`configured`, which provider, which fields are still missing), and a test route returns the provider's sentence rather than the credential. The two test routes are the only ones here that borrow a credential for an outbound call, so they are the only ones that authorize the caller (`manage_options`).
+
+The **server** reads the rows through whichever connection the deployment has, in this order: an injected database adapter (the universal engine, on every backend except Supabase), a direct PostgreSQL connection (`DATABASE_URL` — one of the five infrastructure variables — or the older `SUPABASE_DB_URL`), the service key (`SUPABASE_SECRET_KEY`), then nothing. Under Supabase the publishable key can never read these rows, so the hub says which variable to set rather than reporting every card as unconfigured; that answer is `credentials.readable` in the status body, and it is why the screen can be honest about a half-configured deployment.
+
+Server-side helpers, one implementation shared by `server.mjs`, the Hono app and the `api/*` functions:
+
+```js
+import { readIntegrationRows, readMediaStorageSettings } from './server/integrationSettings.mjs';
+import { aiConfigFrom, emailConfigFrom, mediaStorageConfigFrom } from './server/integrationConfig.mjs';
+
+const media = await readMediaStorageSettings({ databaseUrl, dbType, supabaseUrl, supabaseKey, env });
+const { cloudinary, imagekit, s3 } = media.credentials;
+```
+
+Adding a card from a plugin is `integrations.registerCard({ id, title, icon, description, order, describe, renderComponent })` — `order` places it among the four above, `describe()` supplies the state pill, and `renderComponent` gets `{ status, refresh }` and owns its own row. `useIntegrationsRegistry()`, exported from `src/lib/plugin-api.ts`, is the same registry from inside a component.
+
+Payment keys are the deliberate exception: they stay in the shop plugin's own settings and environment, because that plugin reads them itself.
+
 ### Media
 
 The same schema adds the `public.media` table behind the **Media** admin section, which stores uploads to Cloudinary and ImageKit alongside plain external image URLs. Provider settings live under **Media → Upload settings**.
@@ -773,23 +790,26 @@ Which credentials you need depends on the operation, because Cloudinary and Imag
 
 | Operation | Cloudinary | ImageKit |
 | --- | --- | --- |
-| Upload | Cloud name + unsigned upload preset. Both are public and set in the admin. **No secret needed.** | Private key, server-side. |
-| List / edit title and alt text | Nothing — this data lives in Supabase. | Nothing. |
-| Delete the actual file | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, server-side. | Private key, server-side. |
+| Upload | Cloud name + unsigned upload preset from **Settings → Integrations → Media & storage**. Both are public. **No secret needed.** | Public key from the same card; the signature is made on the server with the private key. |
+| List / edit title and alt text | Nothing — this data lives in the database. | Nothing. |
+| Delete the actual file | Cloud name, API key and API secret, all saved on that card. | Private key, saved on the same card. |
 
-The asymmetry is that Cloudinary supports genuinely unsigned uploads, so the browser can upload on its own, but its destroy API is signed-only. ImageKit signs both. Every signed call therefore goes through the server: `/api/imagekit-auth` issues upload credentials, and `/api/media-delete` performs deletions. Both verify the caller's Supabase session and role before doing anything, using only the publishable key and the caller's own access token.
+The asymmetry is that Cloudinary supports genuinely unsigned uploads, so the browser can upload on its own, but its destroy API is signed-only. ImageKit signs both. Every signed call therefore goes through the server: `/api/imagekit-auth` issues upload credentials, and `/api/media-delete` performs deletions. Both verify the caller's session and role before doing anything, using only the publishable key and the caller's own access token.
 
-**Never put an API secret or private key into the admin screen** — those fields are stored in `options`, which is publicly readable. Secrets belong in the server environment only. On Vercel, add them to the project environment variables.
+**These credentials belong on the Media & storage card, not in `.env`.** They are written to `system_settings.media_storage_config` by the signed-in administrator, which is a row only a `manage_options` session may touch, and every server-side user of them (the upload signature, the delete, the bulk delete during a plugin uninstall, the site reset) reads that row:
 
-If the delete credentials are not configured, deleting still works but only removes the library record. The Media screen now warns about this **before** you delete anything, rather than only failing at the moment you try.
+```js
+const media = await readMediaStorageSettings({ databaseUrl, dbType, supabaseUrl, supabaseKey, env });
+const credentials = media.credentials;   // cloudinary / imagekit / s3, presence-only elsewhere
+```
 
-**Secrets must go in `.env.local`, and the server reads that file itself.** Plain `node server.mjs` does not load `.env.local` the way Vite does, so [`server/env.mjs`](./server/env.mjs) loads it explicitly at startup before anything else reads `process.env`. Real environment variables still take precedence. Without this, credentials placed in `.env.local` were silently invisible to the server and every Cloudinary delete quietly left the file behind.
+Because RLS protects `system_settings`, the server needs a way in: `DATABASE_URL` (a direct PostgreSQL connection — one of the five infrastructure variables), `SUPABASE_SECRET_KEY`, or, on a self-hosted MySQL/SQLite/LibSQL site, its own database driver. `GET /api/integrations/status` reports which of those it found as `credentials.readable`, and the Integrations screen shows a banner naming the variable to set when there is none — rather than letting every card look unconfigured.
 
-The Cloudinary cloud name is read from the `cloudinary_cloud_name` option you already set in the admin, so only `CLOUDINARY_API_KEY` and `CLOUDINARY_API_SECRET` belong in the environment.
+If the delete credentials are missing, deleting still works but only removes the library record. The Media screen warns about this **before** you delete anything, rather than only failing at the moment you try.
 
 Files uploaded before the `provider_file_id` column existed are still deletable: the public id is recovered from the delivery URL, and running the schema backfills the column for existing rows.
 
-To create a Cloudinary unsigned preset: **Settings → Upload → Upload presets → Add upload preset**, set Signing Mode to **Unsigned**, and copy the preset name into **Media → Upload settings** along with your cloud name.
+To create a Cloudinary unsigned preset: **Settings → Upload → Upload presets → Add upload preset**, set Signing Mode to **Unsigned**, and copy the preset name onto the Media & storage card along with your cloud name.
 
 ### Page layout and SEO
 
@@ -1146,7 +1166,7 @@ Activate the plugin first: it installs `plugins/rwp-code-snippets/schema.sql` (`
 
 **Who may write them.** Only `manage_options` (Administrator), enforced by RLS, for the same reason the Theme Editor's code fields are: an active snippet runs in every visitor's browser, including a signed-in administrator's, so a lower role able to save a `<script>` here could take over an admin session. Everyone, including `anon`, may read the **active** rows — the public site has to load them before anyone signs in — and only managers can see inactive ones.
 
-**The AI assistant.** With `GEMINI_API_KEY` set (server-only; see `.env.example`), the editor gets a "Generate" and "Refine this code" bar, and the drawer opens a chat that has been told how this CMS actually works: the real hook names, the tables, the global `rwp-`/`rwpt-`/`rwpb-` class names, and that there is no Tailwind here. That system prompt lives in [`plugins/rwp-code-snippets/serverAi.mjs`](./plugins/rwp-code-snippets/serverAi.mjs), on the server, along with the key — a `VITE_GEMINI_API_KEY` would be compiled into the JavaScript every visitor downloads. Answers are suggestions: "Insert into editor" only fills the editor, and a snippet still has to be saved and switched on.
+**The AI assistant.** With a Gemini key saved on **Settings → Integrations → AI** (server-only; see the section above), the editor gets a "Generate" and "Refine this code" bar, and the drawer opens a chat that has been told how this CMS actually works: the real hook names, the tables, the global `rwp-`/`rwpt-`/`rwpb-` class names, and that there is no Tailwind here. That system prompt lives in [`plugins/rwp-code-snippets/serverAi.mjs`](./plugins/rwp-code-snippets/serverAi.mjs), on the server, along with the key — a `VITE_GEMINI_API_KEY` would be compiled into the JavaScript every visitor downloads. Answers are suggestions: "Insert into editor" only fills the editor, and a snippet still has to be saved and switched on.
 
 **Backup and restore.** "Backup & Restore" exports every snippet, active and inactive, as one `react-wp-snippets-backup-YYYY-MM-DD.json` file, and reads such a file back on any React-WP site — either as new snippets ("keep both") or replacing rows with the same id ("overwrite existing"). Imported snippets arrive switched off unless you tick the box, because a backup from another site can contain JavaScript that assumes markup this one does not have.
 
@@ -1187,9 +1207,10 @@ instead of breaking.
 
 #### Setup
 
-1. Set `GEMINI_API_KEY` in `.env.local` (free key from
-   [aistudio.google.com/apikey](https://aistudio.google.com/apikey)) if you want the AI assistant.
-   Server-only — never `VITE_GEMINI_API_KEY`, which would be compiled into the public bundle.
+1. Save a Gemini key (free from [aistudio.google.com/apikey](https://aistudio.google.com/apikey)) on
+   **Settings → Integrations → AI** if you want the AI assistant — one key on that card is used by the
+   chat assistant, AI Section Refine and the snippets assistant alike. It stays on the server: never a
+   `VITE_` key, which would be compiled into the public bundle.
 2. Activate **rwp-chat** under **Plugins**. It installs
    [`plugins/rwp-chat/schema.sql`](./plugins/rwp-chat/schema.sql) on its own.
 3. On a shop site, reinstall the shop's schema
