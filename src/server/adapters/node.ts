@@ -14,7 +14,7 @@ import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono, type Context } from 'hono';
 import { app } from '../index';
-import { getRuntimeConfig, publicConfig, runStartupMigrations } from '../config';
+import { ensureSiteInstalled, getRuntimeConfig, publicConfig, runStartupMigrations } from '../config';
 
 const port = Number(process.env.PORT || 3000);
 const indexHtmlPath = resolve(process.cwd(), 'dist/index.html');
@@ -59,9 +59,13 @@ full.use('*', serveStatic({ root: './dist' }));
 // 5. SPA fallback for client-side routes (/admin, /login, ...).
 full.get('*', renderIndex);
 
-// Migrate the core schema on startup whenever the site is already installed. Fire-and-forget: the
-// memoised promise runs once and a failure is logged rather than stopping the server.
-void runStartupMigrations();
+// Site auto-setup before anything else, then the core schema migrations: the auto-setup is what writes
+// `options.installed` (and `data/react-wp-config.json`) on a site that was configured by hand, and the
+// migration below is skipped entirely on a site that is not installed yet. Fire-and-forget, memoised,
+// failure-safe — and it logs the `[Auto-Setup] Site installation verified/auto-seeded ...` line.
+void ensureSiteInstalled()
+  .then(() => runStartupMigrations())
+  .catch(() => undefined);
 
 serve({ fetch: full.fetch, port }, (info) => {
   console.log(`React-WP (Hono) listening on http://localhost:${info.port}`);

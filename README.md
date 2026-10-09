@@ -87,6 +87,14 @@ hands the same settings back as a ready-to-paste `.env` block — copyable in on
 downloadable as a file on every target, with the administrator's role reported as it was actually
 saved. See [`.env.example`](./.env.example) for every variable.
 
+The two sides resolve that configuration the same way, so a site that was configured **only** through
+`.env.local` is not asked to run the wizard again: on boot the server detects the database in the
+environment (the same `VITE_SUPABASE_*` pair the browser reads, or `DB_TYPE`/`VITE_DB_TYPE` +
+`DATABASE_URL`), adopts it as the site's own config — writing `data/react-wp-config.json` when the host
+can write to disk — and re-asserts `options.installed = true` in the database if the row is missing or
+stale. That last step is why an admin screen no longer answers *"This site is not installed, so plugins
+cannot be uploaded"* for a site that is plainly installed, and why no manual SQL is involved.
+
 ### Running on each target
 
 **Local SQLite (zero config)**
@@ -118,14 +126,16 @@ with what it is for, and says where the file goes — `.env.local` in the projec
 the environment-variable screen on Vercel/Netlify, `env_file:` in `docker-compose.yml`, or
 `EnvironmentFile=` in a systemd unit. On a persistent host the block is extra rather than required:
 that server has already written `data/react-wp-config.json`, which is what tells it a site is
-installed.
+installed — and a server that was handed nothing but that environment block answers as an installed
+site from its first boot, because it derives its config from the same variables the browser does.
 
 **Cloudflare Workers / Pages (edge)** — deploy `src/server/adapters/cloudflare.ts`; pair it with
 **Turso/LibSQL** (`VITE_DB_TYPE=libsql`, `DATABASE_URL=libsql://…`, `LIBSQL_AUTH_TOKEN`) and an
 S3-compatible bucket (Cloudflare R2). Hono's `fetch` handler is the entire server.
 
 **Supabase (the original path)** — unchanged: `npm start` runs `server.mjs` and the classic
-Supabase Setup Wizard, with RLS, the plugin installer and SEO prerendering.
+Supabase Setup Wizard, with RLS, the plugin installer and SEO prerendering. It resolves the Supabase
+pair from `.env.local` too, so a project that already has the schema applied needs no wizard run.
 
 ### Notes
 
@@ -227,6 +237,10 @@ never gets its `shop_*` tables.
                               Dashboard ready
 ```
 
+A site whose `.env.local` already carries the Supabase pair (or `DB_TYPE` + `DATABASE_URL`) never sees
+step 1: the server derives the same config from those variables on boot, treats *configured* as
+*installed*, and the wizard only runs where nothing is configured at all.
+
 </details>
 
 <details>
@@ -241,7 +255,7 @@ react-wp/
 ├─ api/                 Vercel serverless functions
 ├─ supabase/
 │  └─ schema.sql        Core CMS schema (23 tables); safe to re-run
-├─ data/                react-wp-config.json (created by the installer, git-ignored)
+├─ data/                react-wp-config.json (installer-created or derived from the environment, git-ignored)
 └─ updates.json         Version manifest used by Dashboard → Updates
 ```
 
@@ -268,7 +282,7 @@ react-wp/
 |---|---|---|
 | Process model | One persistent `server.mjs` | Static SPA plus functions |
 | Setup Wizard | ✅ Full | ✅ Via `POST /api/install-schema` (`src/server/index.ts`) |
-| Config storage | `data/react-wp-config.json` (persistent volume) | Environment variables |
+| Config storage | `data/react-wp-config.json` (persistent volume), or the environment on boot | Environment variables |
 | Plugin install / uninstall SQL | ✅ | ⚠️ Not available (no direct DDL) |
 | Site reset, plugin folder delete | ✅ | ❌ |
 | Server-side SEO tags | ✅ | ❌ Client-side only |
@@ -305,6 +319,11 @@ npm start                      # builds again, then serves on http://localhost:3
 ```
 
 Open `http://localhost:3000` and follow the **Setup Wizard**.
+
+If `.env.local` already holds the database settings (see [Minimum environment](#minimum-environment)),
+there is nothing to follow: the server resolves that config on boot, reports
+`[Auto-Setup] Site installation verified/auto-seeded in system_settings.` in the terminal, writes
+`data/react-wp-config.json` for the browser, and the site comes up installed.
 
 `npm start` rebuilds the frontend first, so plugin changes are picked up. If you run
 `node server.mjs` directly, run `npm run build` first.
@@ -372,7 +391,9 @@ npm run dev      # terminal 2: Vite on :5173, reusing that server
 Set `RWP_DEV_API=off` to keep the API server entirely in your hands. Changes to `server.mjs` and
 `server/*.mjs` need a restart either way: only the browser bundle is hot-reloaded.
 
-Both ports share the same `data/react-wp-config.json`, so they use the same Supabase installation.
+Both ports share the same `data/react-wp-config.json`, so they use the same Supabase installation. The
+SPA process resolves the same environment fallback the API process does, so a site configured only
+through `.env.local` shows the same backend in both.
 
 ### Checks
 
@@ -438,7 +459,7 @@ re-run `supabase/schema.sql` if the update changed the schema, then rebuild.
 
 | | Self-hosted (stateful) | Serverless (stateless) |
 |---|---|---|
-| Config | `data/react-wp-config.json` (public values only, git-ignored) | Env vars |
+| Config | `data/react-wp-config.json` (public values only, git-ignored), derived from the environment on boot when the file is absent or incomplete | Env vars |
 | Rate-limit counters, page cache | In process memory | Not available |
 | DB passwords | Used during install, never written to disk or returned to browsers | Same |
 
@@ -683,7 +704,9 @@ Plugin source folders belong in [`plugins/`](./plugins). Each plugin folder shou
 
 Plugins behave like WordPress: a plugin is installed while its folder exists. A folder added to `plugins/` appears as **inactive** (under `npm run dev` after a page reload; under `npm start` after a restart, because the browser bundle is built at startup; the Plugins screen says so when it finds a folder the running build lacks). **Delete** is only allowed for inactive plugins and removes the folder from disk through `POST /api/plugin-files/delete` (`server/pluginFiles.mjs`, `activate_plugins` capability). It refuses a plugin whose code another plugin imports (e.g. `rwp-page-builder`, used by `rwp-shop`), since the next build would fail. On Vercel there is no writable disk: remove the folder from the repository and redeploy. The old `rwp_deleted_plugins` option is no longer read.
 
-**Upload Plugin** (Plugins screen) installs a `.zip` file, or one downloaded from an `https://` URL, through `POST /api/admin/plugins/upload` (`server/pluginInstaller.mjs`, self-hosted `server.mjs` only, `activate_plugins` capability). The ZIP may hold the plugin at its root or inside one top-level folder (a GitHub "Download ZIP" works). It is limited to 25 MB, 150 MB unpacked and 5,000 files, and is refused if any path escapes the plugin folder or the plugin id is already installed. Files are unpacked into the git-ignored `.rwp-tmp/` and renamed into `plugins/<id>/` only after validation. A `server.mjs` gets its import added between the `rwp:server-plugin-imports` markers in `server/plugins.mjs` (`server/serverPluginImports.mjs`, which syntax-checks the result and refuses if the region was hand-edited; a failure rolls the install back). Nothing is executed during install: `.sql` files are shown for you to run in the Supabase SQL Editor, and imported npm packages missing from `package.json` or `node_modules` are listed with an `npm install` command. The response streams progress as NDJSON. Afterwards restart `npm start` (it rebuilds, and server routes load at startup), then activate the plugin. If `VERCEL_DEPLOY_HOOK_URL` is set, the hook is called too, but Vercel builds from Git, so the new plugin folder and `server/plugins.mjs` must be committed for that deploy to include them.
+**Upload Plugin** (Plugins screen) installs a `.zip` file, or one downloaded from an `https://` URL, through `POST /api/admin/plugins/upload` (`server/pluginInstaller.mjs` where the site's own filesystem can be written to, `server/pluginGitInstaller.mjs` where it cannot, `activate_plugins` capability). Which of the two runs is decided per request by `src/server/pluginHostMode.ts`, before the body is read: a host that sets no serverless marker (`VERCEL`, `NOW_BUILDER`, `AWS_LAMBDA_FUNCTION_NAME`, `NETLIFY`, `CF_PAGES`, `DENO_DEPLOYMENT_ID`) and in which a probe file can be created and removed under `plugins/` and `.rwp-tmp/` is a host where `plugins/<id>/` survives — so `npm run start:hono` on a server of your own installs to disk exactly as `npm start` does, and the GitHub connection below is asked of only the hosts that cannot write a disk of their own. Every progress step carries the mode it belongs to (`local` or `github`), and so does the result, which is what the dialog labels its list with. The ZIP may hold the plugin at its root or inside one top-level folder (a GitHub "Download ZIP" works). It is limited to 25 MB, 150 MB unpacked and 5,000 files, and is refused if any path escapes the plugin folder or the plugin id is already installed. Files are unpacked into the git-ignored `.rwp-tmp/` and moved into `plugins/<id>/` only after validation — the destination is cleared, then one `rename`, then a copy-and-delete when Windows refuses that rename (a folder antivirus, the Vite watcher or an editor is holding open, or a `.rwp-tmp/` on another mount), so a locked folder no longer fails the upload. A `server.mjs` gets its import added between the `rwp:server-plugin-imports` markers in `server/plugins.mjs` (`server/serverPluginImports.mjs`, which syntax-checks the result and refuses if the region was hand-edited; a failure rolls the install back). Nothing is executed during install: `.sql` files are shown for you to run in the Supabase SQL Editor, and imported npm packages missing from `package.json` or `node_modules` are listed with an `npm install` command. The response streams progress as NDJSON — one `{ "type": "step" }` event per step, then `{ "type": "result" }` — and every host answers in that shape, which is why the upload dialog is one dialog. Afterwards restart `npm start` (it rebuilds, and server routes load at startup), then activate the plugin. `VERCEL_DEPLOY_HOOK_URL` is called as the last step on either host, but a Vercel deploy builds from Git, so on a self-hosted server that rebuild does *not* include the new plugin — the next paragraph is what does.
+
+**On Vercel — or any host whose filesystem is read-only — the same upload commits to Git instead.** There `server/pluginInstaller.mjs` would fail with `EROFS`, so the route hands the ZIP to `server/pluginGitInstaller.mjs`, which applies the same checks with the same functions — the same limits, the same refusal of a path outside the plugin folder, the same manifest validation — and then writes the plugin into the repository the deployment is built from in **one commit**, through GitHub's Git Data API (`server/pluginGitPush.mjs`): blobs, a tree built on the branch's current tree, a commit, and the branch ref updated last, so a failure anywhere before that leaves the branch exactly as it was. Files a previous version of the plugin left in `plugins/<id>/` are deleted in that commit too, and a plugin shipping a `server.mjs` has its import added to `server/plugins.mjs` in the same commit — the one path the installer may write outside `plugins/<id>/`. The credential is the stored **GitHub** connection from Settings → Integrations (`github_config`); an empty card is answered with `501` and the sentence that says so, because a host with no disk of its own has no other way in. Because the plugin arrives with a build, the dialog reports no restart: the platform rebuilds when it builds the commit, which is what `VERCEL_DEPLOY_HOOK_URL` above is for. Committing the folder yourself still works, and is exactly what the upload does for you.
 
 ### Per-plugin database tables
 

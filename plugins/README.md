@@ -54,6 +54,28 @@ Components rendered inside a route can read site settings and the signed-in user
 Return a cleanup function that removes every registration, so deactivating the plugin
 removes it completely.
 
+## Reading and writing data
+
+Plugins use core's one database helper, `src/lib/db.ts`, imported by relative path — from
+`plugins/<id>/index.tsx` that is `../../src/lib/db`, from `plugins/<id>/lib/thing.ts` it is
+`../../../src/lib/db`:
+
+| API                          | What it does                                                                                                                                                                                                                 |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `client`                     | The universal, Supabase-shaped client: `client.from('pages').select('id,title').eq('status', 'published').maybeSingle()`, `client.rpc('my_fn', { … })`, `client.auth.getUser()`. It works on every backend (Supabase, Postgres, MySQL, SQLite), so never import `@supabase/supabase-js` yourself. |
+| `tryGetClient()`             | The same client, or `null` when the CMS is not configured yet — use this in code that can run while the Setup Wizard is up.                                                                                                    |
+| `db`                         | `$wpdb`-style helpers: `db.from(table)`, `db.select(table, where)`, `db.insert`, `db.update`, `db.delete`.                                                                                                                     |
+| `getOption` / `updateOption` | WordPress-style options.                                                                                                                                                                                                      |
+| `getSystemSetting` / `setSystemSetting` | Administrator-only key/value settings (`system_settings`) — integration keys and other secrets.                                                                                                                     |
+| `describeDbError(error)`     | Turns a driver error into a message. Errors here are plain objects, not `Error` instances, so `instanceof` misses them.                                                                                                       |
+
+Older plugins call `getSupabaseClient()` / `tryGetSupabaseClient()`; both are still exported as
+aliases for `client` / `tryGetClient`. **Never remove or rename an export a plugin imports.** A
+plugin that imports a missing name throws `does not provide an export named …` while its module is
+being evaluated — before React mounts — which blanks the entire site (public and admin) rather than
+breaking one screen, and `vite build` stops with `MISSING_EXPORT` in production. `plugins/` is not
+tracked in git, so run `npm run build` after changing any export a plugin imports.
+
 ## Server routes
 
 A plugin that needs secrets or must talk to a third party (payments, email) can ship a

@@ -21,7 +21,7 @@ export interface PluginSchemaStatus {
   mediaPrefixes: string[];
   /** The server has Cloudinary API credentials, so files can actually be deleted. */
   cloudinaryConfigured: boolean;
-  /** SUPABASE_DB_URL is set on the server, so no password prompt is needed. */
+  /** The server holds a database URL (SUPABASE_DB_URL or DATABASE_URL), so no password prompt is needed. */
   storedCredentials: boolean;
   /** False when the table state could not be read; `reason` says why. */
   checked: boolean;
@@ -66,7 +66,7 @@ export interface UninstallResult {
   warnings: string[];
 }
 
-/** Credentials the server may still need, when SUPABASE_DB_URL is not set. */
+/** Credentials the server may still need, when it holds no database URL of its own. */
 export interface DbCredentials {
   dbPassword?: string;
   connectionString?: string;

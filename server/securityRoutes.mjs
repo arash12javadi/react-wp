@@ -271,7 +271,7 @@ function readSession(request) {
  *
  * Deletes the account's rows in auth.sessions, which cascades to its refresh tokens: the next
  * refresh fails and every device is signed out. This is done over the direct Postgres connection
- * (SUPABASE_DB_URL, or the password the Setup Wizard's fallback sends) because GoTrue's admin API
+ * (SUPABASE_DB_URL or DATABASE_URL, or the password the Setup Wizard's fallback sends) because GoTrue's admin API
  * revokes by JWT — it has no "sign out this user id" call — and an administrator signing someone
  * else out does not have that person's token.
  *

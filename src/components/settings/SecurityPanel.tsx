@@ -288,7 +288,7 @@ export default function SecurityPanel({ tab }: { tab: SecurityTab }) {
                   Database password
                   <input type="password" value={dbPassword} autoComplete="off"
                     onChange={(event) => setDbPassword(event.target.value)} />
-                  <span className={styles.help}>Only needed because SUPABASE_DB_URL is not set on this server.</span>
+                  <span className={styles.help}>Only needed because neither SUPABASE_DB_URL nor DATABASE_URL is set on this server.</span>
                 </label>
               )}
               <div className={styles.actions}>

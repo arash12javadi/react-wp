@@ -1,10 +1,11 @@
 /**
  * Unified client database helper.
  *
- * This is the one file the rest of the application imports for data access. It no longer exposes any
- * Supabase-specific entry point — `client` is gone. Everything routes through the
- * universal `client` / `db` / `auth` facade (see `./client.ts`), which resolves the runtime config
- * and dispatches to the selected `DBAdapter` / `AuthAdapter` / `StorageAdapter`.
+ * This is the one file the rest of the application imports for data access. There is no
+ * Supabase-specific entry point: everything routes through the universal `client` / `db` / `auth`
+ * facade (see `./client.ts`), which resolves the runtime config and dispatches to the selected
+ * `DBAdapter` / `AuthAdapter` / `StorageAdapter`. The pre-universal names `getSupabaseClient` and
+ * `tryGetSupabaseClient` are kept as aliases below, for plugins that still import them.
  */
 import { client, tryGetClient, resetClient as resetClientInstance, type AuthFacade, type Client, type Session, type User } from './client';
 import { getDbAdapter, resetDbAdapter as resetDbAdapterInstance, type DBAdapter } from './db/index';
@@ -54,6 +55,22 @@ export const resetClient = (): void => {
 
 /** Backward-compatible alias for {@link resetClient}. */
 export const resetDbAdapter = resetClient;
+
+/**
+ * Backward-compatible names from before the universal client, kept because plugins import them.
+ *
+ * `getSupabaseClient()` is what {@link client} already is — a lazy client that throws when the CMS
+ * is not configured — and `tryGetSupabaseClient()` is {@link tryGetClient}, which answers null
+ * instead. Unlike `resetDbAdapter` above these are not cosmetic: a plugin that imports a name this
+ * file no longer exports is a **module-load SyntaxError** in dev and a `MISSING_EXPORT` build
+ * failure in production, and because `src/main.jsx` globs every plugin entry under `plugins/`
+ * eagerly, that SyntaxError takes the whole admin and the public site down with it — a blank page
+ * rather than a broken plugin. Keep the aliases while any published plugin imports them.
+ */
+export const getSupabaseClient = (): Client => client;
+
+/** Backward-compatible alias for {@link tryGetClient}; null when the CMS is not configured. */
+export const tryGetSupabaseClient = tryGetClient;
 
 export const getStorageAdapter = () => createStorageAdapter(getRuntimeConfig());
 

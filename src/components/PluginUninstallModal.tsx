@@ -247,7 +247,7 @@ export default function PluginUninstallModal({ plugin, onDeactivate, onClose, on
             <label htmlFor="uninstall-db-password">
               Supabase database password
               <small>
-                This server has no <code>SUPABASE_DB_URL</code>, so it needs the password to reach
+                This server has no <code>SUPABASE_DB_URL</code> or <code>DATABASE_URL</code>, so it needs the password to reach
                 the database. It is used for this request only and never stored. Find it under
                 Project Settings → Database.
               </small>

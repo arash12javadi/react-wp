@@ -209,7 +209,7 @@ export default function ResetSitePanel() {
           <label className={styles.field} htmlFor="reset-db-password">
             Supabase database password
             <small>
-              Only needed if this server has no <code>SUPABASE_DB_URL</code> in <code>.env.local</code>.
+              Only needed if this server has neither <code>SUPABASE_DB_URL</code> nor <code>DATABASE_URL</code> in <code>.env.local</code>.
               Leave blank to use the server&apos;s own credentials. This is the database password from
               Project Settings → Database, not your Supabase account password.
             </small>

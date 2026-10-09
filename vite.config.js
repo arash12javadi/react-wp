@@ -1,6 +1,7 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
-import { publicConfig, readConfig } from './server/config.mjs'
+import { publicConfig } from './server/config.mjs'
+import { resolveSiteConfig } from './server/autoSetup.mjs'
 import { apiPort, devApiServer } from './vite.devApi.mjs'
 
 /**
@@ -53,7 +54,11 @@ export default defineConfig({
     {
       name: 'react-wp-server-config',
       async transformIndexHtml(html) {
-        const config = publicConfig(await readConfig())
+        // `resolveSiteConfig` (server/autoSetup.mjs), not the file alone: in dev the SPA is served by
+        // *this* process, which has loaded no `.env.local` of its own, and a site configured entirely
+        // through `.env.local` would otherwise be told `installed: false` while the API server next to it
+        // (which does load it) answered as an installed site.
+        const config = publicConfig(await resolveSiteConfig())
         return html.replace(
           'window.__REACT_WP_CONFIG__=null;',
           `window.__REACT_WP_CONFIG__=${JSON.stringify(config)};`,

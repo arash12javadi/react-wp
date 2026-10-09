@@ -283,7 +283,7 @@ export interface RevokeResult {
 
 /**
  * Signs an account out everywhere. `dbPassword` is the Setup Wizard's long-standing fallback for
- * a server without SUPABASE_DB_URL; leave it out when the status reports database_connection.
+ * a server without SUPABASE_DB_URL or DATABASE_URL; leave it out when the status reports database_connection.
  */
 export const revokeUserSessions = (userId: string, credentials: { dbPassword?: string; connectionString?: string } = {}) =>
   request<RevokeResult>('/api/security/sessions/revoke', {

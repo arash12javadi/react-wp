@@ -5,7 +5,8 @@ import { createReadStream } from 'node:fs';
 import { access, readFile } from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
-import { publicConfig, readConfig, writeConfig } from './server/config.mjs';
+import { publicConfig, writeConfig } from './server/config.mjs';
+import { ensureSiteInstalled, resolveSiteConfig } from './server/autoSetup.mjs';
 import { buildEnvString } from './server/installEnv.mjs';
 import { authorizeImageKitUpload, authorizeMediaDelete, deleteFromProvider } from './server/media.mjs';
 import { describeDeleteSupport } from './server/integrationConfig.mjs';
@@ -87,6 +88,18 @@ const html = (request, response, status, markup, headers = {}) => {
 };
 
 /**
+ * The site's config for every decision this server makes: `data/react-wp-config.json`, completed by the
+ * environment (`server/autoSetup.mjs`).
+ *
+ * The name is the one the call sites below already used. It used to read the file alone, which is what
+ * broke a site configured entirely through `.env.local`: the database was provisioned and the browser,
+ * which reads the same `VITE_*` variables, was signed in, while this server resolved no config at all
+ * and answered "This site is not installed, so plugins cannot be uploaded". `resolveSiteConfig` is still
+ * a single file read per call, so the per-request cost is what it was.
+ */
+const readConfig = () => resolveSiteConfig();
+
+/**
  * The config, read once per request and handed to the security engine. readConfig() is a file read,
  * so this also stops the four or five separate readConfig() calls a single request used to make.
  */
@@ -95,6 +108,29 @@ const currentConfig = async () => {
   configureSecuritySettings(config);
   return config;
 };
+
+/**
+ * The Supabase pair this server authorises with — and the answer when it has none.
+ *
+ * `server.mjs` authenticates every credentialed route against Supabase, because that is the project the
+ * browser is signed in to, so a site with no Supabase project cannot be authorised *here*, whatever its
+ * database is. The message says that rather than "not installed": a configured site whose
+ * `data/react-wp-config.json` was simply missing — everything set through `.env.local`, which the wizard
+ * never writes — was told it was not installed, which sent people to re-run the wizard against a
+ * database that had been installed all along, and then to paste SQL by hand. The auto-setup at the bottom
+ * of this file is what makes the first half below the normal case.
+ */
+const siteSupabase = async () => {
+  const config = publicConfig(await readConfig());
+  if (config?.supabaseUrl && config?.supabasePublishableKey) return { config, error: null };
+  return {
+    config,
+    error: config?.installed
+      ? 'This site is installed on a non-Supabase backend, and this server authorises uploads through a Supabase project. Run the universal server instead (npm run start:hono), which speaks every backend.'
+      : 'This site is not installed yet: no Supabase project is configured. Run the Setup Wizard, or put DB_TYPE and VITE_SUPABASE_URL/VITE_SUPABASE_PUBLISHABLE_KEY in .env.local.',
+  };
+};
+
 
 const readBody = async (request) => {
   let body = '';
@@ -262,7 +298,16 @@ const renderIndex = async (request, filePath, seoPath, config) => {
     .replace('<!--rwp-seo-->', () => head);
   // Anchored to </head> so a "<body" inside a <head> script is not mistaken for the real tag.
   if (bodyStart) withSeo = withSeo.replace(/<\/head>\s*<body[^>]*>/i, (tag) => `${tag}\n    ${bodyStart}`);
-  return withSeo.replace('window.__REACT_WP_CONFIG__=null;', () => `window.__REACT_WP_CONFIG__=${JSON.stringify(config)};`);
+  // The live config, over whatever the build baked in. The literal `=null;` marker is the usual case,
+  // but a build can also have written a real object (`vite.config.js` resolves the same config the
+  // environment describes), and the config this process reads is the one that must win there too — it is
+  // how Step 5 → Dashboard works with no rebuild. `src/server/adapters/node.ts` replaces both shapes the
+  // same way; if you change one, change the other.
+  const injected = `window.__REACT_WP_CONFIG__=${JSON.stringify(config)};`;
+  if (withSeo.includes('window.__REACT_WP_CONFIG__=null;')) {
+    return withSeo.replace('window.__REACT_WP_CONFIG__=null;', () => injected);
+  }
+  return withSeo.replace(/window\.__REACT_WP_CONFIG__=[^;]*;/, () => injected);
 };
 
 /**
@@ -613,9 +658,9 @@ const server = http.createServer(async (request, response) => {
         return;
       }
       const privateKey = media.credentials.imagekit.privateKey;
-      const config = publicConfig(await readConfig());
-      if (!config?.supabaseUrl || !config?.supabasePublishableKey) {
-        json(request, response, 501, { error: 'This site is not installed, so uploads cannot be authorised.' });
+      const { config, error } = await siteSupabase();
+      if (error) {
+        json(request, response, 501, { error });
         return;
       }
       // Previously anyone could fetch upload credentials; now only uploaders within quota can.
@@ -637,9 +682,9 @@ const server = http.createServer(async (request, response) => {
       return;
     }
     if (url.pathname === '/api/media-delete' && request.method === 'POST') {
-      const config = publicConfig(await readConfig());
-      if (!config?.supabaseUrl || !config?.supabasePublishableKey) {
-        json(request, response, 501, { error: 'This site is not installed, so media cannot be deleted.' });
+      const { config, error } = await siteSupabase();
+      if (error) {
+        json(request, response, 501, { error });
         return;
       }
       const token = (request.headers.authorization || '').replace(/^Bearer\s+/i, '');
@@ -685,9 +730,9 @@ const server = http.createServer(async (request, response) => {
         json(request, response, 405, { error: 'Method not allowed' });
         return;
       }
-      const config = publicConfig(await readConfig());
-      if (!config?.supabaseUrl || !config?.supabasePublishableKey) {
-        json(request, response, 501, { error: 'This site is not installed, so plugins cannot be uploaded.' });
+      const { config, error } = await siteSupabase();
+      if (error) {
+        json(request, response, 501, { error });
         return;
       }
       // Checked before the body is read, so nobody without permission can make the server buffer 25 MB.
@@ -732,12 +777,13 @@ const server = http.createServer(async (request, response) => {
         return;
       }
 
-      // One JSON object per line: progress steps as they happen, then the result or the error.
+      // One JSON object per line: progress steps as they happen — each carrying the mode that says how
+      // the dialog labels it, which on this engine is always the disk — then the result or the error.
       response.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
       const send = (event) => response.write(`${JSON.stringify(event)}\n`);
       try {
-        const result = await installPlugin(source, auth, (step) => send({ type: 'step', step }));
-        send({ type: 'result', result });
+        const result = await installPlugin(source, auth, (step) => send({ type: 'step', step, mode: 'local' }));
+        send({ type: 'result', result: { ...result, mode: 'local' } });
       } catch (error) {
         if (!(error instanceof InstallError)) console.error('Plugin installation failed:', error);
         send({
@@ -750,9 +796,9 @@ const server = http.createServer(async (request, response) => {
       return;
     }
     if (url.pathname === '/api/plugin-files' || url.pathname === '/api/plugin-files/delete') {
-      const config = publicConfig(await readConfig());
-      if (!config?.supabaseUrl || !config?.supabasePublishableKey) {
-        json(request, response, 501, { error: 'This site is not installed, so plugins cannot be managed.' });
+      const { config, error } = await siteSupabase();
+      if (error) {
+        json(request, response, 501, { error });
         return;
       }
       const auth = await authorizePluginManager(
@@ -888,6 +934,43 @@ const server = http.createServer(async (request, response) => {
     });
   }
 });
+
+/**
+ * The direct-SQL half of the auto-setup: `options.installed = 'true'`, the statement the Setup Wizard
+ * runs in Step 5, so a hand-configured site never needs that SQL pasted into the Supabase editor by hand.
+ *
+ * `withClient` is the same helper `install` above uses, and `describeDbError` is the one place that
+ * strips the password out of a driver message — a log line is not allowed to be the place a connection
+ * string leaks. `skipped` is the honest answer when there is no direct connection string to use:
+ * `server.mjs` still treats the site as installed, because it is configured, and says so in the log.
+ */
+const seedInstalledOption = async (config) => {
+  const url = [config.databaseUrl, process.env.SUPABASE_DB_URL]
+    .find((value) => /^postgres(ql)?:\/\//i.test(String(value || '').trim()));
+  if (!url) {
+    return { status: 'skipped', reason: 'no direct PostgreSQL connection string in DATABASE_URL or SUPABASE_DB_URL' };
+  }
+  try {
+    await withClient(url, (client) => client.query(
+      `insert into public.options (option_name, option_value)
+       values ('installed', 'true')
+       on conflict (option_name) do update set option_value = excluded.option_value`,
+    ));
+    return { status: 'seeded' };
+  } catch (error) {
+    return { status: 'failed', reason: describeDbError(error, url) };
+  }
+};
+
+/**
+ * Site auto-setup, before anything is served — `server/autoSetup.mjs` does the work and logs
+ * `[Auto-Setup] Site installation verified/auto-seeded in system_settings.`
+ *
+ * It runs *before* `configureSecuritySettings` below reads the config, so a site that had no
+ * `data/react-wp-config.json` (the whole `.env.local`-only case) is written and marked installed before
+ * the first request is limited, and before any route asks whether the site is installed.
+ */
+await ensureSiteInstalled({ seed: seedInstalledOption });
 
 // Read once at startup so the very first request is already limited and already knows its rules,
 // rather than running on the defaults until the first timer tick. A site that is not installed

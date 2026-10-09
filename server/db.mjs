@@ -4,8 +4,11 @@
  * PostgREST cannot run DDL, so installing a plugin's schema, dropping it again and resetting the
  * site all need a real Postgres session. Two ways to get one, in this order:
  *
- *  1. SUPABASE_DB_URL in .env.local (read by server/env.mjs, like CLOUDINARY_API_SECRET). This is
- *     what makes "Activate" a single click: the server already has credentials.
+ *  1. The database URL in .env.local, read by server/env.mjs: the Supabase-specific `SUPABASE_DB_URL`
+ *     first, then the generic `DATABASE_URL` the Setup Wizard's own `.env` block writes
+ *     (server/installEnv.mjs and src/server/index.ts). This is what makes "Activate" a single click.
+ *     Both names must be read — they are the same fact, and reading only `SUPABASE_DB_URL` is what
+ *     made a wizard-installed site ask for a password it had already been given.
  *  2. A password or connection string sent with the request. The Setup Wizard has always worked
  *     this way, and it stays the fallback for hosts that will not keep the URL on disk.
  *
@@ -24,6 +27,22 @@ export const projectRefFromUrl = (supabaseUrl) => {
   const match = /^https?:\/\/([a-z0-9-]+)\.supabase\.(?:co|in)/i.exec(String(supabaseUrl || ''));
   return match ? match[1] : '';
 };
+
+/**
+ * The connection string this server already holds, or ''.
+ *
+ * `DATABASE_URL` is read only for a Postgres/Supabase backend, because it is also the generic name
+ * server/autoSetup.mjs fills with a sqlite file path — the same refusal server/integrationSettings.mjs
+ * makes before it hands a URL to `pg`.
+ */
+function envConnectionString() {
+  const fromEnv = (process.env.SUPABASE_DB_URL || '').trim();
+  if (fromEnv) return fromEnv;
+  const type = String(process.env.DB_TYPE || process.env.VITE_DB_TYPE || '').toLowerCase();
+  if (type && type !== 'postgres' && type !== 'supabase') return '';
+  const generic = (process.env.DATABASE_URL || '').trim();
+  return /^postgres(ql)?:\/\//i.test(generic) ? generic : '';
+}
 
 /**
  * Resolves the connection string, or explains exactly what is missing. `body` may carry
@@ -53,19 +72,19 @@ export function resolveConnectionString(body = {}, config = null) {
     };
   }
 
-  const fromEnv = (process.env.SUPABASE_DB_URL || '').trim();
+  const fromEnv = envConnectionString();
   if (fromEnv) return { ok: true, url: fromEnv, source: 'env' };
 
   return {
     ok: false,
     status: 501,
     // Names both ways out, because "not configured" on its own sends people to the wrong file.
-    error: 'This server has no database credentials. Either set SUPABASE_DB_URL in .env.local and restart, or enter your Supabase database password in this dialog.',
+    error: 'This server has no database credentials. Either set SUPABASE_DB_URL (or DATABASE_URL) in .env.local and restart, or enter your Supabase database password in this dialog.',
   };
 }
 
 /** True when the server can connect without asking anyone for a password. */
-export const hasStoredCredentials = () => Boolean((process.env.SUPABASE_DB_URL || '').trim());
+export const hasStoredCredentials = () => Boolean(envConnectionString());
 
 /**
  * Driver errors quote the connection string, password included. Anything that reaches a browser
@@ -91,7 +110,7 @@ export function describeDbError(error, connectionString) {
     return `The database host could not be resolved: ${message}. Check the project reference in the connection string.`;
   }
   if (/ETIMEDOUT|ECONNREFUSED/i.test(message)) {
-    return `The database refused the connection: ${message}. Supabase direct connections use port 5432; if this host only allows pooled connections, use the pooler URL (port 6543) as SUPABASE_DB_URL.`;
+    return `The database refused the connection: ${message}. Supabase direct connections use port 5432; if this host only allows pooled connections, use the pooler URL (port 6543) as SUPABASE_DB_URL (or DATABASE_URL).`;
   }
   return message;
 }

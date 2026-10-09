@@ -5,8 +5,14 @@
  * `RuntimeConfig` the client and drivers share. Secrets (database password, JWT secret) never leave
  * the server — the public config injected into `index.html` only ever carries `dbType`, `installed`
  * and the publishable Supabase keys.
+ *
+ * `installed` is not read from anywhere: it is *decided*, by `configIsConfigured` in
+ * `server/autoSetup.mjs` — a database this runtime can talk to is an installed site. That module also
+ * holds the writing half of the same rule, reached through `ensureSiteInstalled()` below, so a
+ * hand-configured site needs no SQL and no wizard.
  */
 import { runtimeConfigFromEnv, type RuntimeConfig } from '../lib/runtime';
+import { configIsConfigured, ensureSiteInstalled as runAutoSetup } from '../../server/autoSetup.mjs';
 
 export function resolveServerConfig(): RuntimeConfig {
   const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process;
@@ -78,6 +84,13 @@ let cachedRuntimeConfig: RuntimeConfig | null = null;
  *   2. Otherwise `data/react-wp-config.json` is read (persistent Node hosts), and the file merges
  *      over any env-derived values, with `installed` kept sticky.
  *   3. If neither exists, the site is not installed.
+ *
+ * Step 3 is the one that used to be wrong, and the fix is the same rule the classic server now applies:
+ * **configured ⇒ installed.** A Supabase pair, a postgres URL or a SQLite file *is* a provisioned site —
+ * the wizard's `.env` block is the only thing a serverless host ever has, and on a persistent host a
+ * developer may have written `.env.local` by hand and never run the wizard, so `data/react-wp-config.json`
+ * does not exist at all. Answering "This site is not installed" there was a lie about a database with an
+ * administrator row already in it, and it is what `server/autoSetup.mjs` documents at length.
  */
 export async function getRuntimeConfig(): Promise<RuntimeConfig> {
   if (!cachedRuntimeConfig) {
@@ -88,9 +101,28 @@ export async function getRuntimeConfig(): Promise<RuntimeConfig> {
     } else {
       base = mergeRuntimeConfig(resolveServerConfig(), await readConfigFile());
     }
+    if (configIsConfigured(base)) base = { ...base, installed: true };
     cachedRuntimeConfig = await applyStoredStorageSettings(base);
   }
   return cachedRuntimeConfig;
+}
+
+/**
+ * The self-healing `isSiteInstalled()`: verifies the site and, when it is configured but unmarked, writes
+ * the markings a manual SQL step used to — `options.installed = 'true'` and `data/react-wp-config.json` —
+ * then re-resolves the config so the caller sees the repaired answer.
+ *
+ * `/api/admin/plugins/upload` calls this before refusing anything, and so does the Node adapter on boot,
+ * which is why "This site is not installed" can no longer reach an administrator whose database was
+ * provisioned by hand. A host that cannot write (no direct database credentials, a read-only filesystem)
+ * still gets `installed: true`, because being configured is what installed means here; `server/autoSetup.mjs`
+ * logs what it could not verify rather than failing the request.
+ */
+export async function ensureSiteInstalled(): Promise<RuntimeConfig> {
+  const config = await getRuntimeConfig();
+  if (config.installed) return config;
+  const report = await runAutoSetup({ log: console });
+  return report.installed ? reloadRuntimeConfig() : config;
 }
 
 /**

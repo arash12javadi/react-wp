@@ -9,6 +9,13 @@ type ServerStep = 'downloading' | 'extracting' | 'validating' | 'installing' | '
 type StepId = 'uploading' | ServerStep;
 type StepState = 'pending' | 'active' | 'done' | 'skipped' | 'error';
 
+/**
+ * Which installer the host ran: its own `plugins/` folder, or a commit to the repository it is built
+ * from. The server sends it with every step, so the progress list can say what "installing" means
+ * there, and repeats it in the result for a dialog reopened after a reload.
+ */
+export type InstallMode = 'local' | 'github';
+
 export interface PluginInstallResult {
   plugin: { id: string; name: string; version: string; folder: string };
   files: number;
@@ -21,22 +28,37 @@ export interface PluginInstallResult {
   deploy: { configured: boolean; triggered: boolean; status?: number; error?: string };
   restart: { required: boolean; reason: string };
   warnings: string[];
+  /**
+   * Where the host installed the plugin. Absent only from an answer older than this field, which is
+   * then read from `commit`: the repository path is the only one that reports a commit.
+   */
+  mode?: InstallMode;
+  /**
+   * Present only when the upload was committed to the repository instead of written to disk — the
+   * serverless path, where there is no writable `plugins/` to install a folder into.
+   */
+  commit?: { sha: string; url: string; repository: string; branch: string; deletions: number };
 }
 
 type ServerEvent =
-  | { type: 'step'; step: ServerStep }
+  | { type: 'step'; step: ServerStep; mode?: InstallMode }
   | { type: 'result'; result: PluginInstallResult }
   | { type: 'error'; error: string; status?: number };
 
-const stepLabels: Record<StepId, string> = {
+/**
+ * The steps are the server's; the words are the host's. "Installing" is saving `plugins/<id>/` on one and
+ * committing to the repository on the other, which is the one difference an administrator watching the
+ * list cares about. Until the first step arrives the mode is unknown, and the neutral wording is shown.
+ */
+const stepLabels = (mode: InstallMode | null): Record<StepId, string> => ({
   uploading: 'Uploading',
   downloading: 'Downloading',
-  extracting: 'Extracting',
+  extracting: 'Extracting ZIP',
   validating: 'Validating',
-  installing: 'Installing files',
+  installing: mode === 'github' ? 'Committing to GitHub' : mode === 'local' ? 'Saving to plugins/ folder' : 'Installing files',
   'registering-routes': 'Registering routes',
   'triggering-rebuild': 'Triggering rebuild',
-};
+});
 
 const stepsFor = (mode: 'file' | 'url'): StepId[] => [
   mode === 'file' ? 'uploading' : 'downloading',
@@ -96,7 +118,7 @@ function sendInstall(
         // Not JSON: e.g. an HTML 404 page from a host without this endpoint.
       }
       if (xhr.status === 404 && !message) {
-        message = 'This host has no /api/admin/plugins/upload endpoint. Plugins can only be uploaded when the site runs on server.mjs (npm start); in development, start server.mjs on :3000 as well.';
+        message = 'This host has no /api/admin/plugins/upload endpoint. It belongs to the API server that owns /api: npm run dev starts it, npm start runs it on its own, and npm run start:hono runs the universal engine — which installs to plugins/ where it can write, and commits to your GitHub repository where it cannot.';
       }
       reject(new Error(message || `The upload failed: the server answered HTTP ${xhr.status}.`));
     };
@@ -174,6 +196,8 @@ export default function PluginUploadModal({ onClose: close, onInstalled, initial
   const [uploadFraction, setUploadFraction] = useState(0);
   const [error, setError] = useState('');
   const [result, setResult] = useState<PluginInstallResult | null>(initialResult);
+  /** The host's answer to which installer it is running; `null` until the first step arrives. */
+  const [installMode, setInstallMode] = useState<InstallMode | null>(initialResult?.mode ?? null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -192,6 +216,11 @@ export default function PluginUploadModal({ onClose: close, onInstalled, initial
 
   const started = Object.keys(steps).length > 0;
   const order = stepsFor(mode);
+  /**
+   * The mode of the install in flight, or of the result on screen. A response without the field is read
+   * through `commit`: the repository path is the only one that reports one.
+   */
+  const installLabels = stepLabels(installMode ?? (result ? result.mode ?? (result.commit ? 'github' : 'local') : null));
 
   /** Marks `step` active and every earlier step done (or skipped, if it never ran). */
   const advance = (step: StepId) => setSteps((current) => {
@@ -254,6 +283,7 @@ export default function PluginUploadModal({ onClose: close, onInstalled, initial
         (serverEvent) => {
           if (serverEvent.type === 'step') {
             lastStep = serverEvent.step;
+            if (serverEvent.mode) setInstallMode(serverEvent.mode);
             advance(serverEvent.step);
           } else if (serverEvent.type === 'result') {
             const installed = serverEvent.result;
@@ -329,7 +359,7 @@ export default function PluginUploadModal({ onClose: close, onInstalled, initial
                       <span className={styles.marker} aria-hidden="true">
                         {state === 'done' ? '✓' : state === 'error' ? '!' : state === 'skipped' ? '–' : state === 'active' ? '…' : ''}
                       </span>
-                      {stepLabels[id]}
+                      {installLabels[id]}
                       {id === 'uploading' && state === 'active' && <small> {Math.round(uploadFraction * 100)}%</small>}
                       {state === 'skipped' && <small> skipped</small>}
                     </li>
@@ -358,7 +388,7 @@ export default function PluginUploadModal({ onClose: close, onInstalled, initial
                   return (
                     <li key={id} className={styles[state]}>
                       <span className={styles.marker} aria-hidden="true">{state === 'done' ? '✓' : state === 'error' ? '!' : '–'}</span>
-                      {stepLabels[id]}
+                      {installLabels[id]}
                       {state === 'skipped' && <small> skipped</small>}
                     </li>
                   );
@@ -368,7 +398,11 @@ export default function PluginUploadModal({ onClose: close, onInstalled, initial
 
             <div className={styles.success} role="status">
               <strong>{result.plugin.name} {result.plugin.version}</strong> was installed to <code>plugins/{result.plugin.folder}</code> ({result.files} files).
+              {result.commit && (
+                <> It is on <strong>{result.commit.repository}</strong> in <a className={styles.commitLink} href={result.commit.url} target="_blank" rel="noreferrer"><code>{result.commit.sha.slice(0, 7)}</code></a> on <code>{result.commit.branch}</code>: the site picks it up when that commit is built.</>
+              )}
               {result.serverRoutes.detected && <> Its <code>server.mjs</code> {result.serverRoutes.registered ? 'was registered in' : 'was already listed in'} <code>server/plugins.mjs</code>.</>}
+              {!result.commit && <> The Plugins screen writes its row in the <code>plugins</code> table — inactive — once a build includes the folder.</>}
             </div>
 
             {result.restart.required && (

@@ -198,6 +198,13 @@
   background: #f0fdf4;
 }
 
+/* The commit link in the success box, which only the Git-backed upload has to offer. Inherited colour,
+   so the box keeps its meaning and only the underline says it is clickable. */
+.commitLink {
+  color: inherit;
+  text-decoration: underline;
+}
+
 .sql {
   margin-top: 8px;
 }

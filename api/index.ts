@@ -4,7 +4,8 @@
 // (`api/plugins.ts`, `api/media-delete.ts`, `api/imagekit-auth.ts`) still take precedence, and
 // `api/install-schema.ts` is a second entry point onto this same bundle, so the routes below are all
 // universal: `/api/install/*`, `/api/install-schema`, `/api/auth/*`, `/api/db/query`, `/api/media/*`
-// and `/api/admin/plugins/upload-zip`.
+// and `/api/admin/plugins/upload` (with `upload-zip` kept as its older alias) — which writes
+// `plugins/` on a host whose disk accepts it, and commits to the deployed repository where it does not.
 //
 // Import the pre-bundled JavaScript, never `../src/server/adapters/vercel.ts` or anything another
 // `.ts` file re-exports: Vercel transpiles each API file on its own and keeps relative specifiers
