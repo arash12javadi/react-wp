@@ -5,7 +5,7 @@
  * every other read-only host) both run it, and re-implementing "commit these files in one commit" once
  * per engine is how the two drift apart. `src/server/**` is type-checked, so these declarations are
  * what gives the upload route real types without turning on `allowJs` for the whole project — the same
- * arrangement as `githubOAuth.d.mts` and `integrationSettings.d.mts`.
+ * arrangement as `integrationConfig.d.mts` and `integrationSettings.d.mts`.
  *
  * `pluginInstaller.mjs` is deliberately not imported: it has no declarations of its own (the classic
  * route is JavaScript end to end), so the failures these functions raise are typed structurally
@@ -15,7 +15,7 @@
 
 /** The repository to publish to, as `githubTargetFrom` derives it from the stored `github_config` row. */
 export interface GithubCommitTarget {
-  /** The GitHub credential from the row. Never logged, never echoed back to a browser. */
+  /** The GitHub personal access token from the row. Never logged, never echoed back to a browser. */
   token: string;
   owner: string;
   repo: string;
@@ -57,8 +57,8 @@ export interface GithubCommitResult {
  * The repository to publish to, taken from the stored `github_config` row.
  *
  * Throws an `InstallError` (status 501, with the sentence naming the screen to fix) when the row has no
- * token, no valid repository or no valid branch: connecting GitHub is the one thing a host without a
- * writable disk cannot work around, so every one of those cases is answered rather than retried.
+ * token, no valid repository or no valid branch: the stored credential is the one thing a host without
+ * a writable disk cannot work around, so every one of those cases is answered rather than retried.
  */
 export function githubTargetFrom(value: unknown): GithubCommitTarget;
 
@@ -70,6 +70,10 @@ export function readTextFile(target: GithubCommitTarget, path: string): Promise<
 
 /**
  * Writes `files` and deletes `deletions` in one commit on `target.branch`.
+ *
+ * The text of a file travels inside the tree call itself, so only a file that is not text, an empty one,
+ * or one past the module's inline limit is uploaded as a blob first — one call at a time, a second
+ * apart, which is what keeps an install out of GitHub's secondary rate limit.
  *
  * `base` must be the `readBranch` result the paths were computed from — GitHub builds the new tree from
  * it, and the ref update is the only call that publishes anything. `allowPaths` names the few shared

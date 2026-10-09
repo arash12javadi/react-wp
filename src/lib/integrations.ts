@@ -2,37 +2,35 @@
  * The Integrations hub's shared vocabulary (Settings → Integrations).
  *
  * Everything here is deliberately free of imports: this file is read by the settings screen and by the
- * server route that answers `/api/integrations/status`, and it holds the contract between the three
- * parties of the OAuth handshake — the callback window that posts the result, the message it posts,
- * and the screen that listens for it — so a rename cannot half-happen.
- *
- * A few values are mirrored rather than imported, because the plain-ESM server module cannot be typed
- * from here: each one says where its twin lives in `server/githubOAuth.mjs`. Keep the pairs in step.
+ * server route that answers `/api/integrations/status`, and it holds the contract between the two — the
+ * shape of the `github_config` row, the presence-only status that route reports, and the two GitHub
+ * calls the GitHub card makes itself while validating a personal access token — so a rename cannot
+ * half-happen.
  */
 
 /**
- * The GitHub scopes the hub asks for: `repo` to push a plugin or theme back to a repository (which
- * covers private repositories too), and `read:user` for the account name and avatar the card shows.
+ * The GitHub scope this project needs: `repo` is what pushing a plugin or theme back to a repository
+ * takes, private repositories included.
  *
- * Keep in step with `GITHUB_SCOPES` in `server/githubOAuth.mjs`.
+ * Nothing grants it here: the token is minted on GitHub's own "new token" page, which this list
+ * pre-ticks, and pasted into the card. It is also the sentence the card shows, so it says what the
+ * token is for rather than how it is obtained.
  */
-export const githubScopes = ['repo', 'read:user'] as const;
+export const githubScopes = ['repo'] as const;
 
-/** Where GitHub sends the browser back to. Keep in step with `GITHUB_CALLBACK_PATH`. */
-export const githubCallbackPath = '/api/auth/github/callback';
+/** GitHub's classic-token page, pre-ticked with `githubScopes` and named after this project. */
+export const githubTokenPageUrl =
+  `https://github.com/settings/tokens/new?description=${encodeURIComponent('react-wp')}&scopes=${githubScopes.join(',')}`;
+
+/** GitHub's fine-grained token page, for an account that prefers per-repository permissions. */
+export const githubFineGrainedTokenPageUrl = 'https://github.com/settings/personal-access-tokens/new';
+
+/** The REST API the card validates a token against, with the version `server/pluginGitPush.mjs` pins. */
+export const githubApiBase = 'https://api.github.com';
+export const githubApiVersion = '2022-11-28';
 
 /** The `system_settings` row the GitHub card reads and writes. In step with `GITHUB_CONFIG_KEY`. */
 export const githubConfigKey = 'github_config';
-
-/** Where a result waits when the OAuth window could not be opened. In step with `GITHUB_RESULT_KEY`. */
-export const githubOAuthResultKey = 'rwp-github-oauth-result';
-
-/** How the callback window identifies its messages. In step with `GITHUB_MESSAGE_SOURCE`. */
-export const githubMessageSource = 'rwp-github-oauth';
-
-/** The popup size: GitHub's consent screen needs the room, and the flow is a side trip. */
-export const githubPopupWidth = 600;
-export const githubPopupHeight = 700;
 
 /** One repository the token can push to, as the callback window passes it over. */
 export interface GithubRepository {
@@ -46,25 +44,26 @@ export interface GithubRepository {
 }
 
 /**
- * `system_settings.github_config` — the result of a successful handshake.
+ * `system_settings.github_config` — the token an administrator pasted, the account it belongs to, and
+ * the repository this site publishes to.
  *
- * `access_token` is a GitHub credential, so no screen renders the value: the field is here because the
- * browser is the only client that may write this row (the server's publishable-key connection is
- * refused by RLS), not because it is meant to be displayed.
+ * `token` is a GitHub credential, so no screen renders the value: the field is here because the browser
+ * is the only client that may write this row (the server's publishable-key connection is refused by
+ * RLS), not because it is meant to be displayed. Everything else in the row is what GitHub answered
+ * when the card validated the token, kept so the card can render itself without asking again.
  */
 export interface GithubIntegrationConfig {
   connected: boolean;
   provider: string;
   /**
-   * The OAuth app saved from the hub's GitHub card. They live in this row rather than in the server
-   * environment, so a site can be pointed at a different OAuth app without editing a file and
-   * restarting. The secret is only ever written here and read by the server.
+   * The personal access token. A classic token carries the `repo` scope; a fine-grained one carries
+   * Contents: Read and write on the repository below. It is written here, read by the server
+   * (`server/pluginGitPush.mjs`) and never echoed back to a browser.
    */
-  client_id: string;
-  client_secret: string;
-  access_token: string;
+  token: string;
   token_type: string;
-  scope: string;
+  /** What GitHub reported in `x-oauth-scopes`. Empty for fine-grained tokens, which is not a fault. */
+  scopes: string[];
   username: string;
   name: string;
   avatar_url: string;
@@ -76,18 +75,17 @@ export interface GithubIntegrationConfig {
 }
 
 /**
- * Whether this site holds a GitHub OAuth app, which is what the popup needs to exist at all.
+ * What the status route says about GitHub: presence, and the target this site publishes to.
  *
- * The pair is stored in `system_settings.github_config` (saved from the hub's own form), so `clientId`
- * is echoed back — a client id is public, it travels in the authorize URL — while the secret is only
- * ever reported as present or missing.
+ * `configured` is a token *and* the account it belongs to, which is what a commit needs. The token
+ * itself is never reported — `tokenConfigured` is the whole of what a browser is told about it.
  */
 export interface GithubEnvironmentStatus {
   configured: boolean;
-  clientId: string;
-  clientIdConfigured: boolean;
-  clientSecretConfigured: boolean;
+  tokenConfigured: boolean;
   scopes: string[];
+  username: string;
+  repository: string;
 }
 
 /** Which provider the AI card is set to. Presence only: never a key. */
@@ -128,8 +126,6 @@ export interface IntegrationCredentialsStatus {
 
 /** The body of `GET /api/integrations/status`. */
 export interface IntegrationStatus {
-  origin: string;
-  redirectUri: string;
   github: GithubEnvironmentStatus;
   ai: AiIntegrationStatus;
   media: MediaIntegrationStatus;
@@ -146,22 +142,30 @@ export const mediaStorageConfigKey = 'media_storage_config';
 /** The `system_settings` row the email card owns. In step with `EMAIL_CONFIG_KEY`. */
 export const emailConfigKey = 'email_config';
 
-/** The message the callback window posts, for a success or for a failure. */
-export interface GithubOAuthMessage {
-  source: typeof githubMessageSource;
-  type: 'GITHUB_CONNECTED' | 'GITHUB_ERROR';
-  payload: { ok?: boolean; config?: unknown; error?: string };
+/** A GitHub account, as `GET /user` describes it. Only the fields the card renders. */
+export interface GithubAccount {
+  login: string;
+  name: string;
+  avatar_url: string;
+  html_url: string;
+}
+
+/** What validating a token answers: the account it belongs to, and everything that came with it. */
+export interface GithubConnection {
+  account: GithubAccount;
+  /** GitHub's `x-oauth-scopes` header; empty for a fine-grained token, which is not a fault. */
+  scopes: string[];
+  /** The repositories the token may push to, most recently pushed first. */
+  repositories: GithubRepository[];
 }
 
 /** A disconnected configuration, with the same keys a saved one has — so the card never reads undefined. */
 export const emptyGithubConfig = (): GithubIntegrationConfig => ({
   connected: false,
   provider: 'github',
-  client_id: '',
-  client_secret: '',
-  access_token: '',
+  token: '',
   token_type: '',
-  scope: '',
+  scopes: [],
   username: '',
   name: '',
   avatar_url: '',
@@ -183,7 +187,9 @@ const asRepository = (value: unknown): GithubRepository | null => {
   return {
     full_name: fullName,
     name: asString(row.name) || fullName.split('/')[1] || fullName,
-    owner: asString(row.owner) || fullName.split('/')[0],
+    // `owner` is a string in a stored row and an object in GitHub's own payload (`/user/repos`), so
+    // both shapes are read here rather than in each caller.
+    owner: asString(row.owner) || asString((row.owner as { login?: unknown } | null)?.login) || fullName.split('/')[0],
     private: row.private === true,
     default_branch: asString(row.default_branch) || 'main',
     html_url: asString(row.html_url) || `https://github.com/${fullName}`,
@@ -192,10 +198,10 @@ const asRepository = (value: unknown): GithubRepository | null => {
 };
 
 /**
- * Turns whatever is in `system_settings.github_config` — or in the popup's message — into a full
- * configuration. Every field is defaulted, because the value arrives from three places that can each
- * be missing one: an empty row, a row written by a build that stored fewer fields, and a message
- * posted by the callback window.
+ * Turns whatever is in `system_settings.github_config` into a full configuration. Every field is
+ * defaulted, because the value arrives from a browser that may be running a slightly older build:
+ * `access_token`/`scope` are the OAuth-era names, read so a site that connected through the old
+ * handshake keeps showing — and keeps pushing with — the token it already had.
  */
 export const githubConfigFrom = (value: unknown): GithubIntegrationConfig => {
   const base = emptyGithubConfig();
@@ -205,16 +211,16 @@ export const githubConfigFrom = (value: unknown): GithubIntegrationConfig => {
     ? row.repositories.map(asRepository).filter((entry): entry is GithubRepository => entry !== null)
     : [];
   const username = asString(row.username);
+  const token = asString(row.token) || asString(row.pat) || asString(row.access_token);
   return {
     ...base,
-    connected: row.connected === true || Boolean(asString(row.access_token) && username),
+    connected: Boolean(token && username),
     provider: asString(row.provider) || 'github',
-    // Tolerated for rows written by hand or by an integration that names them in camelCase.
-    client_id: asString(row.client_id) || asString(row.clientId),
-    client_secret: asString(row.client_secret) || asString(row.clientSecret),
-    access_token: asString(row.access_token),
+    token,
     token_type: asString(row.token_type),
-    scope: asString(row.scope),
+    scopes: Array.isArray(row.scopes)
+      ? row.scopes.map(asString).filter(Boolean)
+      : asString(row.scope).split(/[\s,]+/).filter(Boolean),
     username,
     name: asString(row.name),
     avatar_url: asString(row.avatar_url),
@@ -228,15 +234,132 @@ export const githubConfigFrom = (value: unknown): GithubIntegrationConfig => {
 
 /** Connected means a token *and* the account it belongs to: either alone is not a usable connection. */
 export const isGithubConnected = (config: GithubIntegrationConfig): boolean =>
-  config.connected && Boolean(config.access_token) && Boolean(config.username);
+  config.connected && Boolean(config.token) && Boolean(config.username);
+
+// -- GitHub: validating a personal access token ---------------------------------------------------
 
 /**
- * Whether a GitHub OAuth app has been saved on this site. The pair lives in the same
- * `github_config` row as the connection, because that row is what the server reads to start a
- * handshake and what the card reads to show its state.
+ * One GitHub REST call, made by the browser that holds the token.
+ *
+ * `api.github.com` answers `Access-Control-Allow-Origin: *`, so this needs no route on this project's
+ * server and the token travels nowhere but to GitHub itself. The response's headers matter as much as
+ * its body — `x-oauth-scopes` is where a classic token's scopes are reported — so both are returned.
+ * GitHub's own error sentence is preferred over the HTTP status, because it names the problem.
  */
-export const githubCredentialsConfigured = (config: GithubIntegrationConfig): boolean =>
-  Boolean(config.client_id && config.client_secret);
+const githubRequest = async (
+  path: string,
+  token: string,
+): Promise<{ data: unknown; scopes: string[] }> => {
+  let response: Response;
+  try {
+    response = await fetch(`${githubApiBase}${path}`, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${token}`,
+        'X-GitHub-Api-Version': githubApiVersion,
+      },
+    });
+  } catch {
+    throw new Error('GitHub could not be reached from this browser. Check the connection, then try again.');
+  }
+  const data: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const detail = asString((data as { message?: unknown } | null)?.message) || `HTTP ${response.status}`;
+    if (response.status === 401) {
+      throw new Error(`GitHub rejected that token (${detail}). Check that it was copied whole, and that it has not expired.`);
+    }
+    throw new Error(`GitHub answered "${detail}" (HTTP ${response.status}).`);
+  }
+  return {
+    data,
+    // Reported for classic tokens, absent for fine-grained ones: an empty list is normal, not a fault.
+    scopes: String(response.headers.get('x-oauth-scopes') || '')
+      .split(/[\s,]+/)
+      .filter(Boolean),
+  };
+};
+
+/**
+ * The repositories the token may push to, most recently pushed first — the list the card's picker
+ * shows, and the only question the card asks GitHub about the token.
+ *
+ * One page of the maximum size, not a walk: `/user/repos` orders by most recent push, so the repository
+ * an administrator wants is at the top, and a picker of a hundred names is already more than anyone
+ * scrolls.
+ */
+const githubRepositories = async (token: string): Promise<GithubRepository[]> => {
+  const { data } = await githubRequest(
+    '/user/repos?per_page=100&sort=pushed&affiliation=owner,collaborator,organization_member',
+    token,
+  );
+  if (!Array.isArray(data)) return [];
+  return data.map(asRepository).filter((entry): entry is GithubRepository => entry !== null);
+};
+
+/**
+ * Proves a pasted token against GitHub and gathers what the card needs to render: the account it
+ * belongs to, its scopes, and the repositories it can see.
+ *
+ * Throws with a sentence worth showing the administrator — the card puts it in its error slot
+ * unedited — and nothing is stored until this resolves.
+ */
+export const validateGithubToken = async (token: string): Promise<GithubConnection> => {
+  const trimmed = String(token || '').trim();
+  if (!trimmed) throw new Error('Paste a personal access token first.');
+  const { data, scopes } = await githubRequest('/user', trimmed);
+  const row = (data && typeof data === 'object' ? data : {}) as Record<string, unknown>;
+  const login = asString(row.login);
+  if (!login) {
+    throw new Error('GitHub answered without an account name, so that token cannot be used here. Create a new one and paste it again.');
+  }
+  return {
+    account: {
+      login,
+      name: asString(row.name),
+      avatar_url: asString(row.avatar_url),
+      html_url: asString(row.html_url) || `https://github.com/${login}`,
+    },
+    scopes,
+    repositories: await githubRepositories(trimmed),
+  };
+};
+
+/**
+ * The `github_config` row a validated token deserves.
+ *
+ * `previous` is the row already stored: its repository and branch are carried over when the new token
+ * can still see that repository, so renewing a token costs nothing. A token for another account cannot
+ * see it, and the target is then cleared rather than left pointing at a repository this token cannot
+ * push to.
+ */
+export const githubConfigFor = (
+  connection: GithubConnection,
+  options: { token: string; previous?: GithubIntegrationConfig; now?: Date },
+): GithubIntegrationConfig => {
+  const { token, previous, now = new Date() } = options;
+  const wanted = asString(previous?.repository);
+  const repository = connection.repositories.some((entry) => entry.full_name === wanted) ? wanted : '';
+  const branch = repository
+    ? asString(previous?.branch) ||
+      connection.repositories.find((entry) => entry.full_name === repository)?.default_branch ||
+      'main'
+    : '';
+  return {
+    ...emptyGithubConfig(),
+    connected: true,
+    token: String(token || '').trim(),
+    token_type: 'bearer',
+    scopes: connection.scopes,
+    username: connection.account.login,
+    name: connection.account.name,
+    avatar_url: connection.account.avatar_url,
+    profile_url: connection.account.html_url,
+    repository,
+    branch,
+    repositories: connection.repositories,
+    connected_at: now.toISOString(),
+  };
+};
 
 // -- AI ------------------------------------------------------------------------------------------
 
@@ -470,10 +593,6 @@ export const isEmailConfigured = (config: EmailConfig): boolean => {
   }
 };
 
-/** The callback URL to register on the GitHub OAuth app, built from the site's own origin. */
-export const githubCallbackUrl = (origin: string): string =>
-  `${String(origin || '').replace(/\/+$/, '')}${githubCallbackPath}`;
-
 /**
  * `GET /api/integrations/status`. Throws with the server's own sentence when the route is missing — a
  * static host that only serves `index.html` answers HTML here, and `response.json()` would otherwise
@@ -488,30 +607,3 @@ export const fetchIntegrationStatus = async (): Promise<IntegrationStatus> => {
   return payload as IntegrationStatus;
 };
 
-/** True only for a message from the callback window, in the shape this build understands. */
-export const isGithubOAuthMessage = (value: unknown): value is GithubOAuthMessage => {
-  if (!value || typeof value !== 'object') return false;
-  const message = value as Partial<GithubOAuthMessage>;
-  if (message.source !== githubMessageSource) return false;
-  if (message.type !== 'GITHUB_CONNECTED' && message.type !== 'GITHUB_ERROR') return false;
-  return Boolean(message.payload && typeof message.payload === 'object');
-};
-
-/**
- * A result left behind by a callback that had no window to post to — the path taken when the popup was
- * blocked and the browser went to GitHub in this tab instead.
- *
- * Reading removes it: a reload must not replay an old token, and a value that cannot be parsed is
- * dropped rather than left behind as a permanent error.
- */
-export const takeGithubOAuthResult = (): GithubOAuthMessage | null => {
-  try {
-    const raw = window.sessionStorage.getItem(githubOAuthResultKey);
-    if (!raw) return null;
-    window.sessionStorage.removeItem(githubOAuthResultKey);
-    const parsed: unknown = JSON.parse(raw);
-    return isGithubOAuthMessage(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-};

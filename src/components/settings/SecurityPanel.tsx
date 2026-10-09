@@ -61,10 +61,23 @@ function Toggle({ checked, onChange, children }: { checked: boolean; onChange: (
 }
 
 /** What the server is actually running on, next to what the form says. */
-function ServerState({ status, error, onRefresh, busy }: {
-  status: ServerSecurityStatus | null; error: string; onRefresh: () => void; busy: boolean;
+function ServerState({ status, error, unavailable, onRefresh, busy }: {
+  status: ServerSecurityStatus | null; error: string; unavailable: boolean; onRefresh: () => void; busy: boolean;
 }) {
   if (error) {
+    // A host with no security engine is not a fault to fix here: it is what a serverless deployment is
+    // (README → Deployment Options marks rate limiting and the page cache unavailable there), so it is
+    // stated as a fact about the host rather than shown as a broken server. `isEndpointUnavailable`
+    // is what tells the two apart — see `loadStatus` below and `EndpointUnavailableError` itself.
+    if (unavailable) {
+      return (
+        <div className={styles.backupSummary} role="status">
+          <p>
+            <strong>This host runs without the security engine.</strong> {error}
+          </p>
+        </div>
+      );
+    }
     return (
       <div className={styles.warning} role="status">
         <strong>The server could not be asked what it is running.</strong>
@@ -113,6 +126,7 @@ export default function SecurityPanel({ tab }: { tab: SecurityTab }) {
   const [secretInput, setSecretInput] = useState('');
   const [status, setStatus] = useState<ServerSecurityStatus | null>(null);
   const [statusError, setStatusError] = useState('');
+  const [statusUnavailable, setStatusUnavailable] = useState(false);
   const [people, setPeople] = useState<Person[]>([]);
   const [revokeId, setRevokeId] = useState('');
   const [dbPassword, setDbPassword] = useState('');
@@ -127,9 +141,12 @@ export default function SecurityPanel({ tab }: { tab: SecurityTab }) {
     try {
       setStatus(await fetchServerSecurityStatus());
       setStatusError('');
+      setStatusUnavailable(false);
     } catch (statusFailure: unknown) {
       setStatus(null);
-      setStatusError(isEndpointUnavailable(statusFailure)
+      const unavailable = isEndpointUnavailable(statusFailure);
+      setStatusUnavailable(unavailable);
+      setStatusError(unavailable
         ? `${statusFailure.message} The settings below are still saved, and take effect wherever the Node server does run.`
         : statusFailure instanceof Error ? statusFailure.message : 'Unknown error.');
     }
@@ -192,6 +209,7 @@ export default function SecurityPanel({ tab }: { tab: SecurityTab }) {
       try {
         setStatus(await refreshServerSecurity());
         setStatusError('');
+        setStatusUnavailable(false);
       } catch {
         // A static host has no server to refresh. The rows are saved either way.
       }
@@ -492,7 +510,7 @@ export default function SecurityPanel({ tab }: { tab: SecurityTab }) {
         </div>
       </form>
 
-      <ServerState status={status} error={statusError} busy={busy === 'refresh'}
+      <ServerState status={status} error={statusError} unavailable={statusUnavailable} busy={busy === 'refresh'}
         onRefresh={() => void run('refresh', async () => {
           setStatus(await refreshServerSecurity());
           return 'The server re-read its settings.';

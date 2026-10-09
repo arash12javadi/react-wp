@@ -12,7 +12,7 @@
  *
  * The order below is deliberate. Identity, capability and "is this site installed" are settled first; the
  * GitHub connection is then required of the hosts that need it and of no others; the ZIP is read last, so
- * a 25 MB body is never buffered for a caller who may not upload one, and "connect GitHub first" is a
+ * a 25 MB body is never buffered for a caller who may not upload one, and "paste a GitHub token first" is a
  * JSON status the dialog can show rather than a sentence buried in a stream. Everything after that point
  * streams NDJSON — one `{ type: 'step' }` per step, carrying the mode it belongs to, then
  * `{ type: 'result' }` or `{ type: 'error' }` — because HTTP has no second status code to give once the
@@ -26,8 +26,9 @@ import { createServerDbAdapter } from '../../lib/db/index';
 import { createServerAuthAdapter } from '../../lib/auth/index';
 import { hasCapability, type Capability, type UserRole } from '../../lib/roles';
 import type { RuntimeConfig } from '../../lib/runtime';
-import { GITHUB_CONFIG_KEY } from '../../../server/githubOAuth.mjs';
+import { GITHUB_CONFIG_KEY } from '../../../server/integrationConfig.mjs';
 import { readIntegrationRows } from '../../../server/integrationSettings.mjs';
+import { authorizePluginManager } from '../../../server/pluginFiles.mjs';
 import { githubTargetFrom, type GithubCommitTarget } from '../../../server/pluginGitPush.mjs';
 import {
   installPlugin,
@@ -62,15 +63,30 @@ const serverEnvironment = (): Record<string, string | undefined> =>
   (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
 
 /**
- * Refuses anyone without `activate_plugins` (or `manage_options`).
+ * Refuses anyone without `activate_plugins`, the capability the README documents for this button and
+ * the one the classic route demands. The upload spends the site's GitHub credential, but cannot change
+ * where it points: choosing the repository stays a `manage_options` action on Settings → Integrations,
+ * where the connection is configured.
  *
- * The same pair the classic route demands and the README documents: this is the button on the Plugins
- * screen, which a role holding either capability can already see. The upload spends the site's GitHub
- * credential, but cannot change where it points: choosing the repository stays a `manage_options`
- * action on Settings → Integrations, where the connection is configured.
+ * Under Supabase the question is put to the project itself, with the caller's own token —
+ * `/auth/v1/user` to prove who is asking, then `user_has_cap` to prove they may — which is exactly
+ * what `server.mjs`'s upload route asks (`server/adminRoutes.mjs` → `authorizePluginManager`). It is
+ * not enough, and never was, to resolve the token through this engine's own auth adapter here: on a
+ * server that adapter holds no session of its own, its Supabase client speaks the publishable key,
+ * and `profiles` is readable by `authenticated` only — so every real administrator was answered
+ * "Your session is not valid. Sign in again." Every other backend keeps the universal JWT engine,
+ * whose `rwp_users` table carries the role.
  */
 async function requirePluginManager(token: string, config: RuntimeConfig): Promise<void> {
   if (!token) throw new HttpError(401, 'Sign in to install a plugin.');
+  if (config.dbType === 'supabase') {
+    if (!config.supabaseUrl || !config.supabasePublishableKey) {
+      throw new HttpError(501, 'This site is not installed, so plugins cannot be managed.');
+    }
+    const auth = await authorizePluginManager(config.supabaseUrl, config.supabasePublishableKey, token);
+    if (!auth.ok) throw new HttpError(auth.status ?? 401, auth.error ?? 'Plugins cannot be managed.');
+    return;
+  }
   const db = await createServerDbAdapter(config);
   try {
     const auth = await createServerAuthAdapter(config, db);
@@ -92,8 +108,8 @@ async function requirePluginManager(token: string, config: RuntimeConfig): Promi
  * The row is read through `readIntegrationRows` — the same module, with the same options, that serves
  * the Integrations hub — so "which credential source does this deployment have" is answered in one
  * place: the engine's own adapter off Supabase, a direct connection or the service key on it. A row
- * that cannot be read is reported as exactly that: advising the administrator to connect GitHub again
- * would be advice about a connection that already exists.
+ * that cannot be read is reported as exactly that: advising the administrator to add the token again
+ * would be advice about a token that is already stored.
  */
 async function githubTarget(config: RuntimeConfig): Promise<GithubCommitTarget> {
   const rows = await readIntegrationRows([GITHUB_CONFIG_KEY], {

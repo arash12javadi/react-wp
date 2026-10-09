@@ -19,7 +19,6 @@ export interface IntegrationRuntimeConfig {
 export interface IntegrationRequestOptions {
   method: string;
   pathname: string;
-  query?: URLSearchParams | Record<string, string>;
   headers?: Record<string, string | undefined>;
   body?: Record<string, unknown>;
   storage?: string;
@@ -35,9 +34,6 @@ export function ownsIntegrationPath(pathname: string): boolean;
 
 export function handleIntegrationsRequest(
   options: IntegrationRequestOptions,
-): Promise<{ status: number; body?: Record<string, unknown>; html?: string } | null>;
-
-/** Re-exported from `githubOAuth.mjs` so an engine can describe the scopes it asks for. */
-export const GITHUB_SCOPES: string[];
+): Promise<{ status: number; body?: Record<string, unknown> } | null>;
 
 export type { IntegrationRowsResult };

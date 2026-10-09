@@ -1,13 +1,9 @@
 /**
- * /api/integrations/* and GitHub's OAuth callback — the server half of Settings → Integrations.
+ * Settings → Integrations: the status the screen asks for on mount, and the two credential probes.
  *
- *   GET  /api/integrations/status        what this site is set up to do: which credentials are saved,
- *                                        and the callback URL to register on the GitHub OAuth app
+ *   GET  /api/integrations/status        what this site is set up to do: which credentials are saved
  *   POST /api/integrations/ai/test       one call to the chosen AI provider, to prove the saved key
  *   POST /api/integrations/email/test    one message through the saved mail configuration
- *   GET  /api/integrations/github/start  the authorize URL for the popup, with its state already signed
- *   GET  /api/auth/github/callback       GitHub's redirect target: verifies the state, exchanges the
- *                                        code, and hands the token back to the settings screen
  *
  * Every credential these answers depend on lives in `system_settings`, written by the signed-in
  * administrator's browser. Each request therefore begins by reading those rows
@@ -17,18 +13,18 @@
  * The two POSTs are the only routes on this server that borrow a credential to make an outbound call,
  * so they are the only ones that check who is asking: `authorize` is supplied by the engine (its own
  * authenticated adapter on the universal engine, `user_has_cap('manage_options')` on the classic one).
- * The reads stay public — they describe presence, never a value.
+ * The status read stays public — it describes presence, never a value.
  *
- * The callback sits under `/api/auth/` rather than `/api/integrations/` because it is the URL an
- * administrator pastes into their GitHub OAuth app, and GitHub shows it back to them — so it should
- * read like what it is. Nothing here infers GitHub's own path shape from that prefix: an unknown
- * `/api/auth/...` path is not owned by this module and is answered by the generic `/api/` 404.
+ * The GitHub credential is deliberately not validated here. The hub's GitHub card proves a personal
+ * access token by asking GitHub directly from the browser (`src/lib/integrations.ts`), which is where
+ * the token already is — RLS lets only the signed-in browser write `system_settings` — so no request of
+ * this server's is spent on it, no credential of the site's is borrowed, and no GitHub callback URL has
+ * to exist for a site to publish a plugin.
  *
  * Returns null for anything it does not own, the contract `handleSecurityRequest` and
  * `handleAdminRequest` follow, so `server.mjs` can keep its routing beside the other handler modules
  * and this file stays callable from a test.
  */
-import { GITHUB_CALLBACK_PATH, GITHUB_SCOPES, completeGithubOAuth, describeGithubStart, requestOrigin } from './githubOAuth.mjs';
 import {
   AI_CONFIG_KEY,
   EMAIL_CONFIG_KEY,
@@ -38,7 +34,7 @@ import {
   aiConfigFrom,
   describeIntegrations,
   emailConfigFrom,
-  githubCredentialsFrom,
+  githubStatusFrom,
   mediaStorageConfigFrom,
   sendTestEmail,
   testAiConnection,
@@ -46,16 +42,12 @@ import {
 import { readIntegrationRows } from './integrationSettings.mjs';
 
 const STATUS_PATH = '/api/integrations/status';
-const START_PATH = '/api/integrations/github/start';
 const AI_TEST_PATH = '/api/integrations/ai/test';
 const EMAIL_TEST_PATH = '/api/integrations/email/test';
-/** GitHub's own copy of this path is in `githubOAuth.mjs`; named here so the module reads on its own. */
-const CALLBACK_PATH = GITHUB_CALLBACK_PATH;
 
 /** The paths this module answers, so `server.mjs` can skip the call without repeating the list. */
 export const ownsIntegrationPath = (pathname) =>
-  pathname === STATUS_PATH || pathname === START_PATH || pathname === CALLBACK_PATH
-  || pathname === AI_TEST_PATH || pathname === EMAIL_TEST_PATH;
+  pathname === STATUS_PATH || pathname === AI_TEST_PATH || pathname === EMAIL_TEST_PATH;
 
 
 /**
@@ -66,10 +58,8 @@ export const ownsIntegrationPath = (pathname) =>
  */
 const loadHubSettings = async (reader) => {
   const rows = await readIntegrationRows(INTEGRATION_CONFIG_KEYS, reader);
-  const githubRow = rows.settings[GITHUB_CONFIG_KEY];
   return {
-    githubRow: githubRow && typeof githubRow === 'object' ? githubRow : {},
-    github: githubCredentialsFrom(githubRow),
+    github: githubStatusFrom(rows.settings[GITHUB_CONFIG_KEY]),
     ai: aiConfigFrom(rows.settings[AI_CONFIG_KEY]),
     media: mediaStorageConfigFrom(rows.settings[MEDIA_STORAGE_CONFIG_KEY]),
     email: emailConfigFrom(rows.settings[EMAIL_CONFIG_KEY]),
@@ -103,21 +93,19 @@ const authorize = async ({ authorize: check, headers }) => {
  * @param {object} options
  * @param {string} options.method     HTTP method, straight from the request
  * @param {string} options.pathname   the path, without the query string
- * @param {URLSearchParams|object} options.query   GitHub's own parameters, for the callback
- * @param {object} options.headers    lowercased request headers; `host`/`x-forwarded-*` decide the origin
+ * @param {object} options.headers    lowercased request headers; only `authorization` is read, by `authorize`
  * @param {object} options.body       the parsed JSON body, for the two POSTs
  * @param {string} options.storage    the resolved storage driver, reported next to the media card
  * @param {object} options.config     the runtime config: `databaseUrl`, `dbType`, `supabaseUrl`, `supabasePublishableKey`
  * @param {object} options.env        the server environment, for the connection and service keys
  * @param {(key: string) => Promise<unknown>} [options.readSetting] the engine's own adapter reader
  * @param {(token: string) => Promise<{ok: boolean, status?: number, error?: string}>} [options.authorize]
- * @returns {Promise<{status: number, body?: object, html?: string} | null>} null when the path is ours
+ * @returns {Promise<{status: number, body?: object} | null>} null when the path is ours
  *   but the method is not (and, defensively, when the path is not ours at all — the exported predicate
  *   above is the single list, so the two can never disagree)
  */
 export async function handleIntegrationsRequest(options) {
-  const { method, pathname, query, headers = {}, body = {}, storage, config = {}, env = {}, readSetting } = options;
-  const origin = requestOrigin(headers, env.SITE_URL);
+  const { method, pathname, headers = {}, body = {}, storage, config = {}, env = {}, readSetting } = options;
   const reader = {
     readSetting,
     databaseUrl: config.databaseUrl,
@@ -132,30 +120,13 @@ export async function handleIntegrationsRequest(options) {
     // makes it safe for the settings screen to ask for this before it knows anything.
     const settings = await loadHubSettings(reader);
     return json(200, describeIntegrations({
-      github: { ...settings.github, scopes: GITHUB_SCOPES },
+      github: settings.github,
       ai: settings.ai,
       media: settings.media,
       email: settings.email,
       credentials: settings.credentials,
       storage,
-      origin,
-      redirectUri: `${origin}${CALLBACK_PATH}`,
     }));
-  }
-
-  if (pathname === START_PATH && method === 'GET') {
-    const settings = await loadHubSettings(reader);
-    const { authorizeUrl, error } = await describeGithubStart({ config: settings.githubRow, origin });
-    if (!authorizeUrl) return json(501, { error });
-    return json(200, { authorizeUrl });
-  }
-
-  if (pathname === GITHUB_CALLBACK_PATH && method === 'GET') {
-    // Always a page: this is a browser navigation, so an API error body would leave the administrator
-    // staring at JSON in a window that never closes itself.
-    const settings = await loadHubSettings(reader);
-    const result = await completeGithubOAuth({ query, headers, config: settings.githubRow });
-    return { status: result.status, html: result.html };
   }
 
   if (pathname === AI_TEST_PATH && method === 'POST') {

@@ -53,10 +53,24 @@ app.onError((error, c) => {
  * plain-text `404 Not Found` either, because the client parses every reply as JSON — and on Vercel
  * an unrouted `/api/*` is how a rewrite that lost the path announces itself. Scoped to `/api/*`, so
  * a missing asset still gets a conventional 404.
+ *
+ * The one exception is the paths only the classic Node server can answer: the security engine's
+ * counters, cached pages and clearance tickets, the plugin folder on disk, per-plugin schema work and
+ * the site reset are per-process memory or a writable `plugins/`, which is why README's Deployment
+ * Options table marks every one of them unavailable on a serverless host. What matters here is *how*
+ * this host says so: `src/lib/security.ts` and `src/lib/pluginSchema.ts` both read a 404 **with no
+ * `error` in the body** as `EndpointUnavailableError` — "this host cannot do it, and the settings are
+ * still saved" — and a 404 **with** one as a failure to show an administrator. Answering these paths
+ * with the JSON below is what made Settings → Security report `No API endpoint at
+ * /api/security/status.` as though the server were broken. So they get the body a static host would
+ * have answered with: none. The empty body is the contract, not an oversight.
  */
+const classicHostOnly = /^\/api\/(?:security\/|plugin-files|admin\/reset-site|admin\/plugins\/(?:schema-status|install-schema|uninstall))/;
+
 app.notFound((c) => {
   const { pathname } = new URL(c.req.url);
   if (!pathname.startsWith('/api/')) return c.text('Not Found', 404);
+  if (classicHostOnly.test(pathname)) return c.body(null, 404);
   return c.json({ success: false, ok: false, error: `No API endpoint at ${pathname}.` }, 404);
 });
 
@@ -648,8 +662,7 @@ app.delete('/api/media/:key', async (c) => {
 app.route('/api/admin/plugins', pluginsRouter);
 
 // -- Settings → Integrations ---------------------------------------------------
-// The status read, the signed popup URL and GitHub's OAuth callback. Registered as full paths because
-// the callback is addressed by GitHub (`/api/auth/github/callback`) rather than by our own menu.
+// The status read and the two credential tests, at the paths the shared module owns.
 registerIntegrationRoutes(app);
 
 // -- Universal data API -------------------------------------------------------

@@ -41,12 +41,14 @@ export function mediaStorageConfigFrom(value: unknown): MediaStorageConfig;
 export function emptyEmailConfig(): EmailConfig;
 export function emailConfigFrom(value: unknown): EmailConfig;
 
-export function githubCredentialsFrom(value: unknown): {
-  clientId: string;
-  clientSecret: string;
+export function githubTokenFrom(value: unknown): string;
+export function githubStatusFrom(value: unknown): {
   configured: boolean;
+  tokenConfigured: boolean;
+  scopes: string[];
+  username: string;
+  repository: string;
 };
-export function missingGithubCredentials(value: unknown): string[];
 export function isGithubConnectedConfig(value: unknown): boolean;
 export function mediaProviderStatus(config: MediaStorageConfig): {
   cloudinaryConfigured: boolean;
@@ -65,14 +67,18 @@ export function mediaCredentialsFrom(config: MediaStorageConfig): {
 export function isEmailConfigured(config: EmailConfig): boolean;
 
 export function describeIntegrations(options: {
-  github?: { clientId?: string; clientSecret?: string; scopes?: string[] };
+  github?: {
+    configured?: boolean;
+    tokenConfigured?: boolean;
+    scopes?: string[];
+    username?: string;
+    repository?: string;
+  };
   ai?: AiConfig;
   media?: MediaStorageConfig;
   email?: EmailConfig;
   credentials?: { readable?: boolean; source?: string; error?: string };
   storage?: string;
-  origin?: string;
-  redirectUri?: string;
 }): IntegrationStatus;
 
 export function describeDeleteSupport(media: MediaStorageConfig): {

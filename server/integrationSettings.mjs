@@ -64,16 +64,57 @@ const readViaRest = async (supabaseUrl, key, keys) => {
   }
 };
 
-/** Reads keys from a PostgreSQL database directly. Resolves null when the connection failed. */
+/**
+ * The connection string with every SSL directive `pg-connection-string` would act on removed.
+ *
+ * `pg` merges a parsed connection string *over* the config it was given (`connection-parameters.js`:
+ * `config = Object.assign({}, config, parse(config.connectionString))`), so an `sslmode` in the URL
+ * replaces any `ssl` object passed alongside it — and `sslmode=require` (or `verify-full`, or
+ * `ssl=true`) parses to `{}`/`true`, i.e. `rejectUnauthorized: true`, which is the
+ * `SELF_SIGNED_CERT_IN_CHAIN` failure against Supabase. Dropping the directives is what lets the
+ * `rejectUnauthorized: false` in `readViaPostgres` be the value `pg` finally connects with. A string
+ * that is not a URL (a unix-socket path, a libpq keyword/value list) is returned untouched.
+ */
+const withoutSslDirectives = (connectionString) => {
+  let url;
+  try {
+    url = new URL(connectionString);
+  } catch {
+    return connectionString;
+  }
+  let stripped = false;
+  for (const key of [...url.searchParams.keys()]) {
+    if (key === 'ssl' || key.startsWith('ssl') || key === 'uselibpqcompat') {
+      url.searchParams.delete(key);
+      stripped = true;
+    }
+  }
+  return stripped ? url.toString() : connectionString;
+};
+
+/**
+ * Reads keys from a PostgreSQL database directly. Resolves null when the connection failed.
+ *
+ * A failure is logged with the full error rather than swallowed: every browser-visible symptom of it is
+ * the same `credentials.readable: false` banner, so the transport error, the authentication failure or
+ * the firewall rule that caused it can only be told apart in the server's own logs.
+ */
 const readViaPostgres = async (connectionString, keys) => {
   let Client;
   try {
     ({ Client } = await import('pg'));
-  } catch {
+  } catch (err) {
+    // The driver could not be loaded at all — on a serverless host that means `pg` did not make it into
+    // the deployment. The browser sees the same unreadable-settings banner either way, so this is
+    // logged under the same tag rather than swallowed.
+    console.error('[DATABASE_CONNECT_FAILED]', err);
     return null;
   }
   const client = new Client({
-    connectionString,
+    connectionString: withoutSslDirectives(connectionString),
+    // Supabase presents a certificate chain Node does not trust by default, so verification is turned
+    // off here. `pg` only keeps this value if the connection string carries no SSL directive of its own,
+    // which is why those are stripped first — see `withoutSslDirectives`.
     ssl: { rejectUnauthorized: false },
     connectionTimeoutMillis: 15000,
   });
@@ -84,7 +125,21 @@ const readViaPostgres = async (connectionString, keys) => {
       [keys],
     );
     return Array.isArray(rows) ? rows : [];
-  } catch {
+  } catch (err) {
+    // Everything the browser gets for a failed connection is `credentials.readable: false` — the same
+    // banner for a transaction-pooler URL, a rotated password, a paused project and a firewall rule —
+    // so the exact reason has to be in the server's own logs. Vercel keeps `console.error` in Runtime
+    // Logs, and the whole object is handed over so the message, the stack and `pg`'s own `code`/`detail`
+    // all come out (`pg-connection-string` redacts the password from a parse error, so the connection
+    // string cannot leak here).
+    console.error('[DATABASE_CONNECT_FAILED]', err);
+    // A log drain that JSON-serialises an Error keeps nothing but `{}`, so the fields are also emitted
+    // as plain values.
+    console.error('[DATABASE_CONNECT_FAILED]', {
+      message: err instanceof Error ? err.message : String(err),
+      code: err?.code ?? null,
+      stack: err instanceof Error ? err.stack : null,
+    });
     return null;
   } finally {
     await client.end().catch(() => {});

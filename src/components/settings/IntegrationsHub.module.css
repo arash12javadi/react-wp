@@ -187,24 +187,6 @@
   font-size: 0.78rem;
 }
 
-.copy {
-  flex: none;
-  border: 1px solid #dbe1ea;
-  border-radius: 6px;
-  padding: 5px 12px;
-  color: #334155;
-  background: #fff;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.76rem;
-  font-weight: 700;
-}
-
-.copy:hover {
-  border-color: #4f46e5;
-  color: #4f46e5;
-}
-
 .account {
   display: flex;
   align-items: center;
@@ -363,6 +345,12 @@
 
 .secondary:hover:not(:disabled) {
   background: #f8fafc;
+}
+
+/* A link wearing `.secondary`'s shape, for the two that open GitHub's own token pages in a new tab. */
+.link {
+  display: inline-block;
+  text-decoration: none;
 }
 
 .danger {

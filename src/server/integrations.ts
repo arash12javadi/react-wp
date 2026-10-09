@@ -9,10 +9,9 @@
  * plain ESM rather than re-implemented, the same way the plugin installer has always been shared with
  * the classic server.
  *
- * Registration is a function rather than a mounted router because the callback path belongs to
- * GitHub's own view of this server (`/api/auth/github/callback`, pasted into the OAuth app) while the
- * rest belongs to `/api/integrations/`, and mounting one router at two prefixes to hide that would be
- * less clear than saying it once.
+ * Registration is a plain function that mounts the shared handler at `/api/integrations/*` rather than a
+ * Hono sub-router: `ownsIntegrationPath` is already the list of paths, so a second copy of it here could
+ * only drift from the first.
  */
 import { Hono, type Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
@@ -21,6 +20,7 @@ import { createServerDbAdapter } from '../lib/db/index';
 import { createServerAuthAdapter } from '../lib/auth/index';
 import { hasCapability, type Capability, type UserRole } from '../lib/roles';
 import { handleIntegrationsRequest, ownsIntegrationPath } from '../../server/integrationsRoutes.mjs';
+import { authorizeSettingsManager as authorizeSettingsManagerOnSupabase } from '../../server/integrationSettings.mjs';
 
 /** `process.env` where there is one, and nothing where there is not (Workers, Deno, Bun). */
 const serverEnvironment = (): Record<string, string | undefined> =>
@@ -34,10 +34,20 @@ const requestBody = async (c: Context): Promise<Record<string, unknown>> =>
 /**
  * The capability the two POSTs require. Both spend a saved credential on an outbound call — an AI
  * request, an email — so they are administrator-only, exactly like the screen that configures them.
+ *
+ * Under Supabase the token is put to the project itself through the shared `authorizeSettingsManager`
+ * (`server/integrationSettings.mjs`: `/auth/v1/user`, then `user_has_cap`) — the very check
+ * `server.mjs` makes. Resolving it through this engine's own auth adapter answered "Your session is
+ * not valid. Sign in again." for every caller, because on a server that adapter holds no session of
+ * its own, its Supabase client speaks the publishable key, and `profiles` is readable by
+ * `authenticated` only. Every other backend keeps the universal JWT engine below.
  */
 async function authorizeSettingsManager(token: string): Promise<{ ok: boolean; status?: number; error?: string }> {
   if (!token) return { ok: false, status: 401, error: 'Sign in as an administrator to test integrations.' };
   const config = await getRuntimeConfig();
+  if (config.dbType === 'supabase') {
+    return authorizeSettingsManagerOnSupabase(config.supabaseUrl ?? '', config.supabasePublishableKey ?? '', token);
+  }
   let db;
   try {
     db = await createServerDbAdapter(config);
@@ -94,22 +104,17 @@ async function integrationAccess(): Promise<{
 }
 
 
-/** Registers the integration reads, the two credential tests and GitHub's callback. */
+/** Registers the status read and the two credential tests, at the paths the shared module owns. */
 export function registerIntegrationRoutes(app: Hono): void {
   /**
    * Everything under the prefix, matched once: `ownsIntegrationPath` — the shared module's own list —
-   * decides whether a path is one of the five, so a route added there cannot be forgotten here.
+   * decides whether a path is one of the three, so a route added there cannot be forgotten here.
    */
   app.all('/api/integrations/*', (c) => handleRequest(c));
-  /**
-   * GitHub's redirect target. Always a page, including the failures: the request is a top-level
-   * navigation in the OAuth window, so a JSON body there is a dead end.
-   */
-  app.get('/api/auth/github/callback', (c) => handleRequest(c));
 }
 
 async function handleRequest(c: Context): Promise<Response> {
-  const { pathname, searchParams } = new URL(c.req.url);
+  const { pathname } = new URL(c.req.url);
   if (!ownsIntegrationPath(pathname)) {
     // A sub-path this module does not answer. The `/api/integrations/*` pattern matched, so the honest
     // answer is the same 404 the rest of the API gives, not an empty 200.
@@ -120,7 +125,6 @@ async function handleRequest(c: Context): Promise<Response> {
   const result = await handleIntegrationsRequest({
     method: c.req.method,
     pathname,
-    query: searchParams,
     headers: requestHeaders(c),
     body: c.req.method === 'POST' ? await requestBody(c) : {},
     storage: String((access.config.storage as string) ?? 'local'),
@@ -135,12 +139,6 @@ async function handleRequest(c: Context): Promise<Response> {
     const allowed = c.req.method === 'POST' ? 'GET' : 'POST';
     c.header('Allow', allowed);
     return c.json({ success: false, ok: false, error: `Only ${allowed} is supported at ${pathname}.` }, 405);
-  }
-
-  if (result.html !== undefined) {
-    // A callback answer is good once: a cached copy would let the browser replay an old token.
-    c.header('Cache-Control', 'no-store');
-    return c.html(result.html, result.status as ContentfulStatusCode);
   }
 
   return c.json(result.body ?? {}, result.status as ContentfulStatusCode);

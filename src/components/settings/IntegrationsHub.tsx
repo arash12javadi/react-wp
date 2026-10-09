@@ -15,23 +15,21 @@ import {
   emailProviders,
   emptyGithubConfig,
   fetchIntegrationStatus,
-  githubCallbackUrl,
+  githubConfigFor,
   githubConfigFrom,
   githubConfigKey,
-  githubPopupHeight,
-  githubPopupWidth,
+  githubFineGrainedTokenPageUrl,
   githubScopes,
+  githubTokenPageUrl,
   isGithubConnected,
-  isGithubOAuthMessage,
   mediaStorageConfigFrom,
   mediaStorageConfigKey,
   mediaStorageProviderLabels,
   mediaStorageProviders,
-  takeGithubOAuthResult,
+  validateGithubToken,
   type AiProvider,
   type EmailProvider,
   type GithubIntegrationConfig,
-  type GithubOAuthMessage,
   type IntegrationStatus,
   type MediaStorageProvider,
 } from '../../lib/integrations';
@@ -40,25 +38,6 @@ import styles from './IntegrationsHub.module.css';
 /** The one place a caught value becomes a sentence. */
 const messageOf = (value: unknown, fallback: string): string =>
   value instanceof Error && value.message ? value.message : fallback;
-
-/** Copy with a confirmation, and no failure state to explain: the text is also selectable by hand. */
-function Copy({ text, label = 'Copy' }: { text: string; label?: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      className={styles.copy}
-      onClick={() => {
-        void navigator.clipboard?.writeText(text).then(() => {
-          setCopied(true);
-          window.setTimeout(() => setCopied(false), 1500);
-        });
-      }}
-    >
-      {copied ? 'Copied' : label}
-    </button>
-  );
-}
 
 /** The state pill in a card's heading: the same three classes the GitHub card has always used. */
 function Pill({ tone = 'quiet', children }: { tone?: 'on' | 'off' | 'quiet'; children: ReactNode }) {
@@ -98,8 +77,6 @@ function Field({ label, help, children }: { label: string; help?: ReactNode; chi
     </label>
   );
 }
-
-const scopesOf = (scope: string): string[] => String(scope || '').split(/[\s,]+/).filter(Boolean);
 
 const connectedSince = (iso: string): string => {
   const date = new Date(iso);
@@ -979,38 +956,25 @@ export default function IntegrationsHub() {
 }
 
 /**
- * Opens GitHub's consent screen in a window of its own.
+ * GitHub: the personal access token this site publishes with, the account it belongs to, and the
+ * repository a theme or plugin is committed to.
  *
- * Named, so pressing Connect twice reuses the window instead of stacking them — and a window that a
- * blocker refuses comes back as `null`, which is a case the caller handles rather than ignores.
- */
-const openGitHubOAuthPopup = (authorizeUrl: string): Window | null =>
-  window.open(
-    authorizeUrl,
-    'rwp-github-oauth',
-    `width=${githubPopupWidth},height=${githubPopupHeight},menubar=no,toolbar=no,resizable=yes,scrollbars=yes`,
-  );
-
-/**
- * GitHub: the OAuth app, the connected account, and the repository this site publishes to.
+ * There is no OAuth app and no handshake to finish here: the token is created on GitHub and pasted in.
+ * That makes this the one card whose credential is proved by the browser itself — `validateGithubToken`
+ * (`src/lib/integrations.ts`) asks `api.github.com` for the account and the repositories the token can
+ * see, and this screen writes the row, which the browser is the only client RLS lets near
+ * `system_settings`. The server only ever reads it (`server/pluginGitPush.mjs`), so proving the token
+ * spends nothing of the site's and no callback URL has to exist on that server.
  *
- * The OAuth app's id and secret are saved into `github_config` — the same row as the connection —
- * because that row is what the server reads to start a handshake. So this card is where a GitHub
- * integration is created from nothing, with no file to edit and no restart.
- *
- * The handshake is a popup, and this component is the other half of it (see `server/githubOAuth.mjs`
- * for the server's half and `src/lib/integrations.ts` for the shared vocabulary):
- *
- *   1. The access token arrives **in a message**, never in a URL, and this screen is what stores it —
- *      the browser is the only client allowed to write `system_settings` under Supabase RLS.
- *   2. If no window could be opened the browser went to GitHub in this tab, so the result is picked up
- *      from `sessionStorage` on the way back in. That is also why reloading this screen can finish a
- *      connection: the read removes what it finds, so no result is ever applied twice.
+ * The change is not only about the form: a token belongs to the account that created it, so pushes stop
+ * sharing one rate limit across every user of the site — which an OAuth app's token does.
  */
 function GithubCard({ status, onChanged }: { status: IntegrationStatus | null; onChanged: () => void }) {
   const [config, setConfig] = useState<GithubIntegrationConfig>(emptyGithubConfig);
   /** What is actually stored, so "Save" only lights up when the selection differs from it. */
   const [saved, setSaved] = useState<GithubIntegrationConfig>(emptyGithubConfig);
+  /** The pasted token, held apart from `config` until GitHub has accepted it. */
+  const [token, setToken] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -1018,15 +982,10 @@ function GithubCard({ status, onChanged }: { status: IntegrationStatus | null; o
   const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
 
   const connected = isGithubConnected(config);
-  const clientSecret = useSecret(config.client_secret);
-  // The server's answer is authoritative, but the row just saved on this screen is not in it yet — so
-  // a fresh pair of credentials counts immediately, and the button works without a reload.
-  const configured = Boolean(config.client_id && (clientSecret.resolve() || config.client_secret))
-    || status?.github.configured === true;
+  // The server's answer is authoritative, but the row this screen just saved is not in it yet — so a
+  // token saved a moment ago counts immediately, and the card works without a reload.
+  const configured = connected || status?.github.configured === true;
   const dirty = config.repository !== saved.repository || config.branch !== saved.branch;
-  const credentialsDirty = config.client_id !== saved.client_id
-    || clientSecret.dirty
-    || (clientSecret.clearing && Boolean(saved.client_secret));
 
   const reload = useCallback(async () => {
     try {
@@ -1042,107 +1001,37 @@ function GithubCard({ status, onChanged }: { status: IntegrationStatus | null; o
 
   useEffect(() => { void reload(); }, [reload]);
 
-  /** Stores a handshake result and puts the card in step with it. */
-  const applyResult = useCallback(async (message: GithubOAuthMessage): Promise<void> => {
-    if (message.type !== 'GITHUB_CONNECTED' || message.payload.ok !== true || !message.payload.config) {
-      setError(message.payload.error || 'GitHub did not complete the connection.');
+  /**
+   * Proves the pasted token against GitHub, then stores the row that answers with it.
+   *
+   * Nothing is written until GitHub has answered, so a typo cannot leave a token behind that the server
+   * would then try to push with. `githubConfigFor` builds the row, keeping the repository already chosen
+   * when the new token can still see it — renewing a token costs only the paste.
+   */
+  const saveToken = async (): Promise<void> => {
+    const pasted = token.trim();
+    if (!pasted) {
+      setError('Paste a personal access token first.');
       return;
     }
-    const next = githubConfigFrom(message.payload.config);
     setBusy(true);
+    setError('');
+    setNotice('');
     try {
+      const connection = await validateGithubToken(pasted);
+      const next = githubConfigFor(connection, { token: pasted, previous: saved });
       if (!(await setSystemSetting(githubConfigKey, next))) {
         throw new Error('This browser is not allowed to store the connection. Sign in again as an administrator and retry.');
       }
       setConfig(next);
       setSaved(next);
-      setError('');
-      setNotice(`GitHub connected as @${next.username}. Choose the repository this site should push to.`);
+      setToken('');
+      setNotice(next.repository
+        ? `GitHub connected as @${next.username}. This site still pushes to ${next.repository} on ${next.branch}.`
+        : `GitHub connected as @${next.username}. Choose the repository this site should push to.`);
       onChanged();
     } catch (saveError: unknown) {
-      setError(messageOf(saveError, 'The connection could not be saved.'));
-    } finally {
-      setBusy(false);
-    }
-  }, [onChanged]);
-
-  useEffect(() => {
-    const onMessage = (event: MessageEvent) => {
-      // Same origin only: a page that frames this one must not be able to push a token at it.
-      if (event.origin !== window.location.origin) return;
-      if (!isGithubOAuthMessage(event.data)) return;
-      void applyResult(event.data);
-    };
-    window.addEventListener('message', onMessage);
-    return () => window.removeEventListener('message', onMessage);
-  }, [applyResult]);
-
-  // The no-opener path: this screen was left for GitHub, so the result is waiting in sessionStorage
-  // when it comes back. Checked on arrival and whenever this tab is returned to, which also covers a
-  // popup that was closed by hand after the handshake had already finished.
-  useEffect(() => {
-    const pickUpResult = () => {
-      const stored = takeGithubOAuthResult();
-      if (stored) void applyResult(stored);
-    };
-    pickUpResult();
-    window.addEventListener('focus', pickUpResult);
-    document.addEventListener('visibilitychange', pickUpResult);
-    return () => {
-      window.removeEventListener('focus', pickUpResult);
-      document.removeEventListener('visibilitychange', pickUpResult);
-    };
-  }, [applyResult]);
-
-  /** Saves the OAuth app on its own, so pasting credentials does not disturb the connection. */
-  const saveCredentials = async (): Promise<void> => {
-    const next: GithubIntegrationConfig = {
-      ...config,
-      client_id: config.client_id.trim(),
-      client_secret: clientSecret.resolve(),
-    };
-    setBusy(true);
-    setError('');
-    setNotice('');
-    try {
-      if (!(await setSystemSetting(githubConfigKey, next))) {
-        throw new Error('This browser is not allowed to store the credentials. Sign in again as an administrator and retry.');
-      }
-      setConfig(next);
-      setSaved(next);
-      clientSecret.keep();
-      setNotice(next.client_id && next.client_secret
-        ? 'Saved. Press Connect GitHub account to authorise this site.'
-        : 'Saved. The GitHub card has no OAuth app until both values are filled in.');
-      onChanged();
-    } catch (saveError: unknown) {
-      setError(messageOf(saveError, 'The GitHub credentials could not be saved.'));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  /** Asks the server for a freshly signed authorize URL and opens it. Never builds it here. */
-  const connect = async (): Promise<void> => {
-    setBusy(true);
-    setError('');
-    setNotice('');
-    try {
-      const response = await fetch('/api/integrations/github/start', { headers: { Accept: 'application/json' } });
-      const payload = (await response.json().catch(() => null)) as { authorizeUrl?: string; error?: string } | null;
-      if (!response.ok || !payload?.authorizeUrl) {
-        throw new Error(payload?.error || `The server could not start the GitHub handshake (HTTP ${response.status}).`);
-      }
-      const popup = openGitHubOAuthPopup(payload.authorizeUrl);
-      if (!popup) {
-        // A blocked window is not a dead end: the callback page notices there is no window to answer
-        // to, leaves its result in sessionStorage and sends this tab back here to read it.
-        window.location.href = payload.authorizeUrl;
-        return;
-      }
-      setNotice('Authorise this site in the GitHub window. Nothing here changes until you do.');
-    } catch (connectError: unknown) {
-      setError(messageOf(connectError, 'GitHub could not be reached.'));
+      setError(messageOf(saveError, 'The token could not be saved.'));
     } finally {
       setBusy(false);
     }
@@ -1163,7 +1052,7 @@ function GithubCard({ status, onChanged }: { status: IntegrationStatus | null; o
       setConfig(next);
       setSaved(next);
       setConfirmingDisconnect(false);
-      setNotice('GitHub disconnected. The access token has been removed from this site.');
+      setNotice('GitHub disconnected. The personal access token has been removed from this site.');
       onChanged();
     } catch (disconnectError: unknown) {
       setError(messageOf(disconnectError, 'The connection could not be cleared.'));
@@ -1181,7 +1070,7 @@ function GithubCard({ status, onChanged }: { status: IntegrationStatus | null; o
     setConfig({ ...config, repository: fullName, branch: chosen?.default_branch || config.branch });
   };
 
-  /** Saves the push target on its own, so choosing a repository does not mean reconnecting. */
+  /** Saves the push target on its own, so choosing a repository does not mean re-pasting the token. */
   const saveTarget = async (): Promise<void> => {
     const next: GithubIntegrationConfig = {
       ...config,
@@ -1215,7 +1104,6 @@ function GithubCard({ status, onChanged }: { status: IntegrationStatus | null; o
     );
   }
 
-  const callbackUrl = status?.redirectUri || githubCallbackUrl(window.location.origin);
   const repositoryOptions = config.repositories;
 
   return (
@@ -1228,66 +1116,61 @@ function GithubCard({ status, onChanged }: { status: IntegrationStatus | null; o
       <Feedback error={error} notice={notice} />
 
       <div className={styles.target}>
-        <h4 className={styles.targetTitle}>OAuth app</h4>
+        <h4 className={styles.targetTitle}>{configured ? 'Personal access token' : 'Connect with a personal access token'}</h4>
         <p className={styles.targetNote}>
-          Create an OAuth app in GitHub under <strong>Settings → Developer settings → OAuth Apps → New OAuth App</strong>,
-          set the homepage to this site, and register this as the authorization callback URL:
+          Create a token under <strong>GitHub → Settings → Developer settings → Personal access tokens</strong> and
+          paste it here. A classic token needs the <code>{githubScopes.join(' and ')}</code> scope, which is what
+          writing to a repository — private ones included — takes; a fine-grained token needs{' '}
+          <strong>Contents: Read and write</strong> on the repository this site publishes to, plus the{' '}
+          <strong>Metadata</strong> read access GitHub grants with it.
         </p>
-        <div className={styles.command}>
-          <code>{callbackUrl}</code>
-          <Copy text={callbackUrl} />
+        <div className={styles.actions}>
+          <a className={`${styles.secondary} ${styles.link}`} href={githubTokenPageUrl} target="_blank" rel="noreferrer">
+            Create a classic token
+          </a>
+          <a className={`${styles.secondary} ${styles.link}`} href={githubFineGrainedTokenPageUrl} target="_blank" rel="noreferrer">
+            Create a fine-grained token
+          </a>
         </div>
         <div className={styles.fields}>
-          <Field label="GitHub Client ID">
-            <input
-              type="text"
-              value={config.client_id}
-              autoComplete="off"
-              spellCheck={false}
-              placeholder="Ov23li…"
-              onChange={(event) => setConfig({ ...config, client_id: event.target.value })}
-              disabled={busy}
-            />
-          </Field>
           <Field
-            label="GitHub Client Secret"
-            help={clientSecret.clearing
-              ? 'Saving now will remove the stored secret.'
-              : 'Stored in this site\'s database and read only by the server, which is where the token exchange happens. It never reaches the browser.'}
+            label="Personal access token"
+            help={token.trim()
+              ? 'Saving sends it to GitHub once, to read the account it belongs to, and then stores it here. GitHub never shows the value again, so this is the last chance to copy it.'
+              : 'GitHub displays the value once, when the token is created, so copy it before leaving that page.'}
           >
             <input
               type="password"
-              value={clientSecret.input}
+              value={token}
               autoComplete="new-password"
               spellCheck={false}
-              placeholder={clientSecret.placeholder}
-              onChange={(event) => clientSecret.onChange(event.target.value)}
+              placeholder={configured ? 'github_pat_… or ghp_… (a token is already saved)' : 'github_pat_… or ghp_…'}
+              onChange={(event) => setToken(event.target.value)}
               disabled={busy}
             />
           </Field>
         </div>
         <div className={styles.actions}>
-          <button
-            type="button"
-            className={styles.secondary}
-            onClick={() => void saveCredentials()}
-            disabled={busy || !credentialsDirty}
-          >
-            Save GitHub credentials
+          <button type="button" className={styles.primary} onClick={() => void saveToken()} disabled={busy || !token.trim()}>
+            {busy ? 'Checking with GitHub…' : configured ? 'Replace token' : 'Save token'}
           </button>
-          {credentialsDirty ? <span className={styles.hint}>Unsaved changes.</span> : null}
-          {configured ? <span className={styles.hint}>Both values are saved.</span> : null}
+          {configured ? (
+            <span className={styles.hint}>
+              Saving a new token keeps the push target{config.repository ? ` (${config.repository})` : ''} unless the
+              token cannot see it.
+            </span>
+          ) : null}
         </div>
       </div>
 
-      {!configured ? (
+      {!connected ? (
         <p className={styles.setupLead}>
-          Save the Client ID and Client Secret above, and this card can then send you to GitHub to
-          authorise the site. Nothing is connected until you approve it there.
+          A token is all this needs: it is stored here, used by the server only when it commits a theme or plugin,
+          and can be deleted on GitHub at any time to stop that.
         </p>
       ) : null}
 
-      {configured && connected ? (
+      {connected ? (
         <>
           <div className={styles.account}>
             {config.avatar_url ? (
@@ -1299,21 +1182,26 @@ function GithubCard({ status, onChanged }: { status: IntegrationStatus | null; o
                 <a href={config.profile_url || `https://github.com/${config.username}`} target="_blank" rel="noreferrer">
                   @{config.username}
                 </a>
-                {config.connected_at ? ` · connected ${connectedSince(config.connected_at)}` : ''}
+                {config.connected_at ? ` · token saved ${connectedSince(config.connected_at)}` : ''}
               </p>
-              {config.scope ? (
+              {config.scopes.length > 0 ? (
                 <p className={styles.scopes}>
-                  {scopesOf(config.scope).map((scope) => <code key={scope}>{scope}</code>)}
+                  {config.scopes.map((scope) => <code key={scope}>{scope}</code>)}
                 </p>
-              ) : null}
+              ) : (
+                <p className={styles.accountMeta}>
+                  GitHub reported no scopes for this token, which is normal for a fine-grained one: its permissions
+                  live on the token itself rather than in scopes.
+                </p>
+              )}
             </div>
           </div>
 
           <div className={styles.target}>
             <h4 className={styles.targetTitle}>Push target</h4>
             <p className={styles.targetNote}>
-              Where this site publishes themes and plugins. Commits are made on your behalf with the token
-              stored here, so this screen can be closed once the target is saved.
+              Where this site publishes themes and plugins. Commits are made on your behalf with the personal access
+              token stored here, so this screen can be closed once the target is saved.
             </p>
             <div className={styles.fields}>
               <Field label="Repository">
@@ -1362,8 +1250,8 @@ function GithubCard({ status, onChanged }: { status: IntegrationStatus | null; o
             </div>
             {repositoryOptions.length === 0 ? (
               <p className={styles.setupNote}>
-                This token returned no repositories{config.username ? ` for @${config.username}` : ''}. Reconnect
-                GitHub to load the list, or type <code>owner/repository</code> by hand.
+                This token returned no repositories{config.username ? ` for @${config.username}` : ''}. Paste a token
+                that can see them, or type <code>owner/repository</code> by hand.
               </p>
             ) : null}
           </div>
@@ -1389,24 +1277,9 @@ function GithubCard({ status, onChanged }: { status: IntegrationStatus | null; o
               </button>
             ) : (
               <span className={styles.hint}>
-                Revoking access on GitHub too is optional; this site simply stops using it.
+                Deleting the token on GitHub too is optional; this site simply stops using it.
               </span>
             )}
-          </div>
-        </>
-      ) : null}
-
-      {configured && !connected ? (
-        <>
-          <p className={styles.setupLead}>
-            Connect a GitHub account to let this site publish to it. You will be sent to GitHub to
-            approve {githubScopes.join(' and ')} access for your own account, and nothing is stored
-            until GitHub sends you back.
-          </p>
-          <div className={styles.actions}>
-            <button type="button" className={styles.primary} onClick={() => void connect()} disabled={busy}>
-              {busy ? 'Working…' : 'Connect GitHub account'}
-            </button>
           </div>
         </>
       ) : null}

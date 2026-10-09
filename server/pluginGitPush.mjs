@@ -5,25 +5,80 @@
  * serverless deployment cannot do: its filesystem is read-only (`EROFS`). What such a host *can* do
  * is commit the same files to the repository it is built from and let the platform redeploy — which
  * is why the credential here is the stored `github_config` row (Settings → Integrations → GitHub,
- * written by `githubOAuth.mjs`) and never an environment variable: a site's credentials belong to
- * the site, not to whichever host happens to run it this month.
+ * written by the GitHub card from the personal access token an administrator pastes into it) and never
+ * an environment variable: a site's credentials belong to the site, not to whichever host happens to
+ * run it this month.
  *
  * The Git Data API is used rather than the Contents API because every file — the plugin folder, the
  * removal of files a previous version left behind, and the edit to `server/plugins.mjs` that
  * registers a plugin's server routes — becomes ONE commit on ONE branch. A half-installed plugin can
  * therefore never be built, and a failure that happens before the last call leaves the branch exactly
  * as it was (blobs, trees and commits are unreachable objects until a ref points at them).
+ *
+ * The writes that make the commit are counted against GitHub's secondary rate limit — the one that
+ * answers a burst of content-generating requests with HTTP 403 — so an upload no longer makes one write
+ * per file: the text of a file travels inside the tree call itself, and the writes that remain are made
+ * serially, a second apart. See `commitFiles`.
  */
 import { InstallError } from './pluginInstaller.mjs';
+import { githubTokenFrom } from './integrationConfig.mjs';
 
 const API = 'https://api.github.com';
 /** Pinned, as the REST documentation asks: only a versioned response is a tested one. */
 const API_VERSION = '2022-11-28';
 const TIMEOUT_MS = 30_000;
-/** Blobs go up a few at a time: enough to hide the round-trip latency, gentle on the rate limit. */
-const BLOB_CONCURRENCY = 6;
 /** GitHub reads a recursive tree up to 100,000 entries / 7 MB, and reports `truncated` beyond it. */
 const MAX_TREE_ENTRIES = 100_000;
+/**
+ * The pause GitHub asks for between two writes, from "Best practices for using the REST API": requests
+ * are made serially rather than concurrently, and "if you are making a large number of `POST`, `PATCH`,
+ * `PUT`, or `DELETE` requests, wait at least one second between each request" — because a burst of
+ * writes is what its secondary rate limit answers with HTTP 403, whatever the token allows. An upload
+ * is not a large number of writes any more (see `commitFiles`), so this costs a couple of seconds.
+ */
+const WRITE_INTERVAL_MS = 1_000;
+/**
+ * How long a `retry-after` may be slept through inside one upload. GitHub asks for a minute by default
+ * and a host running a request will not sit still for that long, so anything longer is reported to the
+ * administrator as a pause to take rather than waited out.
+ */
+const MAX_PAUSE_MS = 15_000;
+/** Attempts one call gets when GitHub answers a secondary rate limit instead of doing the work. */
+const RATE_LIMIT_ATTEMPTS = 3;
+/** The methods GitHub counts as content-generating requests, and therefore spaces out. */
+const WRITE_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
+/**
+ * How much text may travel inside the tree call. GitHub writes those blobs out itself when an entry
+ * carries `content` instead of `sha` ("Create a tree"), so a plugin of source files needs one write
+ * call rather than one per file. Past this much the file is uploaded as a blob instead, which keeps the
+ * tree request a sensible size — the largest file a plugin may hold is far below this, and the whole
+ * point is that a normal plugin never reaches it.
+ */
+const INLINE_LIMIT = 8 * 1024 * 1024;
+
+/** When the last write finished, so the next one can be spaced away from it. */
+let lastWriteAt = 0;
+
+/** `setTimeout` as a promise: the one way to wait that every runtime this module runs on has. */
+const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+
+/**
+ * Wait out the gap between two writes.
+ *
+ * The gap is measured from the end of the previous write, so a slow call does not collect a pause on
+ * top of the time it already took. Reads are never paced: nothing about a `GET` counts against the
+ * content-creation limits, and `readBranch` runs before any write.
+ */
+async function spaceWrites(method) {
+  if (!WRITE_METHODS.has(method)) return;
+  const wait = lastWriteAt + WRITE_INTERVAL_MS - Date.now();
+  if (wait > 0) await sleep(wait);
+}
+
+/** Remember when the write that just finished finished, for the next `spaceWrites`. */
+function wroteAt(method) {
+  if (WRITE_METHODS.has(method)) lastWriteAt = Date.now();
+}
 
 const asString = (value) => (typeof value === 'string' ? value.trim() : '');
 const repositoryPattern = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
@@ -34,17 +89,19 @@ const branchPattern = /^(?!\/)(?!.*\.\.)[^\s~^:?*[\]\\]{1,255}$/;
  * The repository to publish to, taken from the stored `github_config` row.
  *
  * `repository` is what the GitHub card records (`owner/repo`); `owner` and `repo` are accepted as
- * well, so a row written by hand in the SQL editor works too. Each failure is a 501 that names the
+ * well, so a row written by hand in the SQL editor works too. The token is read through
+ * `githubTokenFrom`, the one definition of where it lives (`integrationConfig.mjs`), which also
+ * understands the `access_token` an OAuth-era row left behind. Each failure is a 501 that names the
  * screen to fix, because connecting GitHub is the one thing a read-only host cannot work around.
  */
 export function githubTargetFrom(value) {
   const row = value && typeof value === 'object' ? value : {};
-  const token = asString(row.access_token);
+  const token = githubTokenFrom(row);
   const repository = asString(row.repository)
     || [asString(row.owner), asString(row.repo)].filter(Boolean).join('/');
   const branch = asString(row.branch) || 'main';
   if (!token) {
-    throw new InstallError('This site has no GitHub connection, so the plugin could not be committed to the repository it is built from. Connect GitHub on Settings → Integrations → GitHub, then upload it again.', 501);
+    throw new InstallError('This site has no GitHub personal access token, so the plugin could not be committed to the repository it is built from. Add one on Settings → Integrations → GitHub, then upload it again.', 501);
   }
   if (!repositoryPattern.test(repository)) {
     throw new InstallError('The GitHub connection has no repository to publish to. Choose one on Settings → Integrations → GitHub, then upload the plugin again.', 501);
@@ -60,10 +117,26 @@ export function githubTargetFrom(value) {
  * One GitHub REST call, with the failure sentences an administrator can act on.
  *
  * GitHub's status is passed through to `InstallError`, so the upload route answers with the same
- * status GitHub answered a moment earlier: 401 (reconnect), 403 (missing scope, or the rate limit),
- * 404 (no such repository or branch), 422 (GitHub refused the object we sent — its message says why).
+ * status GitHub answered a moment earlier: 401 (the token was rejected), 403 (missing scope, the
+ * primary rate limit, or a secondary one), 404 (no such repository or branch), 422 (GitHub refused
+ * the object we sent — its message says why).
+ *
+ * The three rate limits are answered separately because the fix differs: the primary limit resets at
+ * a timestamp GitHub states, a secondary limit asks for a pause in `retry-after`, and a plain 403 on
+ * a write is a scope or permission problem in the stored token. A personal access token — what this
+ * site stores now, rather than an OAuth app's token — has a far higher ceiling than the OAuth flow
+ * had, but its ceiling is not infinite, so a pause is honoured up to `MAX_PAUSE_MS` and reported past
+ * that — a host running an upload would kill a 60-second sleep before GitHub had answered it.
+ *
+ * A call GitHub refuses with a secondary rate limit is sent again, as its documentation asks: after
+ * `retry-after` when there is one, backing off further on each attempt, and given up on after
+ * `RATE_LIMIT_ATTEMPTS`. Every write is also spaced from the one before it (`spaceWrites`), which is
+ * the part that keeps an upload out of that state at all.
  */
-async function request(target, method, path, body) {
+async function request(target, method, path, body, attempt = 1) {
+  // The pause GitHub asks for between writes lives here rather than at each call site: this is the one
+  // function every call goes through, so no write can be made to forget it.
+  await spaceWrites(method);
   const where = `${target.owner}/${target.repo}`;
   let response;
   try {
@@ -81,6 +154,8 @@ async function request(target, method, path, body) {
     });
   } catch (error) {
     throw new InstallError(`GitHub could not be reached (${error?.name === 'TimeoutError' ? 'no response within 30 seconds' : error?.message || 'network error'}). Nothing was committed; try again.`, 502);
+  } finally {
+    wroteAt(method);
   }
   const text = await response.text();
   let payload = {};
@@ -92,18 +167,37 @@ async function request(target, method, path, body) {
   if (response.ok) return payload;
   const detail = asString(payload?.message) || text.slice(0, 200).trim() || `HTTP ${response.status}`;
   if (response.status === 401) {
-    throw new InstallError(`GitHub refused the stored token (HTTP 401: ${detail}). Reconnect GitHub on Settings → Integrations → GitHub, then upload the plugin again.`, 501);
+    throw new InstallError(`GitHub refused the stored token (HTTP 401: ${detail}). Add a new personal access token on Settings → Integrations → GitHub, then upload the plugin again.`, 501);
   }
   if (response.status === 403 && response.headers.get('x-ratelimit-remaining') === '0') {
     const reset = Number(response.headers.get('x-ratelimit-reset'));
     const at = Number.isFinite(reset) && reset > 0 ? new Date(reset * 1000).toISOString() : 'an unknown time';
     throw new InstallError(`GitHub's API rate limit for this token is exhausted until ${at}. Wait for it to reset, then upload the plugin again.`, 502);
   }
+  if (response.status === 429 || (response.status === 403 && /rate limit|abuse/i.test(detail))) {
+    // A refusal means GitHub did not do the work, so the same call may be sent again — and GitHub asks
+    // for exactly that: honour `retry-after`, wait at least a minute when there is none, then back off
+    // further on each attempt. The minute is deliberately not slept through, because the host running
+    // this upload would kill the request long before it ended, so a pause that long is reported as the
+    // sentence below. Whether it is ever reached is now a question of the second `spaceWrites` puts
+    // between two writes, not of the token's ceiling: this is the burst-of-writes 403, not an exhausted
+    // quota.
+    const retryAfter = Number(response.headers.get('retry-after'));
+    const asked = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 60_000;
+    if (attempt < RATE_LIMIT_ATTEMPTS && asked * attempt <= MAX_PAUSE_MS) {
+      await sleep(asked * attempt);
+      return request(target, method, path, body, attempt + 1);
+    }
+    const pause = Number.isFinite(retryAfter) && retryAfter > 0
+      ? ` GitHub asks for a pause of ${retryAfter} second${retryAfter === 1 ? '' : 's'} before the next call.`
+      : '';
+    throw new InstallError(`GitHub is rate-limiting this site's API calls (HTTP ${response.status}: ${detail}).${pause} Upload the plugin again once it has calmed down; the token raises this ceiling but does not remove it.`, 502);
+  }
   if (response.status === 403) {
-    throw new InstallError(`GitHub refused the change to ${where} (HTTP 403: ${detail}). The GitHub connection needs the "repo" scope, and the connected account needs write access to that repository.`, 403);
+    throw new InstallError(`GitHub refused the change to ${where} (HTTP 403: ${detail}). The stored personal access token needs the "repo" scope (or, as a fine-grained token, Contents: Read and write on this repository), and the account it belongs to needs write access to it.`, 403);
   }
   if (response.status === 404) {
-    throw new InstallError(`GitHub could not find ${where} on branch "${target.branch}" (HTTP 404: ${detail}). Check the repository and branch on Settings → Integrations → GitHub — a private repository the connected account cannot see answers the same way.`, 501);
+    throw new InstallError(`GitHub could not find ${where} on branch "${target.branch}" (HTTP 404: ${detail}). Check the repository and branch on Settings → Integrations → GitHub — a private repository the token cannot see answers the same way.`, 501);
   }
   if (response.status === 409 || response.status === 422) {
     throw new InstallError(`GitHub refused the change to ${where} (HTTP ${response.status}: ${detail}).`, 502);
@@ -145,6 +239,26 @@ function decodeBase64(text) {
 
 /** A tree entry's mode as a string: GitHub answers with a string, and a hand-built entry uses one. */
 const modeOf = (entry) => (entry?.mode === '100755' ? '100755' : '100644');
+
+/**
+ * The text of a file that may travel inside the tree call, or `null` when it has to be a blob.
+ *
+ * A tree entry carries either `sha` or `content`, and GitHub writes the content out as the blob — but
+ * `content` is a JSON string, so only text can go that way and the test is the strictest one there is:
+ * the bytes have to be UTF-8 and survive the round trip unchanged. `fatal` refuses anything that is not
+ * valid UTF-8 (an image, a font, a ZIP inside the ZIP), and `ignoreBOM` keeps a byte order mark in the
+ * text instead of quietly dropping it, which is what a file that has one needs. An empty file goes up
+ * as a blob: an empty string is not something to hand an API that asks for "either this, or `tree.sha`".
+ */
+function inlineText(bytes) {
+  if (bytes.byteLength === 0) return null;
+  try {
+    const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+    return text.includes('\u0000') ? null : text;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * What the branch looks like right now: its head commit, its tree, and every path in it.
@@ -209,6 +323,11 @@ function assertWritable(path, allowPaths) {
 /**
  * Commit every file at once, deleting what a previous version left behind.
  *
+ * The text of a file is not uploaded as a blob at all: it goes into the tree call itself, so a plugin of
+ * source files is three writes (a tree, a commit, a ref update) instead of one per file. Only a file
+ * that is not text, an empty one, or one past `INLINE_LIMIT` is uploaded as a blob first, one call at a
+ * time, spaced by `request`.
+ *
  * Order matters, and is the reason this is one function: blobs are written first (they are inert),
  * then the tree that names them, then the commit that points at the tree, and only the last call —
  * moving the branch — publishes any of it. GitHub builds the new tree from `base_tree` plus these
@@ -221,35 +340,66 @@ export async function commitFiles(target, options) {
   for (const path of deletions) assertWritable(path, allowPaths);
   const where = `${target.owner}/${target.repo}@${target.branch}`;
 
-  const shas = await mapWithConcurrency(files, BLOB_CONCURRENCY, async (file) => {
-    const blob = await request(target, 'POST', `/repos/${target.owner}/${target.repo}/git/blobs`, {
-      content: encodeBase64(file.content),
-      encoding: 'base64',
-    });
-    const sha = asString(blob?.sha);
-    if (!sha) throw new InstallError(`GitHub stored ${file.path} but returned no object id for it. Nothing was committed.`, 502);
-    return sha;
-  });
-
-  const written = files.map((file, index) => ({
+  const writes = files.map((file) => ({
     path: file.path,
     mode: base.paths.get(file.path)?.mode ?? '100644',
-    type: 'blob',
-    sha: shas[index],
+    content: file.content,
   }));
+
+  // A file's text rides along in the tree call itself — GitHub writes those blobs out for us — so a
+  // plugin of source files costs three writes (a tree, a commit, a ref update) instead of one per file.
+  // Only what GitHub cannot be given as text that way becomes a blob of its own: an image, a font, a ZIP
+  // inside the ZIP, an empty file, or a file past `INLINE_LIMIT`. Those go up one call at a time, spaced
+  // by `request`, which is the serial pacing GitHub asks of writes. One call per file, fired together,
+  // was a burst of content-generating requests, and a burst is what the secondary rate limit answers
+  // with HTTP 403 — which is what this shape exists to stop happening.
+  let inlined = [];
+  let inlinedWrites = [];
+  const blobbed = [];
+  let inlineBytes = 0;
+  for (const write of writes) {
+    const text = inlineText(write.content);
+    if (text === null || inlineBytes + write.content.byteLength > INLINE_LIMIT) {
+      blobbed.push(write);
+      continue;
+    }
+    inlineBytes += write.content.byteLength;
+    inlinedWrites.push(write);
+    inlined.push({ path: write.path, mode: write.mode, type: 'blob', content: text });
+  }
+
+  let staged = await uploadBlobs(target, blobbed);
   const removed = deletions.map((path) => ({ path, mode: base.paths.get(path)?.mode ?? '100644', type: 'blob', sha: null }));
 
   let treeSha;
-  let deletionsSkipped = [];
-  try {
-    treeSha = await createTree(target, base.treeSha, [...written, ...removed]);
-  } catch (error) {
-    // A GitHub that refuses `sha: null` still installs the plugin correctly; it only leaves the
-    // previous version's extra files behind, which the caller reports as a warning.
-    if (!removed.length || !(error instanceof InstallError) || error.status !== 502 || !/422/.test(error.message)) throw error;
-    deletionsSkipped = deletions;
-    treeSha = await createTree(target, base.treeSha, written);
+  let removals = removed;
+  let droppedDeletions = false;
+  for (;;) {
+    try {
+      treeSha = await createTree(target, base.treeSha, [...inlined, ...staged, ...removals]);
+      break;
+    } catch (error) {
+      // Two refusals a tree can be answered with, and each leaves a set of entries that still installs
+      // the plugin. Dropping a deletion GitHub will not take (`sha: null`) comes first, because it costs
+      // one call where the alternative — a blob for every text file in the plugin, a second apart —
+      // costs one per file; the previous version's extra files then stay on the branch, which the
+      // caller reports as a warning once this commit is known to have been made without them.
+      if (!(error instanceof InstallError) || error.status !== 502 || !/422/.test(error.message)) throw error;
+      if (removals.length) {
+        removals = [];
+        droppedDeletions = true;
+        continue;
+      }
+      if (inlined.length) {
+        staged = [...staged, ...await uploadBlobs(target, inlinedWrites)];
+        inlined = [];
+        inlinedWrites = [];
+        continue;
+      }
+      throw error;
+    }
   }
+  const deletionsSkipped = droppedDeletions ? deletions : [];
 
   const commit = await request(target, 'POST', `/repos/${target.owner}/${target.repo}/git/commits`, {
     message,
@@ -268,7 +418,7 @@ export async function commitFiles(target, options) {
     sha,
     url: asString(commit?.html_url) || `https://github.com/${target.owner}/${target.repo}/commit/${sha}`,
     repository: where,
-    files: written.length,
+    files: writes.length,
     deletions: removed.length - deletionsSkipped.length,
     deletionsSkipped,
   };
@@ -286,18 +436,24 @@ async function createTree(target, baseTree, entries) {
 }
 
 /**
- * `Promise.all` with a ceiling: a plugin with two hundred files must not open two hundred
- * connections, and the results have to come back in the order they were asked for.
+ * One `POST /git/blobs` per file, one file at a time.
+ *
+ * GitHub asks for serial writes rather than a burst — "make requests serially instead of concurrently"
+ * — so this is a plain loop and not a `Promise.all`, and `request` is what puts the second between one
+ * call and the next. Nothing here is published: a blob is an unreachable object until a tree names it
+ * and a commit points at that tree, which is why a file can be uploaded twice (the fallback in
+ * `commitFiles`) without leaving anything behind.
  */
-async function mapWithConcurrency(items, limit, worker) {
-  const results = new Array(items.length);
-  let next = 0;
-  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    for (let index = next; index < items.length; index += 1) {
-      results[index] = await worker(items[index], index);
-      next = index + 1;
-    }
-  });
-  await Promise.all(runners);
-  return results;
+async function uploadBlobs(target, writes) {
+  const entries = [];
+  for (const write of writes) {
+    const blob = await request(target, 'POST', `/repos/${target.owner}/${target.repo}/git/blobs`, {
+      content: encodeBase64(write.content),
+      encoding: 'base64',
+    });
+    const sha = asString(blob?.sha);
+    if (!sha) throw new InstallError(`GitHub stored ${write.path} but returned no object id for it. Nothing was committed.`, 502);
+    entries.push({ path: write.path, mode: write.mode, type: 'blob', sha });
+  }
+  return entries;
 }

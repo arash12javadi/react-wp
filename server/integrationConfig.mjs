@@ -5,7 +5,7 @@
  * Every credential this site uses lives in `system_settings`, written from
  * `/admin?section=settings&tab=integrations` by the signed-in administrator. Nothing here reads
  * `process.env`: there is no `GEMINI_API_KEY`, `SMTP_PASS`, `CLOUDINARY_API_SECRET`,
- * `IMAGEKIT_PRIVATE_KEY` or `GITHUB_CLIENT_SECRET` in this repository's runtime any more. That is
+ * `IMAGEKIT_PRIVATE_KEY` or `GITHUB_TOKEN` in this repository's runtime any more. That is
  * what makes a site portable — a host needs its database and its signing secret and nothing else —
  * and it is why credentials can be rotated from the admin without a restart.
  *
@@ -124,23 +124,40 @@ export const emailConfigFrom = (value) => {
 };
 
 /**
- * The OAuth app half of `github_config`: exactly what starting a handshake needs, and the answer to
- * "is this site configured?" for the GitHub card.
+ * The credential half of `github_config`: the personal access token a commit is made with.
+ *
+ * The GitHub card validates the token against GitHub in the browser (`src/lib/integrations.ts`) and
+ * stores the row; the server only ever *reads* it back (`server/pluginGitPush.mjs`). So this function
+ * is the single definition of where the token lives. `access_token` is accepted as a fallback: that is
+ * the field the OAuth-era card wrote, so a site that connected through the old flow keeps pushing until
+ * an administrator pastes a token.
  */
-export const githubCredentialsFrom = (value) => {
+export const githubTokenFrom = (value) => {
   const row = asObject(value);
-  const clientId = asString(row.client_id) || asString(row.clientId);
-  const clientSecret = asString(row.client_secret) || asString(row.clientSecret);
-  return { clientId, clientSecret, configured: Boolean(clientId && clientSecret) };
+  return asString(row.token) || asString(row.pat) || asString(row.access_token);
 };
 
-/** Which of the pair is missing, for the message a half-configured site deserves. */
-export const missingGithubCredentials = (value) => {
-  const { clientId, clientSecret } = githubCredentialsFrom(value);
-  const missing = [];
-  if (!clientId) missing.push('GitHub Client ID');
-  if (!clientSecret) missing.push('GitHub Client Secret');
-  return missing;
+/**
+ * The GitHub card's own view of the row: presence only, never the token itself.
+ *
+ * `configured` is what a commit needs — a token and the account it belongs to. `scopes` is whatever
+ * GitHub reported for it, which is empty for fine-grained tokens: those carry per-repository
+ * permissions rather than classic scopes, and an empty list is not a warning.
+ */
+export const githubStatusFrom = (value) => {
+  const row = asObject(value);
+  const token = githubTokenFrom(row);
+  const scopes = Array.isArray(row.scopes)
+    ? row.scopes.map(asString).filter(Boolean)
+    : asString(row.scope).split(/[\s,]+/).filter(Boolean);
+  const username = asString(row.username);
+  return {
+    configured: Boolean(token && username),
+    tokenConfigured: Boolean(token),
+    scopes,
+    username,
+    repository: asString(row.repository),
+  };
 };
 
 /**
@@ -149,9 +166,7 @@ export const missingGithubCredentials = (value) => {
  */
 export const isGithubConnectedConfig = (value) => {
   const row = asObject(value);
-  return (row.connected === true || Boolean(asString(row.access_token) && asString(row.username)))
-    && Boolean(asString(row.access_token))
-    && Boolean(asString(row.username));
+  return Boolean(githubTokenFrom(row) && asString(row.username));
 };
 
 /** Every provider's completeness, so a card can say what is still missing rather than "unconfigured". */
@@ -206,16 +221,14 @@ export const isEmailConfigured = (config) => {
  * is far more useful than reporting every card as unconfigured.
  */
 export const describeIntegrations = ({
-  github = {}, ai = {}, media = {}, email = {}, credentials = {}, storage = 'local', origin = '', redirectUri = '',
+  github = {}, ai = {}, media = {}, email = {}, credentials = {}, storage = 'local',
 }) => ({
-  origin,
-  redirectUri,
   github: {
-    configured: Boolean(github.clientId && github.clientSecret),
-    clientId: github.clientId || '',
-    clientIdConfigured: Boolean(github.clientId),
-    clientSecretConfigured: Boolean(github.clientSecret),
+    configured: Boolean(github.configured),
+    tokenConfigured: Boolean(github.tokenConfigured),
     scopes: github.scopes || [],
+    username: github.username || '',
+    repository: github.repository || '',
   },
   ai: {
     configured: Boolean(ai.api_key),

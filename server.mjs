@@ -66,28 +66,6 @@ const json = (request, response, status, value, headers = {}) => {
 };
 
 /**
- * Writes an HTML response, with the same encoding handling as json(). Only the pages this server
- * renders itself use it — GitHub's OAuth callback, which lands in a popup and must answer like a page,
- * not like an API.
- *
- * Cache-Control is not negotiable here: a callback page carries a one-time result, so no copy of it may
- * be kept.
- */
-const html = (request, response, status, markup, headers = {}) => {
-  const encoding = negotiateEncoding(request.headers['accept-encoding'], securitySettings());
-  const { body, contentEncoding } = compressForResponse(markup, encoding);
-  response.writeHead(status, {
-    'Content-Type': 'text/html; charset=utf-8',
-    'Cache-Control': 'no-store',
-    Vary: 'Accept-Encoding',
-    'Content-Length': String(Buffer.byteLength(body)),
-    ...(contentEncoding ? { 'Content-Encoding': contentEncoding } : {}),
-    ...headers,
-  });
-  response.end(body);
-};
-
-/**
  * The site's config for every decision this server makes: `data/react-wp-config.json`, completed by the
  * environment (`server/autoSetup.mjs`).
  *
@@ -557,10 +535,9 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
-    // Settings → Integrations. Three routes, one flow: the status the screen asks for on mount, the
-    // signed popup URL it opens on click, and GitHub's callback — which is addressed by GitHub rather
-    // than by the admin router, so it is matched by exact path instead of by prefix. The callback
-    // answers a page, the other two answer JSON, so the module returns whichever it produced.
+    // Settings → Integrations: the status the screen asks for on mount, and the two credential tests it
+    // spends a saved key on. Handled by the shared module, so this server and the Hono app answer with
+    // the very same routes.
     if (ownsIntegrationPath(url.pathname)) {
       // Every credential these routes use is in `system_settings`, so the runtime config (for the
       // connection the reader needs) and the environment (for that connection's optional overrides) go
@@ -570,7 +547,6 @@ const server = http.createServer(async (request, response) => {
       const result = await handleIntegrationsRequest({
         method: request.method,
         pathname: url.pathname,
-        query: url.searchParams,
         headers: request.headers,
         body: request.method === 'POST' ? await readBody(request).catch(() => ({})) : {},
         storage: siteConfig?.storage,
@@ -591,10 +567,6 @@ const server = http.createServer(async (request, response) => {
         // is wrong, not that the route is missing — 405 with Allow beats a 404 that hides the mistake.
         const allowed = request.method === 'POST' ? 'GET' : 'POST';
         json(request, response, 405, { success: false, ok: false, error: `Only ${allowed} is supported at ${url.pathname}.` }, { Allow: allowed });
-        return;
-      }
-      if (result.html !== undefined) {
-        html(request, response, result.status, result.html);
         return;
       }
       json(request, response, result.status, result.body);
